@@ -106,14 +106,14 @@
               <el-table-column type="selection" width="55" align="center" />
               <el-table-column v-if="false" label="字典编号" align="center" prop="dictId" />
               <el-table-column label="字典名称" align="center" prop="dictName" width="120" />
-              <el-table-column label="字典类型" align="center" prop="dictType" width="160">
+              <el-table-column label="字典类型" align="center" prop="dictType" min-width="160">
                 <template #default="scope">
                   <span class="link-type" @click.stop="handleTypeRowClick(scope.row)">
                     {{ scope.row.dictType }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="备注" align="center" prop="remark" width="160" />
+              <el-table-column label="备注" align="center" prop="remark" width="160" show-overflow-tooltip />
               <el-table-column label="创建时间" align="center" prop="createTime" width="180">
                 <template #default="scope">
                   <span>{{ parseTime(scope.row.createTime) }}</span>
@@ -281,7 +281,7 @@
               </el-table-column>
               <el-table-column label="字典键值" align="center" prop="dictValue" width="100" />
               <el-table-column label="字典排序" align="center" prop="dictSort" width="80" />
-              <el-table-column label="备注" align="center" prop="remark" width="100" />
+              <el-table-column label="备注" align="center" prop="remark" min-width="100" show-overflow-tooltip />
               <el-table-column label="创建时间" align="center" prop="createTime" width="180">
                 <template #default="scope">
                   <span>{{ parseTime(scope.row.createTime) }}</span>

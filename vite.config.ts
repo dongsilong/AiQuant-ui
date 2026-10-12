@@ -27,10 +27,10 @@ export default defineConfig(({ mode, command }) => {
     server: {
       host: '0.0.0.0',
       port: Number(env.VITE_APP_PORT),
-      open: true,
+      open: false,
       proxy: {
         [env.VITE_APP_BASE_API]: {
-          target: 'http://localhost:8080',
+          target: 'http://localhost:8086',
           changeOrigin: true,
           ws: true,
           rewrite: path => path.replace(new RegExp('^' + env.VITE_APP_BASE_API), '')

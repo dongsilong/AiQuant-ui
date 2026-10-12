@@ -32,11 +32,13 @@
     "animate.css": "4.1.1",
     "await-to-js": "3.0.0",
     "axios": "1.20.0",
+    "crypto-js": "4.2.0",
     "echarts": "6.1.0",
     "element-plus": "2.14.5",
     "highlight.js": "11.12.0",
     "image-conversion": "2.1.1",
     "jsencrypt": "3.5.4",
+    "klinecharts": "^10.0.3",
     "nprogress": "0.2.0",
     "pinia": "4.0.3",
     "vue": "3.5.42",
@@ -49,6 +51,7 @@
     "vxe-table": "4.21.9"
   },
   "devDependencies": {
+    "@types/crypto-js": "4.2.2",
     "@types/node": "^26.1.1",
     "@types/nprogress": "0.2.3",
     "@unocss/preset-attributify": "66.10.1",
