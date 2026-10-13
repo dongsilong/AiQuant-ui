@@ -9,7 +9,7 @@ function numeric(value: unknown): number | undefined {
 /** Preserve the exact exchange decimal quantity when submitting a close command. */
 export function exactCloseQuantity(value: string): string | undefined {
   const signed = value.trim();
-  if (!/^-?\\d+(?:\\.\\d+)?$/.test(signed)) return undefined;
+  if (!/^-?\d+(?:\.\d+)?$/.test(signed)) return undefined;
   const positive = signed.startsWith('-') ? signed.slice(1) : signed;
   return /[1-9]/.test(positive) ? positive : undefined;
 }
