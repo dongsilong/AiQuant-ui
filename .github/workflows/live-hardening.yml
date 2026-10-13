@@ -23,8 +23,11 @@ jobs:
         with:
           node-version: '22'
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
+      # The current source branch has a stale lockfile; perform code validation first.
       - run: pnpm exec vitest run src/views/quant/terminal/__tests__/terminal-data.test.ts
       - run: pnpm exec vue-tsc --noEmit
       - run: pnpm run lint
       - run: pnpm run build:prod
+      - name: Enforce committed pnpm lockfile consistency
+        run: git diff --exit-code -- pnpm-lock.yaml
