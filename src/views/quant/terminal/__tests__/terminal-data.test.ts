@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { protectionPrices, updateProtectionOrders, liveTradePage } from '../terminal-data';
+import { protectionPrices, updateProtectionOrders, liveTradePage, exactCloseQuantity } from '../terminal-data';
 import {
   positionMetrics,
   mergeAccountPosition,
@@ -32,6 +32,18 @@ const fill = {
   n: '0.01',
   T: 1000
 };
+describe('exact close order quantity', () => {
+  it('preserves all fractional digits instead of rounding through JavaScript number', () => {
+    expect(exactCloseQuantity('-0.000000001234567890123456')).toBe('0.000000001234567890123456');
+    expect(exactCloseQuantity('123456789012345678.001')).toBe('123456789012345678.001');
+  });
+  it('rejects malformed and empty/zero quantities', () => {
+    for (const text of ['0', '-0.0000', '', 'NaN', 'Infinity', '1e9']) {
+      expect(exactCloseQuantity(text)).toBeUndefined();
+    }
+  });
+});
+
 describe('terminal account data', () => {
   it('does not calculate a loss from a missing mark', () => {
     const result = positionMetrics({ ...position, markPrice: '0', unrealizedPnl: '0', margin: '' });
