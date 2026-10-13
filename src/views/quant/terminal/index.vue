@@ -327,7 +327,8 @@ import {
   mergePositionSnapshots,
   mergeTrades,
   positionMetrics,
-  updateOrders
+  updateOrders,
+  exactCloseQuantity
 } from './terminal-data';
 const { quant_kline_period, quant_indicator } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator'));
 const symbol = ref('BTCUSDT'),
@@ -1219,10 +1220,10 @@ function cancel(row: unknown) {
 function close(row: unknown) {
   const position = row as PositionSnapshot;
   if (!credentialId.value) return;
-  const quantity = Math.abs(Number(position.quantity));
-  if (!Number.isFinite(quantity) || quantity <= 0) return;
+  const quantity = exactCloseQuantity(position.quantity);
+  if (!quantity) return;
   const closeSide =
-    position.side === 'SHORT' || (position.side === 'BOTH' && Number(position.quantity) < 0) ? 'BUY' : 'SELL';
+    position.side === 'SHORT' || (position.side === 'BOTH' && position.quantity.trim().startsWith('-')) ? 'BUY' : 'SELL';
   const data: ClosePositionForm = {
     credentialId: credentialId.value,
     symbol: position.symbol,
