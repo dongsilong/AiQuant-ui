@@ -6,6 +6,14 @@ function numeric(value: unknown): number | undefined {
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
 }
+/** Preserve the exact exchange decimal quantity when submitting a close command. */
+export function exactCloseQuantity(value: string): string | undefined {
+  const signed = value.trim();
+  if (!/^-?\\d+(?:\\.\\d+)?$/.test(signed)) return undefined;
+  const positive = signed.startsWith('-') ? signed.slice(1) : signed;
+  return /[1-9]/.test(positive) ? positive : undefined;
+}
+
 export function positionMetrics(item: PositionSnapshot, liveMark?: number | string) {
   const freshMark = numeric(liveMark);
   const mark = freshMark && freshMark > 0 ? freshMark : numeric(item.markPrice);
