@@ -28,6 +28,11 @@ const columns = [
     label: '执行状态',
     formatter: (row: Record<string, unknown>) => displayLabel(executionStatuses, row.executionStatus)
   },
+  { prop: 'exchangeOrderId', label: '交易所订单号' },
+  { prop: 'triggerReason', label: '触发原因', minWidth: 180 },
+  { prop: 'fillQuantity', label: '成交数量', align: 'right' },
+  { prop: 'commission', label: '手续费', align: 'right' },
+  { prop: 'errorMessage', label: '异常信息', minWidth: 200 },
   {
     prop: 'idempotencyKey',
     label: '幂等键'

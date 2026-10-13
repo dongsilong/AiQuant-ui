@@ -31,7 +31,13 @@
             <p>查看系统已注册策略插件及版本。策略插件只生成信号，不直接访问交易所。</p>
           </div>
           <div class="toolbar-actions">
-            <el-button v-hasPermi="['quant:strategy:add']" icon="Plus" type="primary" @click="openAdd">
+            <el-button
+              v-hasPermi="['quant:strategy:add']"
+              icon="Plus"
+              type="primary"
+              :disabled="plugins.length === 0"
+              @click="openAdd"
+            >
               新增策略
             </el-button>
             <right-toolbar :search="false" @query-table="load"></right-toolbar>
@@ -40,6 +46,14 @@
       </template>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="策略定义" name="definitions">
+          <el-alert
+            v-if="plugins.length === 0"
+            title="当前没有已安装的策略插件。策略实例创建和启动已禁用；新增策略需随服务部署插件并提供参数 schema。"
+            type="info"
+            :closable="false"
+            show-icon
+            class="mb-3"
+          />
           <el-table v-loading="loading" class="data-table" :data="strategies" border>
             <el-table-column align="center" label="序号" type="index" width="80">
               <template #default="scope">
@@ -126,10 +140,18 @@
         <el-tab-pane label="持仓状态" name="states">
           <el-table :data="states" border>
             <el-table-column align="center" label="序号" type="index" width="80" />
-            <el-table-column label="实例名称" prop="instanceName" align="center" min-width="220" show-overflow-tooltip />
+            <el-table-column
+              label="实例名称"
+              prop="instanceName"
+              align="center"
+              min-width="220"
+              show-overflow-tooltip
+            />
             <el-table-column label="实例编号" prop="instanceId" align="center" min-width="180" show-overflow-tooltip />
             <el-table-column label="方向" align="center" width="100">
-              <template #default="scope">{{ scope.row.directionLabel || directionLabel(scope.row.direction) }}</template>
+              <template #default="scope">
+                {{ scope.row.directionLabel || directionLabel(scope.row.direction) }}
+              </template>
             </el-table-column>
             <el-table-column label="数量" align="center" width="140">
               <template #default="scope">{{ formatDecimal(scope.row.positionQty) }}</template>
@@ -138,17 +160,23 @@
               <template #default="scope">{{ scope.row.statusLabel || positionStatusLabel(scope.row.status) }}</template>
             </el-table-column>
             <el-table-column label="需恢复" align="center" width="100">
-              <template #default="scope">{{ scope.row.recoveryRequiredLabel || (scope.row.recoveryRequired ? '是' : '否') }}</template>
+              <template #default="scope">
+                {{ scope.row.recoveryRequiredLabel || (scope.row.recoveryRequired ? '是' : '否') }}
+              </template>
             </el-table-column>
             <el-table-column label="更新时间" prop="updatedAt" align="center" min-width="170" />
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="插件目录" name="plugins">
-          <el-table :data="plugins" border>
+          <el-empty v-if="plugins.length === 0" description="暂无已安装策略插件" />
+          <el-table v-else :data="plugins" border>
             <el-table-column align="center" label="序号" type="index" width="80" />
             <el-table-column label="策略名称" prop="name" align="center" min-width="160" show-overflow-tooltip />
             <el-table-column label="插件 Code" prop="code" align="center" min-width="150" show-overflow-tooltip />
             <el-table-column label="版本" prop="version" align="center" min-width="80" />
+            <el-table-column label="参数 schema" align="center" min-width="180" show-overflow-tooltip>
+              <template #default="scope">{{ scope.row.paramsSchema?.length || 0 }} 个参数</template>
+            </el-table-column>
             <el-table-column label="参数示例" prop="paramsExample" align="center" min-width="180" show-overflow-tooltip>
               <template #default="scope">
                 <el-text class="params-example">{{ JSON.stringify(scope.row.paramsExample || {}, null, 2) }}</el-text>
@@ -181,8 +209,28 @@
         <el-form-item label="插件说明">
           <el-input :model-value="selectedPlugin?.name || ''" readonly />
         </el-form-item>
-        <el-form-item label="插件参数 JSON">
-          <el-input v-model="form.paramsJson" :rows="3" type="textarea" />
+        <el-form-item v-for="item in parameterFields" :key="item.key" :label="item.label" :required="item.required">
+          <el-input-number
+            v-if="item.type === 'number' || item.type === 'integer'"
+            v-model="strategyParameterValues[item.key]"
+            :min="Number(item.constraints?.min ?? 0)"
+            :max="item.constraints?.max === undefined ? undefined : Number(item.constraints.max)"
+            :step="item.type === 'integer' ? 1 : Number(item.constraints?.step ?? 0.01)"
+          />
+          <el-switch v-else-if="item.type === 'boolean'" v-model="strategyParameterValues[item.key]" />
+          <el-select v-else-if="item.type === 'enum'" v-model="strategyParameterValues[item.key]">
+            <el-option
+              v-for="option in parameterOptions(item)"
+              :key="String(option.value)"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+          <el-input v-else v-model="strategyParameterValues[item.key]" />
+          <div v-if="item.description" class="form-tip">{{ item.description }}</div>
+        </el-form-item>
+        <el-form-item v-if="parameterFields.length === 0" label="插件参数">
+          <el-empty description="插件尚未提供参数 schema" />
         </el-form-item>
         <el-form-item label="登录账户授权" prop="userIds">
           <el-select
@@ -223,9 +271,27 @@
     </el-dialog>
     <el-drawer v-model="paramsVisible" title="策略参数配置" size="480px">
       <el-form label-width="180px">
-        <el-form-item v-for="item in parameterFields" :key="item.key" :label="item.label">
-          <el-input-number v-model="parameterValues[item.key]" :min="0" :step="item.rate ? 0.01 : 1" />
+        <el-form-item v-for="item in parameterFields" :key="item.key" :label="item.label" :required="item.required">
+          <el-input-number
+            v-if="item.type === 'number' || item.type === 'integer'"
+            v-model="parameterValues[item.key]"
+            :min="Number(item.constraints?.min ?? 0)"
+            :max="item.constraints?.max === undefined ? undefined : Number(item.constraints.max)"
+            :step="item.type === 'integer' ? 1 : Number(item.constraints?.step ?? 0.01)"
+          />
+          <el-switch v-else-if="item.type === 'boolean'" v-model="parameterValues[item.key]" />
+          <el-select v-else-if="item.type === 'enum'" v-model="parameterValues[item.key]">
+            <el-option
+              v-for="option in parameterOptions(item)"
+              :key="String(option.value)"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+          <el-input v-else v-model="parameterValues[item.key]" />
+          <div v-if="item.description" class="form-tip">{{ item.description }}</div>
         </el-form-item>
+        <el-empty v-if="parameterFields.length === 0" description="此插件未定义参数 schema" />
       </el-form>
       <el-input v-model="parameterJsonPreview" :rows="8" type="textarea" readonly />
       <template #footer>
@@ -253,7 +319,7 @@
         :closable="false"
       />
       <el-table v-if="preflightResult" :data="preflightResult.symbols" border class="mt-4">
-        <el-table-column align="center" label="序号" type="index" width="80"/>
+        <el-table-column align="center" label="序号" type="index" width="80" />
         <el-table-column prop="symbol" label="交易对" />
         <el-table-column prop="intervalCode" label="周期" />
         <el-table-column prop="leverage" label="杠杆" />
@@ -336,14 +402,13 @@ const selectedSymbolIds = ref<Array<number | string>>([]);
 const symbolRows = ref<StrategySymbolBinding[]>([]);
 const paramsVisible = ref(false);
 const paramsRow = ref<StrategySymbolBinding>();
-const parameterValues = reactive<Record<string, number>>({});
-const parameterFields = [
-  { key: 'entryAngleDegrees', label: '开仓角度', rate: false },
-  { key: 'firstProfitTakingRate', label: '首次止盈率', rate: true },
-  { key: 'firstClosePositionRate', label: '首次平仓比例', rate: true },
-  { key: 'stepRatio', label: '阶梯比例', rate: true },
-  { key: 'localStopLossRate', label: '本地止损率', rate: true }
-];
+const parameterValues = reactive<Record<string, any>>({});
+const strategyParameterValues = reactive<Record<string, any>>({});
+const parameterFields = computed(() => selectedPlugin.value?.paramsSchema || []);
+const parameterOptions = (field: NonNullable<StrategyPluginVO['paramsSchema']>[number]) => {
+  const options = field.constraints?.options;
+  return Array.isArray(options) ? (options as Array<{ label: string; value: unknown }>) : [];
+};
 const parameterJsonPreview = computed(() => JSON.stringify(parameterValues, null, 2));
 const preflightVisible = ref(false);
 const preflightResult = ref<StrategyPreflightResult>();
@@ -379,7 +444,8 @@ const formatDecimal = (value: unknown) => {
   const text = String(value);
   if (/e/i.test(text)) {
     const number = Number(value);
-    if (Number.isFinite(number)) return number.toLocaleString('zh-CN', { useGrouping: false, maximumFractionDigits: 20 });
+    if (Number.isFinite(number))
+      return number.toLocaleString('zh-CN', { useGrouping: false, maximumFractionDigits: 20 });
   }
   return text.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
@@ -451,12 +517,19 @@ const resetQuery = () => {
 const handlePluginChange = (pluginCode: string) => {
   const plugin = plugins.value.find(item => item.code === pluginCode);
   form.pluginVersion = plugin?.version || '';
-  form.paramsJson = JSON.stringify(plugin?.paramsExample || {}, null, 2);
+  Object.keys(strategyParameterValues).forEach(key => delete strategyParameterValues[key]);
+  Object.assign(strategyParameterValues, plugin?.paramsExample || {});
+  for (const field of plugin?.paramsSchema || []) {
+    if (strategyParameterValues[field.key] === undefined) strategyParameterValues[field.key] = field.defaultValue;
+  }
+  form.paramsJson = JSON.stringify(strategyParameterValues);
   for (const row of symbolRows.value) {
     if (!row.paramsJson || row.paramsJson === '{}') row.paramsJson = form.paramsJson;
   }
 };
 const openAdd = () => {
+  if (plugins.value.length === 0) return;
+  Object.keys(strategyParameterValues).forEach(key => delete strategyParameterValues[key]);
   Object.assign(form, {
     id: undefined,
     strategyName: '',
@@ -479,6 +552,16 @@ const openAdd = () => {
 };
 const openEdit = async (row: StrategyVO) => {
   Object.assign(form, row);
+  Object.keys(strategyParameterValues).forEach(key => delete strategyParameterValues[key]);
+  try {
+    Object.assign(strategyParameterValues, JSON.parse(form.paramsJson || '{}'));
+    for (const field of parameterFields.value) {
+      if (strategyParameterValues[field.key] === undefined) strategyParameterValues[field.key] = field.defaultValue;
+    }
+  } catch {
+    modal.msgError('策略参数 JSON 无效');
+    return;
+  }
   const [accountRes, symbolRes, userRes] = await Promise.all([
     listStrategyAccounts(row.id),
     listStrategySymbols(row.id),
@@ -531,11 +614,15 @@ const removeSymbolRow = (id: number | string) => {
   syncSymbolRows(selectedSymbolIds.value);
 };
 const openParams = (row: unknown) => {
+  if (!selectedPlugin.value?.paramsSchema?.length) return;
   const typedRow = row as StrategySymbolBinding;
   paramsRow.value = typedRow;
   Object.keys(parameterValues).forEach(key => delete parameterValues[key]);
   try {
     Object.assign(parameterValues, JSON.parse(typedRow.paramsJson || form.paramsJson || '{}'));
+    for (const field of parameterFields.value) {
+      if (parameterValues[field.key] === undefined) parameterValues[field.key] = field.defaultValue;
+    }
   } catch {
     modal.msgError('参数 JSON 无效');
   }
@@ -546,6 +633,8 @@ const saveParams = () => {
   paramsVisible.value = false;
 };
 const submit = async () => {
+  form.paramsJson = JSON.stringify(strategyParameterValues);
+  if (plugins.value.length === 0) return;
   if (form.id && (form.status === '1' || form.status === 'RUNNING')) {
     modal.msgError('运行中的策略必须先停止，才能修改交易对配置');
     return;

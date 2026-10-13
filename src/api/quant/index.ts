@@ -23,11 +23,7 @@ import type {
   StrategyQuery,
   StrategyInstanceQuery,
   StrategyPositionStateQuery,
-  ProtectionQuery,
   ExecutionQuery,
-  FinancialEventQuery,
-  ReconcileQuery,
-  NotificationQuery,
   StrategyPreflightResult,
   StrategyUserBinding
 } from './types';
@@ -93,12 +89,7 @@ import type {
   StrategyPositionStateVO,
   StrategyAccountBinding,
   StrategySymbolBinding,
-  DashboardOverview,
-  ProtectionVO,
-  ExecutionRecordVO,
-  FinancialEventVO,
-  ReconcileRecordVO,
-  NotificationVO
+  ExecutionRecordVO
 } from './types';
 
 export const listStrategies = (query: StrategyQuery): AxiosPromise<PageResult<StrategyVO>> =>
@@ -142,23 +133,5 @@ export const listStrategyPositionStates = (
 ): AxiosPromise<PageResult<StrategyPositionStateVO>> =>
   request({ url: '/quant/strategy/position-states', method: 'get', params: query });
 
-export const getDashboardOverview = (): AxiosPromise<DashboardOverview> =>
-  request({ url: '/quant/dashboard/overview', method: 'get' });
-export const listProtection = (query: ProtectionQuery): AxiosPromise<PageResult<ProtectionVO>> =>
-  request({ url: '/quant/protection/page', method: 'get', params: query });
 export const listExecution = (query: ExecutionQuery): AxiosPromise<PageResult<ExecutionRecordVO>> =>
   request({ url: '/quant/execution/page', method: 'get', params: query });
-export const listFinancial = (query: FinancialEventQuery): AxiosPromise<PageResult<FinancialEventVO>> =>
-  request({ url: '/quant/finance/page', method: 'get', params: query });
-export const listReconcile = (query: ReconcileQuery): AxiosPromise<PageResult<ReconcileRecordVO>> =>
-  request({ url: '/quant/reconcile/page', method: 'get', params: query });
-export const runReconcile = (credentialId: number | string, historyHours = 24) =>
-  request({ url: '/quant/reconcile/' + credentialId + '/run', method: 'post', params: { historyHours } });
-export const listNotifications = (query: NotificationQuery): AxiosPromise<PageResult<NotificationVO>> =>
-  request({ url: '/quant/notification/page', method: 'get', params: query });
-export const listTerminalNotifications = (credentialId: number | string): AxiosPromise<NotificationVO[]> =>
-  request({ url: '/quant/notification/terminal/' + credentialId, method: 'get' });
-export const retryNotification = (id: number | string) =>
-  request({ url: '/quant/notification/' + id + '/retry', method: 'post' });
-export const getNotification = (id: number | string): AxiosPromise<NotificationVO> =>
-  request({ url: '/quant/notification/' + id, method: 'get' });

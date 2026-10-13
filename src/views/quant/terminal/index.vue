@@ -232,49 +232,6 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
-    <el-button class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
-      斜率
-    </el-button>
-    <el-drawer v-model="slopePanelVisible" title="实时斜率" direction="rtl" size="620px" @closed="closeSlopePanel">
-      <el-select
-        v-model="slopeStrategyId"
-        class="slope-strategy-select"
-        placeholder="选择策略"
-        @change="openSlopePanel"
-      >
-        <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
-      </el-select>
-      <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
-      <el-table
-        v-else-if="slopeRows.length"
-        :data="slopeRows"
-        :row-class-name="slopeRowClassName"
-        border
-        stripe
-        class="slope-table"
-      >
-        <el-table-column prop="symbol" label="交易对" width="120" />
-        <el-table-column prop="interval" label="周期" width="72" />
-        <el-table-column label="参考开盘价" min-width="110">
-          <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
-        </el-table-column>
-        <el-table-column label="当前价" min-width="110">
-          <template #default="scope">{{ format(scope.row.currentPrice) }}</template>
-        </el-table-column>
-        <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
-        <el-table-column label="角度" min-width="82">
-          <template #default="scope">
-            {{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="82">
-          <template #default="scope">
-            {{ statusText(scope.row.status) }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else description="当前策略暂无交易对" />
-    </el-drawer>
   </div>
 </template>
 
@@ -293,7 +250,6 @@ import type {
   PriceSnapshot,
   SymbolVO,
   StrategyInstanceVO,
-  StrategySymbolBinding,
   StrategyVO,
   TradeRecord
 } from '@/api/quant/types';
@@ -307,9 +263,7 @@ import {
   listTrades,
   listRealtimeKlines,
   listSymbol,
-  getSymbol,
   listStrategyInstances,
-  listStrategySymbols,
   startStrategy,
   stopStrategy,
   cancelOrder,
@@ -354,31 +308,7 @@ const credentials = ref<CredentialVO[]>([]),
   symbolOptions = ref<SymbolVO[]>([]),
   symbolLoading = ref(false);
 const indicatorOptions = computed(() => quant_indicator.value || []);
-type SlopeRow = {
-  symbol: string;
-  interval: string;
-  status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
-  currentPrice?: number;
-  referencePrice?: number;
-  slopePercent?: number;
-  degrees?: number;
-  entryAngleDegrees?: number;
-  klines: KlineSnapshot[];
-};
-const statusMap: Record<string, string> = {
-  CONNECTING: '连接中',
-  CONNECTED: '已连接',
-  DISCONNECTED: '已断开',
-  ERROR: '异常'
-};
-const statusText = (status: string) => statusMap[status] ?? '未知';
-const slopePanelVisible = ref(false);
-const slopeLoading = ref(false);
-const slopeStrategyId = ref<string | number>();
-const slopeRows = ref<SlopeRow[]>([]);
 type SseConnection = { close: () => void };
-let slopeStream: SseConnection | undefined;
-let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
 const protectionOrders = ref<ProtectionOrderSnapshot[]>([]);
 const protectionError = ref('');
 const protectionLoaded = ref(false);
@@ -777,7 +707,6 @@ function handleSseUnauthorized() {
   removeToken();
   if (retry) clearTimeout(retry);
   if (accountRetry) clearTimeout(accountRetry);
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
   ElMessage.error('登录状态已失效，请重新登录');
 }
 
@@ -948,113 +877,6 @@ function connectAccountStream() {
     },
     handleSseUnauthorized
   );
-}
-
-function closeSlopeStream() {
-  slopeStream?.close();
-  slopeStream = undefined;
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
-  slopeStreamRetry = undefined;
-}
-
-function connectSlopeStream() {
-  closeSlopeStream();
-  if (!slopeStrategyId.value || !credentialId.value) return;
-  const query = new URLSearchParams({
-    strategyId: String(slopeStrategyId.value),
-    credentialId: String(credentialId.value)
-  });
-  const source = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/strategy/slope/stream?${query}`,
-    'quant.strategy.slope',
-    data => {
-      try {
-        const payload = JSON.parse(data);
-        if (payload.type === 'CONNECTED') {
-          slopeRows.value.forEach(row => (row.status = 'CONNECTED'));
-          return;
-        }
-        const row = slopeRows.value.find(item => item.symbol === payload.symbol);
-        if (!row) return;
-        row.status = 'CONNECTED';
-        row.currentPrice = Number(payload.currentPrice);
-        row.referencePrice = Number(payload.referenceOpenPrice);
-        row.slopePercent = Number(payload.slopePercent);
-        row.degrees = Number(payload.degrees);
-      } catch {
-        slopeRows.value.forEach(row => (row.status = 'ERROR'));
-      }
-    },
-    () => {
-      slopeRows.value.forEach(row => (row.status = 'DISCONNECTED'));
-      source.close();
-      if (slopePanelVisible.value) {
-        slopeStreamRetry = setTimeout(connectSlopeStream, 3000);
-      }
-    },
-    handleSseUnauthorized
-  );
-  slopeStream = source;
-}
-
-function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
-  try {
-    const strategy = strategies.value.find(item => String(item.id) === String(slopeStrategyId.value));
-    const params = { ...JSON.parse(strategy?.paramsJson || '{}'), ...JSON.parse(binding.paramsJson || '{}') };
-    const raw = params.entryAngleDegrees;
-    const threshold = raw === undefined ? 60 : Number(raw);
-    return raw !== null && raw !== '' && Number.isFinite(threshold) && threshold > 0 && threshold < 90
-      ? threshold
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function slopeRowClassName({ row }: { row: SlopeRow }): string {
-  if (row.status !== 'CONNECTED' || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
-  const degrees = Math.abs(row.degrees!);
-  if (degrees > row.entryAngleDegrees) return 'slope-row-danger';
-  return degrees >= Math.max(0, row.entryAngleDegrees - 10) ? 'slope-row-warning' : '';
-}
-
-async function openSlopePanel() {
-  if (slopeLoading.value) return;
-  slopePanelVisible.value = true;
-  slopeStrategyId.value = strategyId.value || strategies.value[0]?.id;
-  closeSlopeStream();
-  slopeRows.value = [];
-  if (!slopeStrategyId.value) return;
-  slopeLoading.value = true;
-  try {
-    const bindings = (await listStrategySymbols(slopeStrategyId.value)).data || [];
-    const activeBindings = bindings.filter((item: StrategySymbolBinding) => item.status !== '1');
-    const resolved = await Promise.all(
-      activeBindings.map(async binding => {
-        const item = await getSymbol(binding.symbolId);
-        return { binding, symbol: item.data?.symbol };
-      })
-    );
-    const rows = resolved
-      .filter(item => item.symbol)
-      .map(item => ({
-        symbol: item.symbol!,
-        interval: item.binding.intervalCode || interval.value,
-        entryAngleDegrees: slopeEntryAngle(item.binding),
-        status: 'CONNECTING' as const,
-        klines: [] as KlineSnapshot[]
-      }));
-    slopeRows.value = rows;
-    connectSlopeStream();
-  } finally {
-    slopeLoading.value = false;
-  }
-}
-
-function closeSlopePanel() {
-  slopePanelVisible.value = false;
-  slopeLoading.value = false;
-  closeSlopeStream();
 }
 
 async function handleStrategyChange() {
@@ -1276,7 +1098,6 @@ onBeforeUnmount(() => {
   if (hydrationTimer) clearTimeout(hydrationTimer);
   stream?.close();
   accountStream?.close();
-  closeSlopeStream();
   updateChartBar = undefined;
   if (retry) clearTimeout(retry);
   if (accountRetry) clearTimeout(accountRetry);
@@ -1397,36 +1218,6 @@ onBeforeUnmount(() => {
 }
 .chart-countdown strong {
   color: var(--el-color-danger);
-}
-.slope-floating-button {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 1000;
-  width: 52px;
-  height: 52px;
-  box-shadow: var(--el-box-shadow-light);
-}
-.slope-strategy-select {
-  width: 100%;
-  margin-bottom: 12px;
-}
-.slope-table {
-  width: 100%;
-  :deep(.slope-row-danger) {
-    --el-table-tr-bg-color: var(--el-color-danger-light-9);
-    --el-table-row-hover-bg-color: var(--el-color-danger-light-8);
-    color: var(--el-color-danger);
-  }
-  :deep(.slope-row-warning) {
-    --el-table-tr-bg-color: var(--el-color-warning-light-9);
-    --el-table-row-hover-bg-color: var(--el-color-warning-light-8);
-    color: var(--el-color-warning);
-  }
-  :deep(.slope-row-danger.el-table__row--striped td.el-table__cell),
-  :deep(.slope-row-warning.el-table__row--striped td.el-table__cell) {
-    background: var(--el-table-tr-bg-color);
-  }
 }
 .strategy-select {
   width: 100%;

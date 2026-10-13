@@ -1,7 +1,6 @@
 export interface CredentialVO extends BaseEntity {
   id: string | number;
   userId: string | number;
-  userIds: string[];
   userName?: string;
   accountName: string;
   maskedApiKey: string;
@@ -21,7 +20,6 @@ export interface CredentialQuery extends PageQuery {
 export interface CredentialForm {
   id?: string | number;
   userId: string | undefined;
-  userIds: string[];
   accountName: string;
   apiKey: string;
   secretKey?: string;
@@ -150,11 +148,22 @@ export interface TradeRecord {
   exchangeOrderId: number;
 }
 
+export interface StrategyParamSchema {
+  key: string;
+  label: string;
+  type: 'number' | 'integer' | 'string' | 'boolean' | 'enum';
+  required: boolean;
+  defaultValue?: unknown;
+  constraints?: Record<string, unknown>;
+  description?: string;
+}
+
 export interface StrategyPluginVO {
   code: string;
   version: string;
   name: string;
-  paramsExample?: Record<string, number | string | boolean>;
+  paramsExample?: Record<string, unknown>;
+  paramsSchema?: StrategyParamSchema[];
 }
 
 export interface ClosePositionForm {
@@ -295,34 +304,6 @@ export interface StrategyPositionStateVO {
   unsafeRecovery?: boolean;
   updatedAt?: string;
 }
-export interface DashboardOverview {
-  credentialCount: number;
-  positionCount: number;
-  orderCount: number;
-  tradeCount: number;
-  runningInstanceCount: number;
-  unknownExecutionCount: number;
-  pendingNotificationCount: number;
-}
-export interface ProtectionVO {
-  id: number | string;
-  credentialId?: number | string;
-  positionId?: number | string;
-  symbol?: string;
-  positionSide?: string;
-  exchangeOrderId?: string;
-  clientOrderId?: string;
-  protectionType?: string;
-  orderType?: string;
-  quantity?: string | number;
-  stopPrice?: string | number;
-  status?: string;
-}
-export interface ProtectionQuery extends PageQuery {
-  credentialId?: number | string;
-  symbol?: string;
-  status?: string;
-}
 export interface ExecutionRecordVO {
   id: number | string;
   credentialId?: number | string;
@@ -331,6 +312,11 @@ export interface ExecutionRecordVO {
   executionStatus?: string;
   exchangeOrderStatus?: string;
   operationType?: string;
+  exchangeOrderId?: number | string;
+  triggerReason?: string;
+  fillQuantity?: string | number;
+  commission?: string | number;
+  errorMessage?: string;
   idempotencyKey?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -342,45 +328,4 @@ export interface ExecutionQuery extends PageQuery {
   credentialId?: number | string;
   executionStatus?: string;
   exchangeOrderStatus?: string;
-}
-export interface FinancialEventVO {
-  id: number | string;
-  credentialId?: number | string;
-  symbol?: string;
-  eventType?: string;
-  amount?: string | number;
-  asset?: string;
-  eventTime?: string;
-}
-export interface FinancialEventQuery extends PageQuery {
-  credentialId?: number | string;
-  eventType?: string;
-  symbol?: string;
-}
-export interface ReconcileRecordVO {
-  id: number | string;
-  credentialId?: number | string;
-  accountName?: string;
-  reconcileType?: string;
-  result?: string;
-  detailJson?: string;
-  reconciledAt?: string;
-}
-export interface ReconcileQuery extends PageQuery {
-  credentialId?: number | string;
-}
-export interface NotificationVO {
-  id: number | string;
-  credentialId?: number | string;
-  channel?: string;
-  subject?: string;
-  content?: string;
-  status?: string;
-  retryCount?: number;
-  lastError?: string;
-  createdAt?: string;
-}
-export interface NotificationQuery extends PageQuery {
-  credentialId?: number | string;
-  status?: string;
 }
