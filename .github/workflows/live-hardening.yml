@@ -1,0 +1,30 @@
+name: LIVE Hardening - Frontend
+
+on:
+  push:
+    branches:
+      - hardening/live-production-20261014
+  pull_request:
+    branches:
+      - ai-quant-ui-dev
+
+jobs:
+  terminal-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run src/views/quant/terminal/__tests__/terminal-data.test.ts
+      - run: pnpm exec vue-tsc --noEmit
+      - run: pnpm run lint
+      - run: pnpm run build:prod
