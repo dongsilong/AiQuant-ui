@@ -162,7 +162,7 @@ export interface ClosePositionForm {
   symbol: string;
   side: string;
   positionSide: string;
-  quantity: number;
+  quantity: string | number;
   idempotencyKey: string;
 }
 
