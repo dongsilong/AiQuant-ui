@@ -17,13 +17,13 @@
         <el-table-column label="周期" width="90"><template #default>15m</template></el-table-column>
         <el-table-column label="运行状态" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'RUNNING' ? 'success' : 'info'">{{ row.status === 'RUNNING' ? '运行中' : '已停止' }}</el-tag>
+            <el-tag :type="row.status === 'RUNNING' ? 'success' : row.status === 'CONNECTING' ? 'warning' : 'info'">{{ row.status === 'RUNNING' ? '运行中' : row.status === 'CONNECTING' ? '连接中/重连中' : '已停止' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button v-hasPermi="['quant:strategy:edit']" link :disabled="row.status === 'RUNNING'" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status !== 'RUNNING'" v-hasPermi="['quant:strategy:edit']" link type="success" @click="toggle(row, true)">启动</el-button>
+            <el-button v-if="row.status === 'STOPPED'" v-hasPermi="['quant:strategy:edit']" link type="success" @click="toggle(row, true)">启动</el-button>
             <el-button v-else v-hasPermi="['quant:strategy:edit']" link type="warning" @click="toggle(row, false)">停止</el-button>
             <el-button v-hasPermi="['quant:strategy:remove']" link type="danger" :disabled="row.status === 'RUNNING'" @click="remove(row)">删除</el-button>
           </template>
@@ -55,7 +55,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import type { StrategyVO, StrategyForm, StrategyPluginVO } from '@/api/quant/types';
@@ -114,7 +114,7 @@ async function save() {
 async function toggle(row: StrategyVO, start: boolean) {
   if (start) await startStrategy(row.id);
   else await stopStrategy(row.id);
-  ElMessage.success(start ? '策略已启动（等待行情）' : '策略已停止');
+  ElMessage.success(start ? '策略已提交启动，等待 WebSocket 行情连接' : '策略已停止');
   await load();
 }
 async function remove(row: StrategyVO) {
@@ -123,5 +123,12 @@ async function remove(row: StrategyVO) {
   ElMessage.success('删除成功');
   await load();
 }
-onMounted(load);
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  void load();
+  refreshTimer = setInterval(() => {
+    if (!dialogVisible.value && !loading.value) void load();
+  }, 5000);
+});
+onUnmounted(() => { if (refreshTimer) clearInterval(refreshTimer); });
 </script>
