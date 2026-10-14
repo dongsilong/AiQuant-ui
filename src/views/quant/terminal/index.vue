@@ -235,7 +235,7 @@
     <el-button class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
       斜率
     </el-button>
-    <el-drawer v-model="slopePanelVisible" title="实时斜率" direction="rtl" size="620px" @closed="closeSlopePanel">
+    <el-drawer v-model="slopePanelVisible" title="实时斜率" direction="rtl" size="620px" :modal="false" :lock-scroll="false" @closed="closeSlopePanel">
       <el-select
         v-model="slopeStrategyId"
         class="slope-strategy-select"
