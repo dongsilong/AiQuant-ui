@@ -38,7 +38,13 @@ export function parseBeijingDate(input: string | number | Date): Date {
     }
     return result;
   }
-  return new Date(normalized);
+  // Never allow host-local or implementation-dependent parsing for ambiguous strings.
+  // Explicit ISO offsets, Zulu instants and RFC3339 are supported; everything
+  // else must be normalized at the API boundary rather than guessed here.
+  if (/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/i.test(normalized)) {
+    return new Date(normalized);
+  }
+  return new Date(NaN);
 }
 
 export function beijingParts(input: string | number | Date) {
