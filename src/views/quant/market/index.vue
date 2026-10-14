@@ -148,8 +148,8 @@
   </div>
 </template>
 <script lang="ts" setup>
-import type { PriceSnapshot, SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch } from '@/api/quant/types';
-import { getRealtimePrice, listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches } from '@/api/quant';
+import type { SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch } from '@/api/quant/types';
+import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches } from '@/api/quant';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
@@ -212,7 +212,6 @@ const loading = ref(false);
 const syncing = ref(false);
 const rows = ref<SymbolVO[]>([]);
 const total = ref(0);
-const prices = ref<Record<string, PriceSnapshot>>({});
 const queryParams = reactive<SymbolQuery>({
   pageNum: 1,
   pageSize: 10,
