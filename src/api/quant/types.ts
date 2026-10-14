@@ -384,3 +384,10 @@ export interface NotificationQuery extends PageQuery {
   credentialId?: number | string;
   status?: string;
 }
+
+/** 当前应用节点的 Binance WebSocket 传输模式（需要基础设施权限）。 */
+export interface WebSocketTransportInfo {
+  transport: 'RAW_OKHTTP' | 'BINANCE_SDK';
+  scope: 'THIS_NODE';
+  streamsReconnected?: number;
+}
