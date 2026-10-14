@@ -5,7 +5,7 @@ export const financialEventTypes: Record<string, string> = {
   REALIZED_PNL: '已实现盈亏'
 };
 export const reconcileTypes: Record<string, string> = { FULL: '全量对账' };
-export const reconcileResults: Record<string, string> = { SUCCESS: '成功', FAILED: '失败' };
+export const reconcileResults: Record<string, string> = { SUCCESS: '成功', FAILED: '失败', DEGRADED: '需人工核查（保护单归属异常）' };
 export const notificationChannels: Record<string, string> = { SYSTEM: '系统通知', EMAIL: '邮件通知' };
 export const notificationStatuses: Record<string, string> = {
   PENDING: '待发送',
