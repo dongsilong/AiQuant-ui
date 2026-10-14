@@ -94,7 +94,7 @@ export interface PositionSnapshot {
 
 export interface OrderSnapshot {
   symbol: string;
-  orderId: number;
+  orderId: string;
   clientOrderId: string;
   side: string;
   type: string;
@@ -107,7 +107,7 @@ export interface OrderSnapshot {
 
 export interface ProtectionOrderSnapshot {
   symbol: string;
-  algoId: number;
+  algoId: string;
   clientAlgoId: string;
   status: string;
   side: string;
@@ -123,8 +123,8 @@ export interface ProtectionOrderSnapshot {
 
 export interface TradeSnapshot {
   symbol: string;
-  tradeId: number;
-  orderId: number;
+  tradeId: string;
+  orderId: string;
   side: string;
   quantity: string;
   price: string;
@@ -146,8 +146,8 @@ export interface TradeRecord {
   commission: string;
   realizedPnl: string;
   tradeTime: string;
-  exchangeTradeId: number;
-  exchangeOrderId: number;
+  exchangeTradeId: string;
+  exchangeOrderId: string;
 }
 
 export interface StrategyPluginVO {
@@ -187,7 +187,7 @@ export interface KlineSnapshot {
 export interface CancelOrderForm {
   credentialId: string | number;
   symbol: string;
-  orderId: number;
+  orderId: string;
   clientOrderId?: string;
   idempotencyKey: string;
 }
