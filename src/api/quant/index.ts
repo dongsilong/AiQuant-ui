@@ -29,7 +29,8 @@ import type {
   ReconcileQuery,
   NotificationQuery,
   StrategyPreflightResult,
-  StrategyUserBinding
+  StrategyUserBinding,
+  WebSocketTransportInfo
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -162,3 +163,14 @@ export const retryNotification = (id: number | string) =>
   request({ url: '/quant/notification/' + id + '/retry', method: 'post' });
 export const getNotification = (id: number | string): AxiosPromise<NotificationVO> =>
   request({ url: '/quant/notification/' + id, method: 'get' });
+
+/** 运维端：节点级 Binance WebSocket 传输查询与切换。 */
+export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>
+  request({ url: '/quant/infrastructure/websocket/transport', method: 'get' });
+
+export const switchWebSocketTransport = (mode: WebSocketTransportInfo['transport']): AxiosPromise<WebSocketTransportInfo> =>
+  request({
+    url: '/quant/infrastructure/websocket/transport',
+    method: 'post',
+    params: { mode, acknowledgeReconnectionRisk: true }
+  });
