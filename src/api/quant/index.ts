@@ -30,7 +30,8 @@ import type {
   NotificationQuery,
   StrategyPreflightResult,
   StrategyUserBinding,
-  WebSocketTransportInfo
+  WebSocketTransportInfo,
+  UnresolvedLiveDispatch
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -165,6 +166,11 @@ export const getNotification = (id: number | string): AxiosPromise<NotificationV
   request({ url: '/quant/notification/' + id, method: 'get' });
 
 /** 运维端：节点级 Binance WebSocket 传输查询与切换。 */
+
+export const listUnresolvedLiveDispatches = (): AxiosPromise<UnresolvedLiveDispatch[]> =>
+  request({ url: '/quant/infrastructure/dispatch/unresolved', method: 'get' });
+
+
 export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>
   request({ url: '/quant/infrastructure/websocket/transport', method: 'get' });
 
