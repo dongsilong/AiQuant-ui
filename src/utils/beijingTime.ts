@@ -7,6 +7,7 @@ const BEIJING_ZONE = 'Asia/Shanghai';
 export function parseBeijingDate(input: string | number | Date): Date {
   if (input instanceof Date) return new Date(input.getTime());
   if (typeof input === 'number') {
+    if (!Number.isFinite(input)) return new Date(NaN);
     return new Date(Math.abs(input) < 100000000000 ? input * 1000 : input);
   }
   const text = String(input).trim();
@@ -15,7 +16,27 @@ export function parseBeijingDate(input: string | number | Date): Date {
   const normalized = text.replace(' ', 'T');
   // yyyy-MM-dd[ HH:mm:ss[.SSS]] without zone represents Beijing wall clock.
   if (/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?$/.test(normalized)) {
-    return new Date(normalized + (normalized.includes('T') ? '+08:00' : 'T00:00:00+08:00'));
+    const complete = normalized.includes('T') ? normalized : normalized + 'T00:00:00';
+    // Date.parse requires seconds on some engines for offset-qualified inputs.
+    const withSeconds = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(complete)
+      ? complete + ':00' : complete;
+    const result = new Date(withSeconds + '+08:00');
+    // Invalid wall clocks must not silently normalize (e.g. February 30).
+    if (!Number.isNaN(result.getTime())) {
+      const check = new Intl.DateTimeFormat('en-CA', {
+        timeZone: BEIJING_ZONE, year: 'numeric', month: '2-digit',
+        day: '2-digit', hour: '2-digit', minute: '2-digit',
+        second: '2-digit', hourCycle: 'h23'
+      }).formatToParts(result);
+      const parts = Object.fromEntries(check.map(part => [part.type, part.value]));
+      const expected = withSeconds.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+      if (expected && (parts.year !== expected[1] || parts.month !== expected[2]
+        || parts.day !== expected[3] || parts.hour !== expected[4]
+        || parts.minute !== expected[5] || parts.second !== expected[6])) {
+        return new Date(NaN);
+      }
+    }
+    return result;
   }
   return new Date(normalized);
 }
