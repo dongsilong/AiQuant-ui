@@ -320,6 +320,7 @@ import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 import {
   accountTrade,
+  parseBinanceAccountEvent,
   liveTradePage,
   protectionPrices,
   updateProtectionOrders,
@@ -811,7 +812,7 @@ function connect() {
 function applyRawAccountEvent(rawJson: string | undefined) {
   if (!rawJson) return;
   try {
-    const raw = JSON.parse(rawJson);
+    const raw = parseBinanceAccountEvent(rawJson);
     if (raw.e === 'ACCOUNT_UPDATE' && raw.a) {
       accountRevision++;
       const usdt = (raw.a.B || []).find((item: any) => item.a === 'USDT');
