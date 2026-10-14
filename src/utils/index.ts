@@ -1,18 +1,12 @@
 import { parseTime } from '@/utils/ruoyi';
+import { formatBeijingDate, beijingParts, parseBeijingDate } from './beijingTime';
 
 /**
  * 表格时间格式化
  */
 export const formatDate = (cellValue: string) => {
-  if (cellValue == null || cellValue == '') return '';
-  const date = new Date(cellValue);
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1 < 10 ? '0' + (date.getMonth() + 1) : date.getMonth() + 1;
-  const day = date.getDate() < 10 ? '0' + date.getDate() : date.getDate();
-  const hours = date.getHours() < 10 ? '0' + date.getHours() : date.getHours();
-  const minutes = date.getMinutes() < 10 ? '0' + date.getMinutes() : date.getMinutes();
-  const seconds = date.getSeconds() < 10 ? '0' + date.getSeconds() : date.getSeconds();
-  return year + '-' + month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds;
+  if (cellValue == null || cellValue === '') return '';
+  return formatBeijingDate(cellValue);
 };
 
 /**
@@ -27,7 +21,7 @@ export const formatTime = (time: string, option: string) => {
   } else {
     t = +time;
   }
-  const d: any = new Date(t);
+  const d = parseBeijingDate(t);
   const now = Date.now();
 
   const diff = (now - d) / 1000;
@@ -45,7 +39,8 @@ export const formatTime = (time: string, option: string) => {
   if (option) {
     return parseTime(t, option);
   } else {
-    return d.getMonth() + 1 + '月' + d.getDate() + '日' + d.getHours() + '时' + d.getMinutes() + '分';
+    const p = beijingParts(d);
+    return p ? p.m + '月' + p.d + '日' + p.h + '时' + p.i + '分' : '';
   }
 };
 
