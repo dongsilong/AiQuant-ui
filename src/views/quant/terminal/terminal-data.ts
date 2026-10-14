@@ -21,9 +21,17 @@ export function exactIntegerId(value: unknown): string | undefined {
  * Quote these specific fields BEFORE JSON.parse to avoid IEEE-754 rounding.
  * This parser must only be used for trusted Binance user-data event envelopes.
  */
-export function parseBinanceAccountEvent(rawJson: string): Record<string, unknown> {
+type BinanceAccountEvent = {
+  e?: string;
+  E?: unknown;
+  T?: unknown;
+  a?: { B?: RawFields[]; P?: RawFields[] };
+  o?: RawFields;
+};
+
+export function parseBinanceAccountEvent(rawJson: string): BinanceAccountEvent {
   const idPreserved = rawJson.replace(/("(?:i|t|aid)"\s*:\s*)(\d+)(?=\s*[,}])/g, '$1"$2"');
-  return JSON.parse(idPreserved) as Record<string, unknown>;
+  return JSON.parse(idPreserved) as BinanceAccountEvent;
 }
 
 /** Preserve the exact exchange decimal quantity when submitting a close command. */
