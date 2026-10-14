@@ -14,34 +14,19 @@ export const formatDate = (cellValue: string) => {
  * @param {string} option
  * @returns {string}
  */
-export const formatTime = (time: string, option: string) => {
-  let t: number;
-  if (('' + time).length === 10) {
-    t = parseInt(time) * 1000;
-  } else {
-    t = +time;
-  }
-  const d = parseBeijingDate(t);
-  const now = Date.now();
+export const formatTime = (time: string | number | Date, option?: string) => {
+  if (time === undefined || time === null || time === '') return '';
+  const d = parseBeijingDate(time);
+  if (Number.isNaN(d.getTime())) return '';
+  const diff = (Date.now() - d.getTime()) / 1000;
 
-  const diff = (now - d) / 1000;
-
-  if (diff < 30) {
-    return '刚刚';
-  } else if (diff < 3600) {
-    // less 1 hour
-    return Math.ceil(diff / 60) + '分钟前';
-  } else if (diff < 3600 * 24) {
-    return Math.ceil(diff / 3600) + '小时前';
-  } else if (diff < 3600 * 24 * 2) {
-    return '1天前';
-  }
-  if (option) {
-    return parseTime(t, option);
-  } else {
-    const p = beijingParts(d);
-    return p ? p.m + '月' + p.d + '日' + p.h + '时' + p.i + '分' : '';
-  }
+  if (diff >= 0 && diff < 30) return '刚刚';
+  if (diff >= 30 && diff < 3600) return Math.ceil(diff / 60) + '分钟前';
+  if (diff >= 3600 && diff < 3600 * 24) return Math.ceil(diff / 3600) + '小时前';
+  if (diff >= 3600 * 24 && diff < 3600 * 24 * 2) return '1天前';
+  if (option) return parseTime(d, option) || '';
+  const p = beijingParts(d);
+  return p ? p.m + '月' + p.d + '日' + p.h + '时' + p.i + '分' : '';
 };
 
 /**
