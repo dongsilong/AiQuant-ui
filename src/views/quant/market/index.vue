@@ -62,6 +62,35 @@
         SDK 内部队列有积压阈值保护，但不是真正有界队列。LIVE 运行时切换前须检查持仓保护、订单恢复与多节点状态。
       </p>
     </el-card>
+    <el-card v-if="canViewDispatch" class="table-panel mb-3" shadow="never">
+      <template #header>
+        <div class="toolbar-shell">
+          <div class="table-heading">
+            <h3>LIVE 外发订单待核查</h3>
+            <p>显示当前未释放的持久化调度占用（最多 100 条）。任何 UNKNOWN 都必须先核实 Binance 订单事实；页面不提供强制解锁。</p>
+          </div>
+          <div class="toolbar-actions">
+            <el-button :loading="dispatchLoading" @click="loadDispatch">刷新待核查订单</el-button>
+          </div>
+        </div>
+      </template>
+      <el-alert v-if="unresolvedDispatches.length" type="warning" :closable="false" show-icon
+        :title="`当前有 ${unresolvedDispatches.length} 个交易对存在未解决的外发操作，相关交易可能被阻断`" />
+      <el-table v-loading="dispatchLoading" class="data-table mt-2" :data="unresolvedDispatches" border empty-text="无待核查调度占用">
+        <el-table-column prop="credentialId" label="账户 ID" min-width="175" />
+        <el-table-column prop="symbol" label="交易对" min-width="115" />
+        <el-table-column prop="operation" label="操作" min-width="130" />
+        <el-table-column prop="status" label="票据状态" min-width="130">
+          <template #default="scope">
+            <el-tag type="warning">{{ scope.row.status || '票据缺失' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="clientOrderId" label="客户端订单号" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="dispatchKey" label="调度幂等键" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
+        <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
+      </el-table>
+    </el-card>
     <el-card class="table-panel" shadow="hover">
       <template #header>
         <div class="toolbar-shell">
@@ -119,8 +148,8 @@
   </div>
 </template>
 <script lang="ts" setup>
-import type { PriceSnapshot, SymbolQuery, SymbolVO, WebSocketTransportInfo } from '@/api/quant/types';
-import { getRealtimePrice, listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport } from '@/api/quant';
+import type { PriceSnapshot, SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch } from '@/api/quant/types';
+import { getRealtimePrice, listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches } from '@/api/quant';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
@@ -129,6 +158,20 @@ const { quant_exchange_status } = toRefs<any>(useDict('quant_exchange_status'));
 
 const userStore = useUserStore();
 const canViewTransport = computed(() => userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:transport:view'));
+const canViewDispatch = computed(() => userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:dispatch:view'));
+const dispatchLoading = ref(false);
+const unresolvedDispatches = ref<UnresolvedLiveDispatch[]>([]);
+const loadDispatch = async () => {
+  if (!canViewDispatch.value) return;
+  dispatchLoading.value = true;
+  try {
+    const response = await listUnresolvedLiveDispatches();
+    unresolvedDispatches.value = response.data ?? [];
+  } finally {
+    dispatchLoading.value = false;
+  }
+};
+
 const transportLoading = ref(false);
 const transportSwitching = ref(false);
 const transportInfo = ref<WebSocketTransportInfo>();
@@ -237,6 +280,9 @@ onMounted(() => {
   load();
   if (canViewTransport.value) loadTransport().catch(() => {
     ElMessage.warning('当前节点的传输状态暂不可用');
+  });
+  if (canViewDispatch.value) loadDispatch().catch(() => {
+    ElMessage.warning('未能获取 LIVE 未决发送票据，请联系交易系统管理员');
   });
 });
 </script>
