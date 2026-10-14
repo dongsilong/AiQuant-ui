@@ -32,6 +32,16 @@ describe('Beijing time display independent from workstation zone', () => {
     expect(formatTime('2035-10-14 20:00:00', '{y}-{m}-{d} {h}:{i}:{s}')).toBe('2035-10-14 20:00:00');
   });
 
+  it('rejects invalid Beijing civil dates rather than rolling them into March', () => {
+    expect(formatBeijingDate('2026-02-30 12:00:00')).toBe('');
+    expect(formatBeijingDate('2026-10-14 25:00:00')).toBe('');
+  });
+
+  it('parses Beijing timestamps without seconds consistently', () => {
+    expect(formatBeijingDate('2026-10-14 20:00')).toBe('2026-10-14 20:00:00');
+    expect(formatBeijingDate('2026-10-14')).toBe('2026-10-14 00:00:00');
+  });
+
   it('returns empty display for invalid input', () => {
     expect(formatBeijingDate('not-a-date')).toBe('');
   });
