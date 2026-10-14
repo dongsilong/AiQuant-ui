@@ -28,8 +28,8 @@ describe('Beijing time display independent from workstation zone', () => {
   it('formats ISO and zone-less dates in shared grid and relative helpers', () => {
     expect(formatDate('2026-10-14T12:00:00Z')).toBe('2026-10-14 20:00:00');
     expect(formatDate('2026-10-14 20:00:00')).toBe('2026-10-14 20:00:00');
-    expect(formatTime('2026-10-14T12:00:00Z', '{y}-{m}-{d} {h}:{i}:{s}')).toBe('2026-10-14 20:00:00');
-    expect(formatTime('2026-10-14 20:00:00', '{y}-{m}-{d} {h}:{i}:{s}')).toBe('2026-10-14 20:00:00');
+    expect(formatTime('2035-10-14T12:00:00Z', '{y}-{m}-{d} {h}:{i}:{s}')).toBe('2035-10-14 20:00:00');
+    expect(formatTime('2035-10-14 20:00:00', '{y}-{m}-{d} {h}:{i}:{s}')).toBe('2035-10-14 20:00:00');
   });
 
   it('returns empty display for invalid input', () => {
