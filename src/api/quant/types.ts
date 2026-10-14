@@ -405,3 +405,19 @@ export interface UnresolvedLiveDispatch {
   leaseEpoch: string | null;
   blockedAt: string | null;
 }
+
+/** Only lifetime verified Binance fill facts, NOT a current strategy position. */
+export interface StrategyFillAuditSummary {
+  credentialId: string;
+  strategyId: string;
+  instanceId: string;
+  symbol: string;
+  allocationScope: 'LIFETIME_VERIFIED_FILLS_NOT_OPEN_POSITION';
+  fillCount: string;
+  boughtQty: string;
+  soldQty: string;
+  boughtNotional: string;
+  soldNotional: string;
+  totalFees: string;
+  realizedPnl: string;
+}
