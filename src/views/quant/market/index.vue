@@ -241,17 +241,7 @@ const load = async () => {
     const result = await listSymbol(queryParams);
     rows.value = result.data?.rows || [];
     total.value = result.data?.total || 0;
-    /*const entries = await Promise.allSettled(
-      rows.value.slice(0, 8).map(async item => [item.symbol, (await getRealtimePrice(item.symbol)).data] as const)
-    );
-    prices.value = Object.fromEntries(
-      entries
-        .filter(
-          (item): item is PromiseFulfilledResult<readonly [string, PriceSnapshot | undefined]> =>
-            item.status === 'fulfilled' && Boolean(item.value[1])
-        )
-        .map(item => item.value)
-    );*/
+
   } finally {
     loading.value = false;
   }
