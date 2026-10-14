@@ -57,6 +57,7 @@ export const protectionStatuses: Record<string, string> = {
   TRIGGERED: '已触发',
   PENDING: '处理中'
 };
+// 未识别的交易所状态不得默认为成功或已完成；保留原始代码供故障排查。
 export const displayLabel = (labels: Record<string, string>, value: unknown) => {
   if (value === undefined || value === null || value === '') return '-';
   return labels[String(value)] || `未知（${String(value)}）`;
