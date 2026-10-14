@@ -11,7 +11,7 @@ function numeric(value: unknown): number | undefined {
  * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
  */
 export function exactIntegerId(value: unknown): string | undefined {
-  if (typeof value === 'string') return /^\\d+$/.test(value) ? value : undefined;
+  if (typeof value === 'string') return /^\d+$/.test(value) ? value : undefined;
   if (typeof value === 'bigint') return value >= 0n ? value.toString() : undefined;
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? String(value) : undefined;
 }
@@ -22,7 +22,7 @@ export function exactIntegerId(value: unknown): string | undefined {
  * This parser must only be used for trusted Binance user-data event envelopes.
  */
 export function parseBinanceAccountEvent(rawJson: string): Record<string, unknown> {
-  const idPreserved = rawJson.replace(/("(?:i|t|aid)"\\s*:\\s*)(\\d+)(?=\\s*[,}])/g, '$1"$2"');
+  const idPreserved = rawJson.replace(/("(?:i|t|aid)"\s*:\s*)(\d+)(?=\s*[,}])/g, '$1"$2"');
   return JSON.parse(idPreserved) as Record<string, unknown>;
 }
 
@@ -125,7 +125,6 @@ export function accountTrade(
     price === undefined ||
     price <= 0 ||
     tradeId === undefined ||
-    tradeId === '' ||
     orderId === undefined ||
     time === undefined
   )
