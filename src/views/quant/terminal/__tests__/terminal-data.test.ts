@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { protectionPrices, updateProtectionOrders, liveTradePage, exactCloseQuantity, exactIntegerId, parseBinanceAccountEvent } from '../terminal-data';
 import {
-  positionMetrics,
+  accountTrade,
+  exactCloseQuantity,
+  exactIntegerId,
+  liveTradePage,
   mergeAccountPosition,
   mergePositionSnapshots,
-  accountTrade,
   mergeTrades,
-  updateOrders
+  parseBinanceAccountEvent,
+  positionMetrics,
+  protectionPrices,
+  updateOrders,
+  updateProtectionOrders
 } from '../terminal-data';
 const position = {
   symbol: 'PUMPUSDT',
