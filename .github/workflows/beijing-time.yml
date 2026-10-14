@@ -20,6 +20,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify Beijing time regardless of host timezone
-        run: TZ=America/New_York pnpm exec vitest run src/utils/beijingTime.test.ts
+        env:
+          TZ: ${{ matrix.browser-timezone }}
+        run: pnpm exec vitest run src/utils/beijingTime.test.ts
       - name: Production build
         run: pnpm run build
