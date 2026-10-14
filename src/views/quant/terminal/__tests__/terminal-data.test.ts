@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { protectionPrices, updateProtectionOrders, liveTradePage, exactCloseQuantity } from '../terminal-data';
+import { protectionPrices, updateProtectionOrders, liveTradePage, exactCloseQuantity, exactIntegerId, parseBinanceAccountEvent } from '../terminal-data';
 import {
   positionMetrics,
   mergeAccountPosition,
@@ -41,6 +41,29 @@ describe('exact close order quantity', () => {
     for (const text of ['0', '-0.0000', '', 'NaN', 'Infinity', '1e9']) {
       expect(exactCloseQuantity(text)).toBeUndefined();
     }
+  });
+});
+
+describe('Binance 64-bit ID precision', () => {
+  it('preserves unsafe order, trade and algo numeric JSON tokens before parsing', () => {
+    const raw = parseBinanceAccountEvent('{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","i":9007199254740993,"t":9007199254740995,"aid":9007199254740997,"X":"NEW"}}');
+    const order = raw.o as Record<string, unknown>;
+    expect(order.i).toBe('9007199254740993');
+    expect(order.t).toBe('9007199254740995');
+    expect(order.aid).toBe('9007199254740997');
+    expect(updateOrders([], { ...order, q: '1', z: '0', p: '1' })[0]?.orderId).toBe('9007199254740993');
+  });
+  it('fails closed on unsafe JavaScript numeric IDs that are already rounded', () => {
+    expect(exactIntegerId(Number('9007199254740993'))).toBeUndefined();
+    expect(exactIntegerId('9007199254740993')).toBe('9007199254740993');
+    expect(exactIntegerId(-1)).toBeUndefined();
+  });
+  it('deduplicates distinct high-ID fills without collision', () => {
+    const raw = parseBinanceAccountEvent('{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","S":"BUY","x":"TRADE","i":9007199254740993,"t":9007199254740995,"l":"1","L":"2","T":1000}}');
+    const first = accountTrade(raw.o as Record<string, unknown>, 'credential', () => '2026-10-14 00:00:00')!;
+    expect(first.exchangeTradeId).toBe('9007199254740995');
+    const next = { ...first, id: 'BTCUSDT:9007199254740997', exchangeTradeId: '9007199254740997' };
+    expect(mergeTrades([first], [next])).toHaveLength(2);
   });
 });
 
@@ -125,7 +148,7 @@ describe('terminal account data', () => {
 
 const protection = {
   symbol: 'PUMPUSDT',
-  algoId: 123,
+  algoId: '123',
   clientAlgoId: 'protect',
   status: 'NEW',
   side: 'SELL',
@@ -141,7 +164,7 @@ describe('terminal protection and pagination', () => {
   it('matches active protection by symbol, position side and closing side', () => {
     const prices = protectionPrices(position, [
       protection,
-      { ...protection, algoId: 124, type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
+      { ...protection, algoId: '124', type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
       { ...protection, symbol: 'BTCUSDT', triggerPrice: '999' },
       { ...protection, side: 'BUY', triggerPrice: '99' }
     ]);
@@ -161,7 +184,7 @@ describe('terminal protection and pagination', () => {
     expect(
       protectionPrices(position, [
         protection,
-        { ...protection, algoId: 124, triggerPrice: '1.9' },
+        { ...protection, algoId: '124', triggerPrice: '1.9' },
         { ...protection, status: 'FINISHED', triggerPrice: '9' }
       ]).stopLoss
     ).toEqual(['1.8', '1.9']);
@@ -187,7 +210,7 @@ describe('terminal protection and pagination', () => {
   });
   it('limits live fills to the first page and leaves older pages unchanged', () => {
     const trade = accountTrade(fill, 'account', () => '2026-10-09 12:00:00')!;
-    const older = { ...trade, exchangeTradeId: 1, tradeTime: '2026-10-08 12:00:00' };
+    const older = { ...trade, exchangeTradeId: '1', tradeTime: '2026-10-08 12:00:00' };
     expect(liveTradePage([older], trade, 1, 1)).toEqual([trade]);
     expect(liveTradePage([older], trade, 2, 1)).toEqual([older]);
   });
