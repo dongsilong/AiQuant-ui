@@ -973,10 +973,11 @@ function connectSlopeStream() {
       try {
         const payload = JSON.parse(data);
         if (payload.type === 'CONNECTED') {
-          slopeRows.value.forEach(row => (row.status = 'CONNECTED'));
+          // CONNECTED is only the SSE transport handshake. A row is live only
+          // after receiving an actual slope snapshot for its symbol.
           return;
         }
-        const row = slopeRows.value.find(item => item.symbol === payload.symbol);
+        const row = slopeRows.value.find(item => item.symbol === payload.symbol && item.interval === payload.interval);
         if (!row) return;
         row.status = 'CONNECTED';
         row.currentPrice = Number(payload.currentPrice);
@@ -1023,7 +1024,9 @@ function slopeRowClassName({ row }: { row: SlopeRow }): string {
 async function openSlopePanel() {
   if (slopeLoading.value) return;
   slopePanelVisible.value = true;
-  slopeStrategyId.value = strategyId.value || strategies.value[0]?.id;
+  // Preserve the drawer's explicit strategy selection; @change invokes this function.
+  // Resetting to the terminal strategy here silently subscribes the wrong SSE key.
+  slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
   if (!slopeStrategyId.value) return;
