@@ -553,19 +553,9 @@ let updateChartBar: ((data: KLineData) => void) | undefined;
 let overlayIds: string[] = [];
 const lastAccountEvents = new Map<string, number>();
 const lastOrderEvents = new Map<string, number>();
-const statusType = computed(() =>
-  streamStatus.value === 'CONNECTED' ? 'success' : streamStatus.value === 'ERROR' ? 'danger' : 'warning'
-);
-const streamStatusLabel = computed(
-  () =>
-    ({ CONNECTING: '连接中', CONNECTED: '已连接', ERROR: '连接异常', DISCONNECTED: '已断开' })[streamStatus.value] ||
-    streamStatus.value
-);
 const indicatorNames = computed<Record<string, string>>(() =>
   Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label]))
 );
-const priceChangeClass = computed(() => (price.value?.lastTradePrice ? 'price-positive' : 'price-muted'));
-const priceChangeText = computed(() => (price.value?.lastTradePrice ? '实时' : '暂无行情'));
 const candleCountdown = computed(() => {
   const match = /^(\d+)([smhdwM])$/.exec(interval.value);
   if (!match) return '--:--';
