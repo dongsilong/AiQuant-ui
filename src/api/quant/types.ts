@@ -391,3 +391,17 @@ export interface WebSocketTransportInfo {
   scope: 'THIS_NODE';
   streamsReconnected?: number;
 }
+
+/** All identifiers are serialized as strings to preserve Binance/Snowflake precision. */
+export interface UnresolvedLiveDispatch {
+  credentialId: string;
+  symbol: string;
+  dispatchKey: string;
+  operation: string | null;
+  clientOrderId: string | null;
+  status: string | null;
+  exchangeOrderId: string | null;
+  strategyInstanceId: string | null;
+  leaseEpoch: string | null;
+  blockedAt: string | null;
+}
