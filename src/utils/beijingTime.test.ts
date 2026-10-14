@@ -42,6 +42,12 @@ describe('Beijing time display independent from workstation zone', () => {
     expect(formatBeijingDate('2026-10-14')).toBe('2026-10-14 00:00:00');
   });
 
+  it('never interprets browser-local ambiguous timestamps', () => {
+    expect(formatBeijingDate('10/14/2026 20:00:00')).toBe('');
+    expect(formatBeijingDate('2026/10/14 20:00:00')).toBe('');
+    expect(formatBeijingDate('2026-10-14T12:00:00Z')).toBe('2026-10-14 20:00:00');
+  });
+
   it('returns empty display for invalid input', () => {
     expect(formatBeijingDate('not-a-date')).toBe('');
   });
