@@ -1,0 +1,25 @@
+name: Beijing Time - Frontend
+on:
+  push:
+    branches:
+      - hardening/beijing-time-20261014
+  workflow_dispatch:
+
+jobs:
+  time-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify Beijing time regardless of host timezone
+        run: TZ=America/New_York pnpm exec vitest run src/utils/beijingTime.test.ts
+      - name: Production build
+        run: pnpm run build
