@@ -41,6 +41,9 @@ importers:
       axios:
         specifier: 1.20.0
         version: 1.20.0
+      crypto-js:
+        specifier: 4.2.0
+        version: 4.2.0
       echarts:
         specifier: 6.1.0
         version: 6.1.0
@@ -56,6 +59,9 @@ importers:
       jsencrypt:
         specifier: 3.5.4
         version: 3.5.4
+      klinecharts:
+        specifier: ^10.0.3
+        version: 10.0.4
       nprogress:
         specifier: 0.2.0
         version: 0.2.0
@@ -87,6 +93,9 @@ importers:
         specifier: 4.21.9
         version: 4.21.9
     devDependencies:
+      '@types/crypto-js':
+        specifier: 4.2.2
+        version: 4.2.2
       '@types/node':
         specifier: ^26.1.1
         version: 26.1.1
@@ -918,6 +927,9 @@ packages:
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
+  '@types/crypto-js@4.2.2':
+    resolution: {integrity: sha512-sDOLlVbHhXpAUAL0YHDUUwDZf3iN4Bwi4W6a0W0b+QcAezUbRtH4FVb+9J4h+XFPW7l/gQ9F8qC7P+Ec4k8QVQ==}
+
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
@@ -1404,6 +1416,10 @@ packages:
       srvx:
         optional: true
 
+  crypto-js@4.2.0:
+    resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
+    deprecated: Active development of CryptoJS has been discontinued. This library is no longer maintained.
+
   css-select@6.0.0:
     resolution: {integrity: sha512-rZZVSLle8v0+EY8QAkDWrKhpgt6SA5OtHsgBnsj6ZaLb5dmDVOWUDtQitd9ydxxvEjhewNudS6eTVU7uOyzvXw==}
 
@@ -1720,6 +1736,9 @@ packages:
 
   jsencrypt@3.5.4:
     resolution: {integrity: sha512-kNjfYEMNASxrDGsmcSQh/rUTmcoRfSUkxnAz+MMywM8jtGu+fFEZ3nJjHM58zscVnwR0fYmG9sGkTDjqUdpiwA==}
+
+  klinecharts@10.0.4:
+    resolution: {integrity: sha512-hjrZVGSlYbWt/UazJv/n5BDWMazGBoAQP3YDL/yb29+yPz7oMnX/nobRKUZ4jA5PAB55WEnL5N2Izux+ASxYew==}
 
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
@@ -3071,6 +3090,8 @@ snapshots:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
 
+  '@types/crypto-js@4.2.2': {}
+
   '@types/deep-eql@4.0.2': {}
 
   '@types/estree@1.0.9': {}
@@ -3719,6 +3740,8 @@ snapshots:
     optionalDependencies:
       srvx: 1.0.4
 
+  crypto-js@4.2.0: {}
+
   css-select@6.0.0:
     dependencies:
       boolbase: 1.0.0
@@ -4048,6 +4071,8 @@ snapshots:
   js-tokens@10.0.0: {}
 
   jsencrypt@3.5.4: {}
+
+  klinecharts@10.0.4: {}
 
   lightningcss-android-arm64@1.33.0:
     optional: true
