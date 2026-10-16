@@ -104,7 +104,13 @@
               <div v-for="item in instances" :key="item.id" class="strategy">
                 <div>
                   <b>{{ item.strategyName || '策略实例' }}</b>
-                  <p>{{ item.accountName || '-' }} · {{ item.symbol || symbol }}</p>
+                  <p>
+                    {{ item.accountName || '-' }} ·
+                    <el-link v-if="item.symbol" type="primary" :underline="false" @click.stop="selectRowSymbol(item)">
+                      {{ item.symbol }}
+                    </el-link>
+                    <span v-else>{{ symbol }}</span>
+                  </p>
                   <small>{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}</small>
                 </div>
                 <el-button
@@ -235,7 +241,15 @@
     <el-button class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
       斜率
     </el-button>
-    <el-drawer v-model="slopePanelVisible" title="实时斜率" direction="rtl" size="620px" @closed="closeSlopePanel">
+    <el-drawer
+      v-model="slopePanelVisible"
+      title="实时斜率"
+      direction="rtl"
+      size="620px"
+      :modal="false"
+      :lock-scroll="false"
+      @closed="closeSlopePanel"
+    >
       <el-select
         v-model="slopeStrategyId"
         class="slope-strategy-select"
@@ -244,6 +258,10 @@
       >
         <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
       </el-select>
+      <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
+        <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
+        <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
+      </div>
       <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
       <el-table
         v-else-if="slopeRows.length"
@@ -253,7 +271,13 @@
         stripe
         class="slope-table"
       >
-        <el-table-column prop="symbol" label="交易对" width="120" />
+        <el-table-column label="交易对" width="120">
+          <template #default="scope">
+            <el-link type="primary" :underline="false" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
+              {{ scope.row.symbol }}
+            </el-link>
+          </template>
+        </el-table-column>
         <el-table-column prop="interval" label="周期" width="72" />
         <el-table-column label="参考开盘价" min-width="110">
           <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
@@ -273,7 +297,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else description="当前策略暂无交易对" />
+      <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
     </el-drawer>
   </div>
 </template>
@@ -320,6 +344,7 @@ import { useDict } from '@/utils/dict';
 import { parseTime } from '@/utils/ruoyi';
 import {
   accountTrade,
+  parseBinanceAccountEvent,
   liveTradePage,
   protectionPrices,
   updateProtectionOrders,
@@ -327,7 +352,10 @@ import {
   mergePositionSnapshots,
   mergeTrades,
   positionMetrics,
-  updateOrders
+  updateOrders,
+  exactCloseQuantity,
+  calculateRealtimeSlope,
+  slopeStreamQuery
 } from './terminal-data';
 const { quant_kline_period, quant_indicator } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator'));
 const symbol = ref('BTCUSDT'),
@@ -359,11 +387,16 @@ type SlopeRow = {
   interval: string;
   status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
   currentPrice?: number;
+  latestTradePrice?: number;
   referencePrice?: number;
   slopePercent?: number;
   degrees?: number;
   entryAngleDegrees?: number;
+};
+type SlopeStreamState = {
   klines: KlineSnapshot[];
+  latestTradePrice?: number;
+  handshakeComplete: boolean;
 };
 const statusMap: Record<string, string> = {
   CONNECTING: '连接中',
@@ -376,8 +409,13 @@ const slopePanelVisible = ref(false);
 const slopeLoading = ref(false);
 const slopeStrategyId = ref<string | number>();
 const slopeRows = ref<SlopeRow[]>([]);
+const slopeLoadError = ref('');
+const slopeSymbolErrors = ref<string[]>([]);
 type SseConnection = { close: () => void };
 let slopeStream: SseConnection | undefined;
+const slopeStreamStates = new Map<string, SlopeStreamState>();
+const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
+let slopeRenderFrame: number | undefined;
 let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
 const protectionOrders = ref<ProtectionOrderSnapshot[]>([]);
 const protectionError = ref('');
@@ -551,19 +589,9 @@ let updateChartBar: ((data: KLineData) => void) | undefined;
 let overlayIds: string[] = [];
 const lastAccountEvents = new Map<string, number>();
 const lastOrderEvents = new Map<string, number>();
-const statusType = computed(() =>
-  streamStatus.value === 'CONNECTED' ? 'success' : streamStatus.value === 'ERROR' ? 'danger' : 'warning'
-);
-const streamStatusLabel = computed(
-  () =>
-    ({ CONNECTING: '连接中', CONNECTED: '已连接', ERROR: '连接异常', DISCONNECTED: '已断开' })[streamStatus.value] ||
-    streamStatus.value
-);
 const indicatorNames = computed<Record<string, string>>(() =>
   Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label]))
 );
-const priceChangeClass = computed(() => (price.value?.lastTradePrice ? 'price-positive' : 'price-muted'));
-const priceChangeText = computed(() => (price.value?.lastTradePrice ? '实时' : '暂无行情'));
 const candleCountdown = computed(() => {
   const match = /^(\d+)([smhdwM])$/.exec(interval.value);
   if (!match) return '--:--';
@@ -810,7 +838,7 @@ function connect() {
 function applyRawAccountEvent(rawJson: string | undefined) {
   if (!rawJson) return;
   try {
-    const raw = JSON.parse(rawJson);
+    const raw = parseBinanceAccountEvent(rawJson);
     if (raw.e === 'ACCOUNT_UPDATE' && raw.a) {
       accountRevision++;
       const usdt = (raw.a.B || []).find((item: any) => item.a === 'USDT');
@@ -953,48 +981,115 @@ function connectAccountStream() {
 function closeSlopeStream() {
   slopeStream?.close();
   slopeStream = undefined;
+  slopeStreamStates.clear();
+  pendingSlopeRows.clear();
+  if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
+  slopeRenderFrame = undefined;
   if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
   slopeStreamRetry = undefined;
 }
 
+function flushSlopeRows() {
+  slopeRenderFrame = undefined;
+  pendingSlopeRows.forEach((state, row) => {
+    const latestKline = state.klines[state.klines.length - 1];
+    const referenceKline = state.klines[state.klines.length - 2];
+    row.latestTradePrice = state.latestTradePrice;
+    row.currentPrice = state.latestTradePrice ?? (latestKline ? Number(latestKline.close) : undefined);
+    row.referencePrice = referenceKline ? Number(referenceKline.open) : undefined;
+    const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
+    row.slopePercent = slope?.slopePercent;
+    row.degrees = slope?.degrees;
+    if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
+  });
+  pendingSlopeRows.clear();
+}
+
+function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
+  pendingSlopeRows.set(row, state);
+  if (slopeRenderFrame === undefined) slopeRenderFrame = requestAnimationFrame(flushSlopeRows);
+}
+
+function clearSlopeRowValues(row: SlopeRow, state: SlopeStreamState, status: SlopeRow['status']) {
+  pendingSlopeRows.delete(row);
+  state.latestTradePrice = undefined;
+  row.status = status;
+  row.latestTradePrice = undefined;
+  row.currentPrice = undefined;
+  row.referencePrice = undefined;
+  row.slopePercent = undefined;
+  row.degrees = undefined;
+}
+
 function connectSlopeStream() {
   closeSlopeStream();
-  if (!slopeStrategyId.value || !credentialId.value) return;
-  const query = new URLSearchParams({
-    strategyId: String(slopeStrategyId.value),
-    credentialId: String(credentialId.value)
-  });
-  const source = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/strategy/slope/stream?${query}`,
-    'quant.strategy.slope',
+  if (!slopeStrategyId.value || !slopeRows.value.length) return;
+  for (const row of slopeRows.value) {
+    row.status = 'CONNECTING';
+    const state: SlopeStreamState = { klines: [], handshakeComplete: false };
+    slopeStreamStates.set(`${row.symbol}:${row.interval}`, state);
+    row.latestTradePrice = undefined;
+    row.currentPrice = undefined;
+    row.referencePrice = undefined;
+    row.slopePercent = undefined;
+    row.degrees = undefined;
+  }
+  const query = slopeStreamQuery(slopeRows.value);
+  slopeStream = openSse(
+    `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+    'quant.market',
     data => {
       try {
-        const payload = JSON.parse(data);
-        if (payload.type === 'CONNECTED') {
-          slopeRows.value.forEach(row => (row.status = 'CONNECTED'));
+        const event = JSON.parse(data);
+        if (event.type === 'CONNECTING' && !event.symbol) return;
+        const key = `${event.symbol}:${event.interval}`;
+        const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
+        const state = slopeStreamStates.get(key);
+        if (!row || !state) return;
+        if (event.type === 'CONNECTING') return;
+        if (event.type === 'CONNECTED') {
+          state.handshakeComplete = true;
+          scheduleSlopeRowUpdate(row, state);
           return;
         }
-        const row = slopeRows.value.find(item => item.symbol === payload.symbol);
-        if (!row) return;
-        row.status = 'CONNECTED';
-        row.currentPrice = Number(payload.currentPrice);
-        row.referencePrice = Number(payload.referenceOpenPrice);
-        row.slopePercent = Number(payload.slopePercent);
-        row.degrees = Number(payload.degrees);
+        if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
+          clearSlopeRowValues(row, state, event.type);
+          return;
+        }
+        if (event.type === 'TRADE' && Number(event.price) > 0) {
+          state.latestTradePrice = Number(event.price);
+        } else if (event.type === 'KLINE' && event.kline) {
+          const kline = event.kline as KlineSnapshot;
+          const index = state.klines.findIndex(item => item.openTime === kline.openTime);
+          if (index < 0) state.klines.push(kline);
+          else state.klines[index] = kline;
+          state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
+          state.klines = state.klines.slice(-4);
+        }
+        scheduleSlopeRowUpdate(row, state);
       } catch {
-        slopeRows.value.forEach(row => (row.status = 'ERROR'));
+        slopeRows.value.forEach(row => {
+          const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
+          if (state) clearSlopeRowValues(row, state, 'ERROR');
+        });
       }
     },
     () => {
-      slopeRows.value.forEach(row => (row.status = 'DISCONNECTED'));
-      source.close();
-      if (slopePanelVisible.value) {
-        slopeStreamRetry = setTimeout(connectSlopeStream, 3000);
+      slopeRows.value.forEach(row => {
+        const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
+        if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
+      });
+      slopeStream?.close();
+      slopeStream = undefined;
+      if (slopePanelVisible.value && !slopeStreamRetry) {
+        slopeStreamRetry = setTimeout(() => {
+          slopeStreamRetry = undefined;
+          connectSlopeStream();
+        }, 3000);
       }
     },
     handleSseUnauthorized
   );
-  slopeStream = source;
 }
 
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
@@ -1021,9 +1116,13 @@ function slopeRowClassName({ row }: { row: SlopeRow }): string {
 async function openSlopePanel() {
   if (slopeLoading.value) return;
   slopePanelVisible.value = true;
-  slopeStrategyId.value = strategyId.value || strategies.value[0]?.id;
+  // Preserve the drawer's explicit strategy selection; @change invokes this function.
+  // Resetting to the terminal strategy here silently subscribes the wrong SSE key.
+  slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
+  slopeLoadError.value = '';
+  slopeSymbolErrors.value = [];
   if (!slopeStrategyId.value) return;
   slopeLoading.value = true;
   try {
@@ -1031,21 +1130,27 @@ async function openSlopePanel() {
     const activeBindings = bindings.filter((item: StrategySymbolBinding) => item.status !== '1');
     const resolved = await Promise.all(
       activeBindings.map(async binding => {
-        const item = await getSymbol(binding.symbolId);
-        return { binding, symbol: item.data?.symbol };
+        try {
+          const item = await getSymbol(binding.symbolId);
+          return { binding, symbol: item.data?.symbol };
+        } catch {
+          return { binding, symbol: undefined };
+        }
       })
     );
+    slopeSymbolErrors.value = resolved.filter(item => !item.symbol).map(item => String(item.binding.symbolId));
     const rows = resolved
       .filter(item => item.symbol)
       .map(item => ({
         symbol: item.symbol!,
         interval: item.binding.intervalCode || interval.value,
         entryAngleDegrees: slopeEntryAngle(item.binding),
-        status: 'CONNECTING' as const,
-        klines: [] as KlineSnapshot[]
+        status: 'CONNECTING' as const
       }));
     slopeRows.value = rows;
     connectSlopeStream();
+  } catch {
+    slopeLoadError.value = '策略交易对列表加载失败';
   } finally {
     slopeLoading.value = false;
   }
@@ -1219,10 +1324,12 @@ function cancel(row: unknown) {
 function close(row: unknown) {
   const position = row as PositionSnapshot;
   if (!credentialId.value) return;
-  const quantity = Math.abs(Number(position.quantity));
-  if (!Number.isFinite(quantity) || quantity <= 0) return;
+  const quantity = exactCloseQuantity(position.quantity);
+  if (!quantity) return;
   const closeSide =
-    position.side === 'SHORT' || (position.side === 'BOTH' && Number(position.quantity) < 0) ? 'BUY' : 'SELL';
+    position.side === 'SHORT' || (position.side === 'BOTH' && position.quantity.trim().startsWith('-'))
+      ? 'BUY'
+      : 'SELL';
   const data: ClosePositionForm = {
     credentialId: credentialId.value,
     symbol: position.symbol,
@@ -1410,6 +1517,14 @@ onBeforeUnmount(() => {
 .slope-strategy-select {
   width: 100%;
   margin-bottom: 12px;
+}
+.slope-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--el-color-warning);
+  font-size: 12px;
 }
 .slope-table {
   width: 100%;

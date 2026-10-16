@@ -70,11 +70,6 @@
             <el-button link type="primary" @click="showDetail(scope.row)">查看</el-button>
           </template>
         </el-table-column>
-        <el-table-column v-if="retry" fixed="right" label="操作" width="100">
-          <template #default="scope">
-            <el-button v-hasPermi="[retryPerm]" link type="primary" @click="handleRetry(scope.row)">重试</el-button>
-          </template>
-        </el-table-column>
       </el-table>
       <pagination
         v-show="total > 0"
@@ -109,8 +104,6 @@ const props = defineProps<{
   columns: LedgerColumn[];
   loadPage: (query: PageQuery & Record<string, string | number | undefined>) => Promise<{ data?: PageResult<unknown> }>;
   filters?: LedgerFilter[];
-  retry?: (row: LedgerRow) => Promise<void>;
-  retryPerm?: string;
   detail?: boolean;
 }>();
 const loading = ref(false);
@@ -121,7 +114,6 @@ const dateRanges = reactive<Record<string, [string, string] | null>>({});
 const detailVisible = ref(false);
 const detailText = ref('');
 const filters = computed(() => props.filters || []);
-const retryPerm = computed(() => props.retryPerm || 'quant:notification:retry');
 const load = async () => {
   loading.value = true;
   filters.value
@@ -154,12 +146,6 @@ const formatCell = (row: LedgerRow, column: LedgerColumn) =>
 const showDetail = (row: LedgerRow) => {
   detailText.value = JSON.stringify(row, null, 2);
   detailVisible.value = true;
-};
-const handleRetry = async (row: LedgerRow) => {
-  if (props.retry) {
-    await props.retry(row);
-    await load();
-  }
 };
 onMounted(load);
 defineExpose({ load });

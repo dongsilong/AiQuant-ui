@@ -1,11 +1,75 @@
 import type { OrderSnapshot, PositionSnapshot, ProtectionOrderSnapshot, TradeRecord } from '@/api/quant/types';
 
 type RawFields = Record<string, unknown>;
+
+export function slopeStreamQuery(rows: ReadonlyArray<{ symbol: string; interval: string }>): URLSearchParams {
+  const query = new URLSearchParams();
+  rows.forEach(row => {
+    query.append('symbol', row.symbol);
+    query.append('interval', row.interval);
+  });
+  return query;
+}
+
 function numeric(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
 }
+
+export function calculateRealtimeSlope(
+  currentPrice: unknown,
+  referenceOpenPrice: unknown,
+  entryAngleDegrees = 60
+): { slopePercent: number; degrees: number; entryApproved: boolean } | undefined {
+  const current = numeric(currentPrice);
+  const reference = numeric(referenceOpenPrice);
+  if (current === undefined || current <= 0 || reference === undefined || reference <= 0) return undefined;
+  const slopePercent = Number((((current - reference) * 100) / reference).toFixed(5));
+  const rawDegrees = (Math.atan(slopePercent) * 180) / Math.PI;
+  return {
+    slopePercent,
+    degrees: Number(rawDegrees.toFixed(2)),
+    entryApproved: Math.abs(rawDegrees) >= entryAngleDegrees
+  };
+}
+
+/**
+ * Exchange IDs are integers, NOT floating-point amounts.
+ * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
+ */
+export function exactIntegerId(value: unknown): string | undefined {
+  if (typeof value === 'string') return /^\d+$/.test(value) ? value : undefined;
+  if (typeof value === 'bigint') return value >= 0n ? value.toString() : undefined;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? String(value) : undefined;
+}
+
+/**
+ * Binance private stream sends order/trade/algo IDs as numeric JSON tokens.
+ * Quote these specific fields BEFORE JSON.parse to avoid IEEE-754 rounding.
+ * This parser must only be used for trusted Binance user-data event envelopes.
+ */
+type BinanceAccountEvent = {
+  e?: string;
+  E?: unknown;
+  T?: unknown;
+  a?: { B?: RawFields[]; P?: RawFields[] };
+  o?: RawFields;
+};
+
+export function parseBinanceAccountEvent(rawJson: string): BinanceAccountEvent {
+  const idPreserved = rawJson.replace(/("(?:i|t|aid)"\s*:\s*)(\d+)(?=\s*[,}])/g, '$1"$2"');
+  return JSON.parse(idPreserved) as BinanceAccountEvent;
+}
+
+/** Preserve the exact exchange decimal quantity when submitting a close command. */
+export function exactCloseQuantity(value: string): string | undefined {
+  const signed = value.trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(signed)) return undefined;
+  const positive = signed.startsWith('-') ? signed.slice(1) : signed;
+  return /[1-9]/.test(positive) ? positive : undefined;
+}
+
 export function positionMetrics(item: PositionSnapshot, liveMark?: number | string) {
   const freshMark = numeric(liveMark);
   const mark = freshMark && freshMark > 0 ? freshMark : numeric(item.markPrice);
@@ -55,7 +119,7 @@ export function mergeAccountPosition(previous: PositionSnapshot | undefined, raw
 }
 
 export function updateOrders(rows: OrderSnapshot[], raw: RawFields): OrderSnapshot[] {
-  const id = numeric(raw.i);
+  const id = exactIntegerId(raw.i);
   if (!raw.s || id === undefined || !raw.X) return rows;
   const remaining = rows.filter(row => row.symbol !== raw.s || row.orderId !== id);
   if (['FILLED', 'CANCELED', 'EXPIRED', 'EXPIRED_IN_MATCH', 'REJECTED'].includes(String(raw.X))) return remaining;
@@ -85,8 +149,8 @@ export function accountTrade(
 ): TradeRecord | undefined {
   const quantity = numeric(raw.l),
     price = numeric(raw.L),
-    tradeId = numeric(raw.t),
-    orderId = numeric(raw.i),
+    tradeId = exactIntegerId(raw.t),
+    orderId = exactIntegerId(raw.i),
     time = numeric(raw.T);
   if (
     raw.x !== 'TRADE' ||
@@ -97,7 +161,6 @@ export function accountTrade(
     price === undefined ||
     price <= 0 ||
     tradeId === undefined ||
-    tradeId < 0 ||
     orderId === undefined ||
     time === undefined
   )
@@ -123,7 +186,13 @@ export function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): Tr
   const rows = new Map<string, TradeRecord>();
   for (const row of [...current, ...incoming]) rows.set(`${row.symbol}:${row.exchangeTradeId}`, row);
   return [...rows.values()]
-    .toSorted((a, b) => b.tradeTime.localeCompare(a.tradeTime) || b.exchangeTradeId - a.exchangeTradeId)
+    .toSorted((a, b) => {
+      const byTime = b.tradeTime.localeCompare(a.tradeTime);
+      if (byTime !== 0) return byTime;
+      const older = BigInt(a.exchangeTradeId),
+        newer = BigInt(b.exchangeTradeId);
+      return newer > older ? 1 : newer < older ? -1 : 0;
+    })
     .slice(0, 100);
 }
 
@@ -175,7 +244,7 @@ export function updateProtectionOrders(
   raw: RawFields,
   time: number
 ): ProtectionOrderSnapshot[] {
-  const id = numeric(raw.aid);
+  const id = exactIntegerId(raw.aid);
   if (!raw.s || id === undefined || !raw.X) return rows;
   const remaining = rows.filter(row => row.symbol !== raw.s || row.algoId !== id);
   if (['CANCELED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'FINISHED', 'TRIGGERED'].includes(String(raw.X)))
