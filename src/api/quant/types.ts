@@ -304,25 +304,6 @@ export interface DashboardOverview {
   unknownExecutionCount: number;
   pendingNotificationCount: number;
 }
-export interface ProtectionVO {
-  id: number | string;
-  credentialId?: number | string;
-  positionId?: number | string;
-  symbol?: string;
-  positionSide?: string;
-  exchangeOrderId?: string;
-  clientOrderId?: string;
-  protectionType?: string;
-  orderType?: string;
-  quantity?: string | number;
-  stopPrice?: string | number;
-  status?: string;
-}
-export interface ProtectionQuery extends PageQuery {
-  credentialId?: number | string;
-  symbol?: string;
-  status?: string;
-}
 export interface ExecutionRecordVO {
   id: number | string;
   credentialId?: number | string;
@@ -343,48 +324,6 @@ export interface ExecutionQuery extends PageQuery {
   executionStatus?: string;
   exchangeOrderStatus?: string;
 }
-export interface FinancialEventVO {
-  id: number | string;
-  credentialId?: number | string;
-  symbol?: string;
-  eventType?: string;
-  amount?: string | number;
-  asset?: string;
-  eventTime?: string;
-}
-export interface FinancialEventQuery extends PageQuery {
-  credentialId?: number | string;
-  eventType?: string;
-  symbol?: string;
-}
-export interface ReconcileRecordVO {
-  id: number | string;
-  credentialId?: number | string;
-  accountName?: string;
-  reconcileType?: string;
-  result?: string;
-  detailJson?: string;
-  reconciledAt?: string;
-}
-export interface ReconcileQuery extends PageQuery {
-  credentialId?: number | string;
-}
-export interface NotificationVO {
-  id: number | string;
-  credentialId?: number | string;
-  channel?: string;
-  subject?: string;
-  content?: string;
-  status?: string;
-  retryCount?: number;
-  lastError?: string;
-  createdAt?: string;
-}
-export interface NotificationQuery extends PageQuery {
-  credentialId?: number | string;
-  status?: string;
-}
-
 /** 当前应用节点的 Binance WebSocket 传输模式（需要基础设施权限）。 */
 export interface WebSocketTransportInfo {
   transport: 'RAW_OKHTTP' | 'BINANCE_SDK';

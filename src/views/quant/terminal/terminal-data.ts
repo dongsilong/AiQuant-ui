@@ -1,11 +1,39 @@
 import type { OrderSnapshot, PositionSnapshot, ProtectionOrderSnapshot, TradeRecord } from '@/api/quant/types';
 
 type RawFields = Record<string, unknown>;
+
+export function slopeStreamQuery(rows: ReadonlyArray<{ symbol: string; interval: string }>): URLSearchParams {
+  const query = new URLSearchParams();
+  rows.forEach(row => {
+    query.append('symbol', row.symbol);
+    query.append('interval', row.interval);
+  });
+  return query;
+}
+
 function numeric(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
 }
+
+export function calculateRealtimeSlope(
+  currentPrice: unknown,
+  referenceOpenPrice: unknown,
+  entryAngleDegrees = 60
+): { slopePercent: number; degrees: number; entryApproved: boolean } | undefined {
+  const current = numeric(currentPrice);
+  const reference = numeric(referenceOpenPrice);
+  if (current === undefined || current <= 0 || reference === undefined || reference <= 0) return undefined;
+  const slopePercent = Number((((current - reference) * 100) / reference).toFixed(5));
+  const rawDegrees = (Math.atan(slopePercent) * 180) / Math.PI;
+  return {
+    slopePercent,
+    degrees: Number(rawDegrees.toFixed(2)),
+    entryApproved: Math.abs(rawDegrees) >= entryAngleDegrees
+  };
+}
+
 /**
  * Exchange IDs are integers, NOT floating-point amounts.
  * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
@@ -161,7 +189,8 @@ export function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): Tr
     .toSorted((a, b) => {
       const byTime = b.tradeTime.localeCompare(a.tradeTime);
       if (byTime !== 0) return byTime;
-      const older = BigInt(a.exchangeTradeId), newer = BigInt(b.exchangeTradeId);
+      const older = BigInt(a.exchangeTradeId),
+        newer = BigInt(b.exchangeTradeId);
       return newer > older ? 1 : newer < older ? -1 : 0;
     })
     .slice(0, 100);

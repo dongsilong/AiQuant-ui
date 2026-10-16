@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
+  calculateRealtimeSlope,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -10,6 +11,7 @@ import {
   parseBinanceAccountEvent,
   positionMetrics,
   protectionPrices,
+  slopeStreamQuery,
   updateOrders,
   updateProtectionOrders
 } from '../terminal-data';
@@ -37,6 +39,27 @@ const fill = {
   n: '0.01',
   T: 1000
 };
+describe('realtime slope display calculation', () => {
+  it('calculates the same percent, angle and threshold decision without account state', () => {
+    expect(calculateRealtimeSlope('110', '100', 60)).toEqual({ slopePercent: 10, degrees: 84.29, entryApproved: true });
+  });
+  it('does not emit a slope until both market prices are valid', () => {
+    expect(calculateRealtimeSlope(undefined, '100', 60)).toBeUndefined();
+    expect(calculateRealtimeSlope('110', '0', 60)).toBeUndefined();
+  });
+});
+
+describe('batched realtime slope stream', () => {
+  it('keeps each symbol paired with its own interval in repeated query parameters', () => {
+    const query = slopeStreamQuery([
+      { symbol: 'BTCUSDT', interval: '15m' },
+      { symbol: 'ETHUSDT', interval: '1h' }
+    ]);
+    expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
+    expect(query.getAll('interval')).toEqual(['15m', '1h']);
+  });
+});
+
 describe('exact close order quantity', () => {
   it('preserves all fractional digits instead of rounding through JavaScript number', () => {
     expect(exactCloseQuantity('-0.000000001234567890123456')).toBe('0.000000001234567890123456');
@@ -51,7 +74,9 @@ describe('exact close order quantity', () => {
 
 describe('Binance 64-bit ID precision', () => {
   it('preserves unsafe order, trade and algo numeric JSON tokens before parsing', () => {
-    const raw = parseBinanceAccountEvent('{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","i":9007199254740993,"t":9007199254740995,"aid":9007199254740997,"X":"NEW"}}');
+    const raw = parseBinanceAccountEvent(
+      '{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","i":9007199254740993,"t":9007199254740995,"aid":9007199254740997,"X":"NEW"}}'
+    );
     const order = raw.o as Record<string, unknown>;
     expect(order.i).toBe('9007199254740993');
     expect(order.t).toBe('9007199254740995');
@@ -64,7 +89,9 @@ describe('Binance 64-bit ID precision', () => {
     expect(exactIntegerId(-1)).toBeUndefined();
   });
   it('deduplicates distinct high-ID fills without collision', () => {
-    const raw = parseBinanceAccountEvent('{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","S":"BUY","x":"TRADE","i":9007199254740993,"t":9007199254740995,"l":"1","L":"2","T":1000}}');
+    const raw = parseBinanceAccountEvent(
+      '{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","S":"BUY","x":"TRADE","i":9007199254740993,"t":9007199254740995,"l":"1","L":"2","T":1000}}'
+    );
     const first = accountTrade(raw.o as Record<string, unknown>, 'credential', () => '2026-10-14 00:00:00')!;
     expect(first.exchangeTradeId).toBe('9007199254740995');
     const next = { ...first, id: 'BTCUSDT:9007199254740997', exchangeTradeId: '9007199254740997' };
