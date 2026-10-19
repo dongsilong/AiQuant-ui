@@ -1,14 +1,50 @@
-import type { OrderSnapshot, PositionSnapshot, ProtectionOrderSnapshot, TradeRecord } from '@/api/quant/types';
+import type {
+  OrderSnapshot,
+  PositionSnapshot,
+  ProtectionOrderSnapshot,
+  StrategyPositionStateVO,
+  TradeRecord
+} from '@/api/quant/types';
 
 type RawFields = Record<string, unknown>;
 
-export function slopeStreamQuery(rows: ReadonlyArray<{ symbol: string; interval: string }>): URLSearchParams {
-  const query = new URLSearchParams();
+export function slopeStreamQuery(
+  rows: ReadonlyArray<{ symbol: string; interval: string }>,
+  runMode = 'LIVE'
+): URLSearchParams {
+  const query = new URLSearchParams({ runMode });
   rows.forEach(row => {
     query.append('symbol', row.symbol);
     query.append('interval', row.interval);
   });
   return query;
+}
+
+export function chunkSlopeSubscriptions<T>(rows: ReadonlyArray<T>, size = 50): T[][] {
+  if (!Number.isInteger(size) || size < 1) throw new RangeError('订阅批次大小必须为正整数');
+  const chunks: T[][] = [];
+  for (let index = 0; index < rows.length; index += size) chunks.push(rows.slice(index, index + size));
+  return chunks;
+}
+
+/** Build a de-duplicated market subscription list for the chart and open positions. */
+export function terminalMarketSubscriptions(
+  chart: { symbol: string; interval: string },
+  positions: ReadonlyArray<{ symbol: string; quantity: string | number }>
+): Array<{ symbol: string; interval: string }> {
+  const subscriptions = new Map<string, { symbol: string; interval: string }>();
+  const add = (symbol: string, interval: string) => {
+    const normalized = symbol.trim().toUpperCase();
+    if (normalized) subscriptions.set(`${normalized}:${interval}`, { symbol: normalized, interval });
+  };
+  add(chart.symbol, chart.interval);
+  positions.forEach(position => {
+    const quantity = Number(position.quantity);
+    if (!Number.isFinite(quantity) || Math.abs(quantity) <= 0) return;
+    const normalized = position.symbol.trim().toUpperCase();
+    add(normalized, normalized === chart.symbol.trim().toUpperCase() ? chart.interval : '1m');
+  });
+  return [...subscriptions.values()];
 }
 
 function numeric(value: unknown): number | undefined {
@@ -93,6 +129,54 @@ export function positionMetrics(item: PositionSnapshot, liveMark?: number | stri
     notional,
     returnRate: margin !== undefined && margin > 0 && pnl !== undefined ? (pnl / margin) * 100 : undefined
   };
+}
+
+/** Calculate the persisted peak return for the matching strategy-managed position cycle. */
+export function positionMaximumReturnRate(
+  position: PositionSnapshot,
+  credentialId: string | number | undefined,
+  histories: readonly StrategyPositionStateVO[]
+): number | undefined {
+  const quantity = numeric(position.quantity);
+  const positionEntry = numeric(position.entryPrice);
+  const direction =
+    position.side === 'LONG' || position.side === 'SHORT'
+      ? position.side
+      : quantity !== undefined && quantity < 0
+        ? 'SHORT'
+        : 'LONG';
+  const entryTolerance = positionEntry === undefined ? undefined : Math.max(positionEntry * 0.000001, 0.00000001);
+  const matching = histories.filter(
+    item =>
+      credentialId !== undefined &&
+      String(item.credentialId) === String(credentialId) &&
+      item.symbol?.toUpperCase() === position.symbol.toUpperCase() &&
+      item.direction?.toUpperCase() === direction &&
+      entryTolerance !== undefined &&
+      numeric(item.entryPrice) !== undefined &&
+      Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
+  );
+  const rates = matching.flatMap(item => {
+    const entry = numeric(item.entryPrice);
+    const originalQuantity = numeric(item.initialPositionQty);
+    const initialMargin = numeric(item.initialMargin);
+    const favorablePrice = numeric(direction === 'SHORT' ? item.lowestPriceSinceEntry : item.highestPriceSinceEntry);
+    if (
+      entry === undefined ||
+      entry <= 0 ||
+      originalQuantity === undefined ||
+      originalQuantity <= 0 ||
+      initialMargin === undefined ||
+      initialMargin <= 0 ||
+      favorablePrice === undefined ||
+      favorablePrice <= 0
+    ) {
+      return [];
+    }
+    const favorablePnl = (direction === 'SHORT' ? entry - favorablePrice : favorablePrice - entry) * originalQuantity;
+    return [Math.max(0, (favorablePnl / initialMargin) * 100)];
+  });
+  return rates.length ? Math.max(...rates) : undefined;
 }
 
 export function mergeAccountPosition(previous: PositionSnapshot | undefined, raw: RawFields): PositionSnapshot {
@@ -196,26 +280,40 @@ export function mergeTrades(current: TradeRecord[], incoming: TradeRecord[]): Tr
     .slice(0, 100);
 }
 
-// A snapshot queried before a newer account update may enrich metadata, but cannot revive a closed position.
+export function positionSnapshotKey(symbol: string, side?: string): string {
+  return `${symbol}:${side || 'BOTH'}`;
+}
+
+// Merge a REST snapshot with position events received after that snapshot started.
 export function mergePositionSnapshots(
-  current: PositionSnapshot[],
   snapshot: PositionSnapshot[],
-  changed: boolean
+  changes: ReadonlyMap<string, { revision: number; row?: PositionSnapshot }>,
+  snapshotRevision: number
 ): PositionSnapshot[] {
-  if (!changed) return snapshot;
-  return current.map(row => {
-    const match = snapshot.find(item => item.symbol === row.symbol && item.side === row.side);
-    return match
-      ? {
-          ...match,
-          ...row,
-          markPrice: match.markPrice,
-          margin: match.quantity === row.quantity ? match.margin : row.margin,
-          leverage: match.leverage,
-          liquidationPrice: match.liquidationPrice
-        }
-      : row;
-  });
+  const rows = new Map(snapshot.map(row => [positionSnapshotKey(row.symbol, row.side), row]));
+  for (const [key, change] of changes) {
+    if (change.revision <= snapshotRevision) continue;
+    if (!change.row || Number(change.row.quantity) === 0) {
+      rows.delete(key);
+      continue;
+    }
+    const latest = change.row;
+    const snapshotRow = rows.get(key);
+    rows.set(
+      key,
+      snapshotRow
+        ? {
+            ...snapshotRow,
+            ...latest,
+            markPrice: snapshotRow.markPrice,
+            margin: snapshotRow.quantity === latest.quantity ? snapshotRow.margin : latest.margin,
+            leverage: snapshotRow.leverage,
+            liquidationPrice: snapshotRow.liquidationPrice
+          }
+        : latest
+    );
+  }
+  return [...rows.values()];
 }
 
 export function liveTradePage(rows: TradeRecord[], trade: TradeRecord, page: number, size: number): TradeRecord[] {

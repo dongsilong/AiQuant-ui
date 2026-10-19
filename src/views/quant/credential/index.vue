@@ -57,11 +57,11 @@
             <dict-tag :options="quant_yes_no" :value="scope.row.tradePermission + ''" />
           </template>
         </el-table-column>
-        <el-table-column align="center" label="禁止提现" min-width="120" prop="withdrawalDisabled">
+        <!--<el-table-column align="center" label="禁止提现" min-width="120" prop="withdrawalDisabled">
           <template #default="scope">
             <dict-tag :options="quant_yes_no" :value="scope.row.withdrawalDisabled + ''" />
           </template>
-        </el-table-column>
+        </el-table-column>-->
         <el-table-column align="center" label="签名方式" min-width="120" prop="signatureType" />
         <el-table-column align="center" label="运行模式" min-width="120">
           <template #default="scope">

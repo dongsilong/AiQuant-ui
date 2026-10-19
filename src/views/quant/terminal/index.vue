@@ -160,6 +160,13 @@
                 {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
               </template>
             </el-table-column>
+            <el-table-column label="最大回报率" min-width="110">
+              <template #default="scope">
+                {{
+                  scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
+                }}
+              </template>
+            </el-table-column>
             <el-table-column label="强平价" min-width="100">
               <template #default="scope">{{ format(scope.row.liquidationPrice) }}</template>
             </el-table-column>
@@ -271,6 +278,7 @@
         stripe
         class="slope-table"
       >
+        <el-table-column type="index" label="序号" align="center" width="60" />
         <el-table-column label="交易对" width="120">
           <template #default="scope">
             <el-link type="primary" :underline="false" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
@@ -279,9 +287,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="interval" label="周期" width="72" />
-        <el-table-column label="参考开盘价" min-width="110">
+        <!--<el-table-column label="参考开盘价" min-width="110">
           <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
-        </el-table-column>
+        </el-table-column>-->
         <el-table-column label="当前价" min-width="110">
           <template #default="scope">{{ format(scope.row.currentPrice) }}</template>
         </el-table-column>
@@ -317,6 +325,7 @@ import type {
   PriceSnapshot,
   SymbolVO,
   StrategyInstanceVO,
+  StrategyPositionStateVO,
   StrategySymbolBinding,
   StrategyVO,
   TradeRecord
@@ -333,6 +342,7 @@ import {
   listSymbol,
   getSymbol,
   listStrategyInstances,
+  listStrategyPositionStates,
   listStrategySymbols,
   startStrategy,
   stopStrategy,
@@ -350,8 +360,12 @@ import {
   updateProtectionOrders,
   mergeAccountPosition,
   mergePositionSnapshots,
+  positionSnapshotKey,
   mergeTrades,
   positionMetrics,
+  positionMaximumReturnRate,
+  terminalMarketSubscriptions,
+  chunkSlopeSubscriptions,
   updateOrders,
   exactCloseQuantity,
   calculateRealtimeSlope,
@@ -376,6 +390,8 @@ const credentials = ref<CredentialVO[]>([]),
   orders = ref<OrderSnapshot[]>([]),
   trades = ref<TradeRecord[]>([]),
   instances = ref<StrategyInstanceVO[]>([]),
+  positionHistories = ref<StrategyPositionStateVO[]>([]),
+  positionMarketMarks = ref(new Map<string, { price: string; receivedAt: number }>()),
   klines = ref<KlineSnapshot[]>([]),
   price = ref<PriceSnapshot>(),
   symbolInfo = ref<SymbolVO>(),
@@ -412,7 +428,7 @@ const slopeRows = ref<SlopeRow[]>([]);
 const slopeLoadError = ref('');
 const slopeSymbolErrors = ref<string[]>([]);
 type SseConnection = { close: () => void };
-let slopeStream: SseConnection | undefined;
+let slopeStreams: SseConnection[] = [];
 const slopeStreamStates = new Map<string, SlopeStreamState>();
 const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
 let slopeRenderFrame: number | undefined;
@@ -455,25 +471,112 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   return prices[kind].map(format).join('、') || '未挂载';
 };
 const positionRows = computed(() =>
-  positions.value.map(item =>
-    positionMetrics(
+  positions.value.map(item => ({
+    ...positionMetrics(
       item,
-      item.symbol === symbol.value && streamStatus.value === 'CONNECTED' ? price.value?.markPrice : undefined
-    )
-  )
+      (positionMarketMarks.value.get(item.symbol)?.receivedAt || 0) > now.value - 3000
+        ? positionMarketMarks.value.get(item.symbol)?.price
+        : item.symbol === symbol.value && streamStatus.value === 'CONNECTED'
+          ? price.value?.markPrice
+          : undefined
+    ),
+    maximumReturnRate: positionMaximumReturnRate(item, credentialId.value, positionHistories.value)
+  }))
 );
 const ordersError = ref('');
 const tradesError = ref('');
 let dataGeneration = 0;
 let accountRevision = 0;
+let positionRevision = 0;
+const positionEventChanges = new Map<string, { revision: number; row?: PositionSnapshot }>();
 let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
+let positionHistoryRefreshing = false;
+let positionHistoryRefreshPending = false;
 let hydrationRunning = false;
 let hydrationPending = false;
+let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
 const queryError = (error: any, fallback: string) =>
   typeof error === 'string' ? error : error?.msg || error?.message || fallback;
 
+async function refreshPositionHistories() {
+  const id = credentialId.value;
+  if (!id) return;
+  if (positionHistoryRefreshing) {
+    positionHistoryRefreshPending = true;
+    return;
+  }
+  positionHistoryRefreshing = true;
+  try {
+    const response = await listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id });
+    if (String(credentialId.value) === String(id))
+      positionHistories.value = mergePositionHistories(response.data?.rows || []);
+  } catch {
+    // Keep the last confirmed peak values visible if the history refresh temporarily fails.
+  } finally {
+    positionHistoryRefreshing = false;
+    if (positionHistoryRefreshPending) {
+      positionHistoryRefreshPending = false;
+      void refreshPositionHistories();
+    }
+  }
+}
+
+function mergePositionHistories(rows: StrategyPositionStateVO[]) {
+  const previous = new Map(
+    positionHistories.value.map(item => [
+      `${item.instanceId}:${item.positionCycleKey || item.positionId || item.id}`,
+      item
+    ])
+  );
+  return rows.map(item => {
+    const old = previous.get(`${item.instanceId}:${item.positionCycleKey || item.positionId || item.id}`);
+    if (!old) return item;
+    const short = String(item.direction || old.direction).toUpperCase() === 'SHORT';
+    const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
+    const oldPeak = Number(old[field]);
+    const newPeak = Number(item[field]);
+    if (!Number.isFinite(oldPeak) || !Number.isFinite(newPeak)) return item;
+    return { ...item, [field]: short ? Math.min(oldPeak, newPeak) : Math.max(oldPeak, newPeak) };
+  });
+}
+
+function applyPositionPerformanceEvent(event: any) {
+  if (event.type === 'CONNECTED') {
+    void refreshPositionHistories();
+    return;
+  }
+  if (String(event.credentialId) !== String(credentialId.value)) return;
+  const index = positionHistories.value.findIndex(
+    item =>
+      String(item.instanceId) === String(event.instanceId) &&
+      String(item.positionCycleKey || '') === String(event.positionCycleKey || '')
+  );
+  const old = index >= 0 ? positionHistories.value[index] : undefined;
+  const short = String(event.direction || old?.direction).toUpperCase() === 'SHORT';
+  const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
+  const oldPeak = Number(old?.[field]);
+  const incomingPeak = Number(event[field]);
+  const peak =
+    Number.isFinite(oldPeak) && Number.isFinite(incomingPeak)
+      ? short
+        ? Math.min(oldPeak, incomingPeak)
+        : Math.max(oldPeak, incomingPeak)
+      : event[field];
+  const row: StrategyPositionStateVO = { ...(old || ({} as StrategyPositionStateVO)), ...event, [field]: peak };
+  if (index >= 0) positionHistories.value.splice(index, 1, row);
+  else positionHistories.value = [...positionHistories.value, row];
+}
+
+function closeMarketStream() {
+  marketStreams.forEach(connection => connection.close());
+  marketStreams = [];
+  if (retry) clearTimeout(retry);
+  retry = undefined;
+}
+
 // Hydrate fields absent from ACCOUNT_UPDATE after a position changes; coalesce bursts without REST polling.
-function scheduleAccountHydration() {
+function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision) {
+  hydrationPositionRevisionFloor = Math.min(hydrationPositionRevisionFloor, positionRevisionBeforeEvent);
   hydrationPending = true;
   if (hydrationRunning || hydrationTimer) return;
   hydrationTimer = setTimeout(async () => {
@@ -482,6 +585,8 @@ function scheduleAccountHydration() {
     if (!id) return;
     const generation = dataGeneration;
     const revision = accountRevision;
+    const snapshotPositionRevision = hydrationPositionRevisionFloor === Number.MAX_SAFE_INTEGER ? positionRevision : hydrationPositionRevisionFloor;
+    hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
     hydrationPending = false;
     hydrationRunning = true;
     try {
@@ -489,7 +594,7 @@ function scheduleAccountHydration() {
       if (generation !== dataGeneration) return;
       if (a.status === 'fulfilled' && revision === accountRevision) account.value = a.value.data;
       if (p.status === 'fulfilled') {
-        positions.value = mergePositionSnapshots(positions.value, p.value.data || [], revision !== accountRevision);
+        positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, snapshotPositionRevision);
         accountSnapshotAvailable.value = true;
         renderOverlays();
       }
@@ -580,10 +685,11 @@ const directionLabel = (item: { side?: string; quantity?: string | number }) => 
 };
 const chartRef = ref<HTMLElement>(),
   chart = shallowRef<Chart>();
-let stream: SseConnection | undefined,
+let marketStreams: SseConnection[] = [],
   retry: ReturnType<typeof setTimeout> | undefined,
   accountStream: SseConnection | undefined,
   accountRetry: ReturnType<typeof setTimeout> | undefined,
+  marketStreamKey = '',
   resize: ResizeObserver | undefined;
 let updateChartBar: ((data: KLineData) => void) | undefined;
 let overlayIds: string[] = [];
@@ -647,7 +753,7 @@ function renderChart() {
   });
   chart.value.setPeriod(period());
   chart.value.setMaxOffsetLeftDistance(0);
-  chart.value.setMaxOffsetRightDistance(0);
+  resizeChartWithRightGap();
   chart.value.setLeftMinVisibleBarCount(30);
   chart.value.setLocale('zh-CN');
   renderIndicators();
@@ -675,6 +781,13 @@ function renderOverlays() {
     });
     if (typeof id === 'string') overlayIds.push(id);
   }
+}
+function resizeChartWithRightGap() {
+  if (!chart.value || !chartRef.value) return;
+  const rightGap = Math.round(chartRef.value.clientWidth / 3);
+  chart.value.setMaxOffsetRightDistance(rightGap);
+  chart.value.setOffsetRightDistance(rightGap);
+  chart.value.resize();
 }
 function renderIndicators() {
   if (!chart.value) return;
@@ -721,15 +834,22 @@ async function handleSymbolChange() {
   await refresh();
 }
 function applyEvent(e: any) {
-  if (e.type === 'CONNECTING') streamStatus.value = 'CONNECTING';
-  else if (e.type === 'CONNECTED') streamStatus.value = 'CONNECTED';
-  else if (e.type === 'ERROR') {
+  const eventSymbol = String(e.symbol || '').toUpperCase();
+  if (e.type === 'MARK' && e.price && !e.replay && eventSymbol) {
+    const next = new Map(positionMarketMarks.value);
+    next.set(eventSymbol, { price: String(e.price), receivedAt: Date.now() });
+    positionMarketMarks.value = next;
+  }
+  if (e.type === 'CONNECTING' && !eventSymbol) streamStatus.value = 'CONNECTING';
+  else if (e.type === 'CONNECTED' && eventSymbol === symbol.value.toUpperCase()) streamStatus.value = 'CONNECTED';
+  else if (e.type === 'ERROR' && (!eventSymbol || eventSymbol === symbol.value.toUpperCase())) {
     streamStatus.value = 'ERROR';
     ElMessage.error(e.message || '行情订阅失败');
-  } else if (e.type === 'DISCONNECTED') {
+  } else if (e.type === 'DISCONNECTED' && eventSymbol === symbol.value.toUpperCase()) {
     streamStatus.value = 'DISCONNECTED';
     price.value = undefined;
-  } else if (e.type === 'TRADE' && e.price)
+  } else if (eventSymbol !== symbol.value.toUpperCase()) return;
+  else if (e.type === 'TRADE' && e.price)
     price.value = { ...(price.value as PriceSnapshot), lastTradePrice: e.price, observedAt: e.eventTime };
   else if (e.type === 'MARK' && e.price) {
     price.value = { ...(price.value as PriceSnapshot), markPrice: e.price, observedAt: e.eventTime };
@@ -810,37 +930,82 @@ function handleSseUnauthorized() {
 }
 
 function connect() {
-  stream?.close();
-  if (retry) clearTimeout(retry);
-  streamStatus.value = 'CONNECTING';
-  const q = new URLSearchParams({
-    symbol: symbol.value,
-    interval: interval.value
-  });
-  stream = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/market/stream?${q}`,
-    'quant.market',
-    data => {
-      try {
-        applyEvent(JSON.parse(data));
-      } catch {
-        streamStatus.value = 'ERROR';
-      }
-    },
-    () => {
-      streamStatus.value = 'DISCONNECTED';
-      stream?.close();
-      retry = setTimeout(connect, 3000);
-    },
-    handleSseUnauthorized
+  const runMode = selectedMarketRunMode();
+  const subscriptions = terminalMarketSubscriptions(
+    { symbol: symbol.value, interval: interval.value },
+    positions.value
   );
+  const key = `${runMode}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
+  if (marketStreamKey === key && marketStreams.length) return;
+  closeMarketStream();
+  marketStreamKey = key;
+  streamStatus.value = 'CONNECTING';
+  const generation = dataGeneration;
+  const reconnect = () => {
+    if (generation !== dataGeneration) return;
+    closeMarketStream();
+    retry = setTimeout(connect, 3000);
+  };
+  for (let start = 0; start < subscriptions.length; start += 50) {
+    const query = new URLSearchParams({ runMode });
+    subscriptions.slice(start, start + 50).forEach(item => {
+      query.append('symbol', item.symbol);
+      query.append('interval', item.interval);
+    });
+    marketStreams.push(
+      openSse(
+        `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+        'quant.market',
+        data => {
+          try {
+            const event = JSON.parse(data);
+            applyEvent(event);
+            if (event.type === 'ERROR' || event.type === 'DISCONNECTED') reconnect();
+          } catch {
+            streamStatus.value = 'ERROR';
+          }
+        },
+        () => {
+          streamStatus.value = 'DISCONNECTED';
+          reconnect();
+        },
+        handleSseUnauthorized
+      )
+    );
+  }
 }
+
+function selectedMarketRunMode() {
+  return credentials.value.find(item => String(item.id) === String(credentialId.value))?.runMode || 'LIVE';
+}
+
+watch(
+  () => {
+    const credential = credentials.value.find(item => String(item.id) === String(credentialId.value));
+    const subscriptions = terminalMarketSubscriptions(
+      { symbol: symbol.value, interval: interval.value },
+      positions.value
+    );
+    return `${credential?.runMode || 'LIVE'}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
+  },
+  () => connect(),
+  { flush: 'post' }
+);
+
+watch(
+  () => selectedMarketRunMode(),
+  () => {
+    if (slopePanelVisible.value) connectSlopeStream();
+  }
+);
+
 function applyRawAccountEvent(rawJson: string | undefined) {
   if (!rawJson) return;
   try {
     const raw = parseBinanceAccountEvent(rawJson);
     if (raw.e === 'ACCOUNT_UPDATE' && raw.a) {
       accountRevision++;
+      const eventPositionRevision = ++positionRevision;
       const usdt = (raw.a.B || []).find((item: any) => item.a === 'USDT');
       // cw is cross wallet balance, not available balance.
       if (usdt && account.value && usdt.wb !== undefined) account.value.walletBalance = String(usdt.wb);
@@ -851,12 +1016,15 @@ function applyRawAccountEvent(rawJson: string | undefined) {
         const previous = positions.value[index];
         const row = mergeAccountPosition(previous, item);
         positionChanged ||= !previous || row.quantity !== previous.quantity || row.entryPrice !== previous.entryPrice;
+        const positionKey = positionSnapshotKey(row.symbol, row.side);
         if (Number(row.quantity) === 0) {
           if (index >= 0) positions.value.splice(index, 1);
+          positionEventChanges.set(positionKey, { revision: eventPositionRevision });
         } else if (index >= 0) positions.value[index] = row;
         else positions.value.push(row);
+        if (Number(row.quantity) !== 0) positionEventChanges.set(positionKey, { revision: eventPositionRevision, row });
       }
-      if (positionChanged || usdt) scheduleAccountHydration();
+      if (positionChanged || usdt) scheduleAccountHydration(eventPositionRevision - 1);
     }
     if (raw.e === 'ORDER_TRADE_UPDATE' && raw.o) {
       accountRevision++;
@@ -903,6 +1071,7 @@ function connectAccountStream() {
   lastAccountEvents.clear();
   const generation = dataGeneration;
   const snapshotRevision = accountRevision;
+  const snapshotPositionRevision = positionRevision;
   const q = new URLSearchParams({
     credentialId: String(credentialId.value)
   });
@@ -913,6 +1082,11 @@ function connectAccountStream() {
       try {
         const event = JSON.parse(data);
         if (generation !== dataGeneration) return;
+        if (event.type === 'POSITION_MAX_RETURN') {
+          if (String(event.credentialId) === String(credentialId.value))
+            applyPositionPerformanceEvent(event.performance);
+          return;
+        }
         if (
           event.type === 'ACCOUNT_UPDATE' ||
           event.type === 'ORDER_TRADE_UPDATE' ||
@@ -927,18 +1101,22 @@ function connectAccountStream() {
             if (Number.isFinite(eventAt) && eventAt < (lastAccountEvents.get(event.type) || 0)) return;
             if (Number.isFinite(eventAt)) lastAccountEvents.set(event.type, eventAt);
           }
-          if (event.type === 'SNAPSHOT') void loadProtectionOrders();
+          if (event.type === 'SNAPSHOT') {
+            void loadProtectionOrders();
+            void refreshPositionHistories();
+          }
+          if (event.type === 'CONNECTED') void refreshPositionHistories();
           if (event.snapshotAvailable) {
             accountSnapshotAvailable.value = true;
             const changed = snapshotRevision !== accountRevision;
             if (event.account && !changed) account.value = event.account;
             if (Array.isArray(event.positions))
-              positions.value = mergePositionSnapshots(positions.value, event.positions, changed);
+              positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
             if (Array.isArray(event.orders) && !changed) {
               orders.value = event.orders;
               ordersError.value = '';
             }
-            if (changed && event.type === 'SNAPSHOT') scheduleAccountHydration();
+            if (changed && event.type === 'SNAPSHOT') scheduleAccountHydration(snapshotPositionRevision);
             applyRawAccountEvent(event.rawJson);
           } else {
             accountSnapshotAvailable.value = false;
@@ -979,8 +1157,8 @@ function connectAccountStream() {
 }
 
 function closeSlopeStream() {
-  slopeStream?.close();
-  slopeStream = undefined;
+  slopeStreams.forEach(connection => connection.close());
+  slopeStreams = [];
   slopeStreamStates.clear();
   pendingSlopeRows.clear();
   if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
@@ -1034,62 +1212,76 @@ function connectSlopeStream() {
     row.slopePercent = undefined;
     row.degrees = undefined;
   }
-  const query = slopeStreamQuery(slopeRows.value);
-  slopeStream = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
-    'quant.market',
-    data => {
-      try {
-        const event = JSON.parse(data);
-        if (event.type === 'CONNECTING' && !event.symbol) return;
-        const key = `${event.symbol}:${event.interval}`;
-        const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
-        const state = slopeStreamStates.get(key);
-        if (!row || !state) return;
-        if (event.type === 'CONNECTING') return;
-        if (event.type === 'CONNECTED') {
-          state.handshakeComplete = true;
-          scheduleSlopeRowUpdate(row, state);
-          return;
-        }
-        if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
-          clearSlopeRowValues(row, state, event.type);
-          return;
-        }
-        if (event.type === 'TRADE' && Number(event.price) > 0) {
-          state.latestTradePrice = Number(event.price);
-        } else if (event.type === 'KLINE' && event.kline) {
-          const kline = event.kline as KlineSnapshot;
-          const index = state.klines.findIndex(item => item.openTime === kline.openTime);
-          if (index < 0) state.klines.push(kline);
-          else state.klines[index] = kline;
-          state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-          state.klines = state.klines.slice(-4);
-        }
-        scheduleSlopeRowUpdate(row, state);
-      } catch {
-        slopeRows.value.forEach(row => {
-          const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
-          if (state) clearSlopeRowValues(row, state, 'ERROR');
-        });
+  const scheduleReconnect = () => {
+    if (!slopePanelVisible.value || slopeStreamRetry) return;
+    slopeStreamRetry = setTimeout(() => {
+      slopeStreamRetry = undefined;
+      connectSlopeStream();
+    }, 3000);
+  };
+  const onMessage = (data: string) => {
+    try {
+      const event = JSON.parse(data);
+      if (event.type === 'CONNECTING' && !event.symbol) return;
+      const key = `${event.symbol}:${event.interval}`;
+      const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
+      const state = slopeStreamStates.get(key);
+      if (!row || !state) return;
+      if (event.type === 'CONNECTING') {
+        clearSlopeRowValues(row, state, 'CONNECTING');
+        return;
       }
-    },
-    () => {
+      if (event.type === 'CONNECTED') {
+        state.handshakeComplete = true;
+        scheduleSlopeRowUpdate(row, state);
+        return;
+      }
+      if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
+        clearSlopeRowValues(row, state, event.type);
+        // MarketStreamHub reconnects the upstream symbol itself; keep this SSE
+        // open so the row can recover when the server publishes CONNECTED again.
+        return;
+      }
+      if (event.type === 'TRADE' && Number(event.price) > 0) {
+        state.latestTradePrice = Number(event.price);
+      } else if (event.type === 'KLINE' && event.kline) {
+        const kline = event.kline as KlineSnapshot;
+        const index = state.klines.findIndex(item => item.openTime === kline.openTime);
+        if (index < 0) state.klines.push(kline);
+        else state.klines[index] = kline;
+        state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
+        state.klines = state.klines.slice(-4);
+      }
+      scheduleSlopeRowUpdate(row, state);
+    } catch {
       slopeRows.value.forEach(row => {
         const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
-        if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
+        if (state) clearSlopeRowValues(row, state, 'ERROR');
       });
-      slopeStream?.close();
-      slopeStream = undefined;
-      if (slopePanelVisible.value && !slopeStreamRetry) {
-        slopeStreamRetry = setTimeout(() => {
-          slopeStreamRetry = undefined;
-          connectSlopeStream();
-        }, 3000);
-      }
-    },
-    handleSseUnauthorized
-  );
+      scheduleReconnect();
+    }
+  };
+  const onError = () => {
+    slopeRows.value.forEach(row => {
+      const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
+      if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
+    });
+    slopeStreams.forEach(connection => connection.close());
+    slopeStreams = [];
+    scheduleReconnect();
+  };
+  for (const batch of chunkSlopeSubscriptions(slopeRows.value)) {
+    const query = slopeStreamQuery(batch, selectedMarketRunMode());
+    slopeStreams.push(
+      openSse(
+        `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+        'quant.market',
+        onMessage,
+        onError,
+        handleSseUnauthorized
+      )
+    );
+  }
 }
 
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
@@ -1188,13 +1380,17 @@ async function loadData() {
   protectionChanges.clear();
   lastProtectionEvents.clear();
   accountStream?.close();
-  stream?.close();
+  closeMarketStream();
+  marketStreamKey = '';
   if (accountRetry) clearTimeout(accountRetry);
   if (retry) clearTimeout(retry);
   if (hydrationTimer) clearTimeout(hydrationTimer);
   hydrationTimer = undefined;
   hydrationPending = false;
+  hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
   accountRevision = 0;
+  positionRevision = 0;
+  positionEventChanges.clear();
   lastOrderEvents.clear();
   ordersError.value = '';
   tradesError.value = '';
@@ -1204,17 +1400,22 @@ async function loadData() {
   symbolInfo.value = undefined;
   price.value = undefined;
   positions.value = [];
+  positionHistories.value = [];
+  positionMarketMarks.value = new Map();
   accountSnapshotAvailable.value = false;
   orders.value = [];
   trades.value = [];
   renderOverlays();
-  const [k, s, p, i] = await Promise.allSettled([
+  const [k, s, p, i, h] = await Promise.allSettled([
     listRealtimeKlines(symbol.value, interval.value, 1000),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }),
     id ? listPositions(id) : Promise.resolve({ data: [] as PositionSnapshot[] }),
     id
       ? listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id })
-      : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any)
+      : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any),
+    id
+      ? listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id })
+      : Promise.resolve({ data: { rows: [] as StrategyPositionStateVO[] } } as any)
   ]);
   if (generation !== dataGeneration) return;
   if (k.status === 'fulfilled') {
@@ -1231,6 +1432,7 @@ async function loadData() {
   instances.value = (i.status === 'fulfilled' ? i.value.data?.rows || [] : []).filter(
     item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
   );
+  positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
   if (id) {
     const [a, o, t] = await Promise.allSettled([
       getAccountSnapshot(id),
@@ -1365,7 +1567,7 @@ onMounted(async () => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
-    resize = new ResizeObserver(() => chart.value?.resize());
+    resize = new ResizeObserver(resizeChartWithRightGap);
     resize.observe(chartRef.value);
   }
   const [c, s] = await Promise.all([
@@ -1381,7 +1583,8 @@ onBeforeUnmount(() => {
   dataGeneration++;
   hydrationPending = false;
   if (hydrationTimer) clearTimeout(hydrationTimer);
-  stream?.close();
+  marketStreams.forEach(connection => connection.close());
+  marketStreams = [];
   accountStream?.close();
   closeSlopeStream();
   updateChartBar = undefined;

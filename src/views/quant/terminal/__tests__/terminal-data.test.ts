@@ -10,8 +10,11 @@ import {
   mergeTrades,
   parseBinanceAccountEvent,
   positionMetrics,
+  positionMaximumReturnRate,
   protectionPrices,
   slopeStreamQuery,
+  chunkSlopeSubscriptions,
+  terminalMarketSubscriptions,
   updateOrders,
   updateProtectionOrders
 } from '../terminal-data';
@@ -49,6 +52,39 @@ describe('realtime slope display calculation', () => {
   });
 });
 
+describe('position maximum return calculation', () => {
+  const history = {
+    credentialId: 'account-1',
+    symbol: 'PUMPUSDT',
+    direction: 'LONG',
+    entryPrice: '2',
+    initialPositionQty: '100',
+    initialMargin: '20',
+    highestPriceSinceEntry: '2.2',
+    lowestPriceSinceEntry: '1.9'
+  };
+
+  it('uses the persisted favorable price and original margin for a long position', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [history])).toBeCloseTo(100);
+  });
+
+  it('uses the persisted favorable price for a short position', () => {
+    expect(
+      positionMaximumReturnRate({ ...position, side: 'SHORT', quantity: '-100' }, 'account-1', [
+        { ...history, direction: 'SHORT' }
+      ])
+    ).toBeCloseTo(50);
+  });
+
+  it('does not infer lifetime maximum from current price when no matching history exists', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [])).toBeUndefined();
+  });
+
+  it('does not attach a previous position cycle peak to a new entry at a different price', () => {
+    expect(positionMaximumReturnRate({ ...position, entryPrice: '2.5' }, 'account-1', [history])).toBeUndefined();
+  });
+});
+
 describe('batched realtime slope stream', () => {
   it('keeps each symbol paired with its own interval in repeated query parameters', () => {
     const query = slopeStreamQuery([
@@ -57,6 +93,30 @@ describe('batched realtime slope stream', () => {
     ]);
     expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
     expect(query.getAll('interval')).toEqual(['15m', '1h']);
+    expect(query.get('runMode')).toBe('LIVE');
+    expect(slopeStreamQuery([{ symbol: 'BTCUSDT', interval: '15m' }], 'TESTNET').get('runMode')).toBe('TESTNET');
+  });
+
+  it('splits subscriptions at the server batch limit', () => {
+    const rows = Array.from({ length: 51 }, (_, index) => ({ symbol: `S${index}`, interval: '15m' }));
+    const batches = chunkSlopeSubscriptions(rows);
+    expect(batches.map(batch => batch.length)).toEqual([50, 1]);
+    expect(batches.flat()).toEqual(rows);
+  });
+});
+
+describe('terminal market stream subscriptions', () => {
+  it('combines chart and position symbols, using the chart interval when symbols match', () => {
+    expect(
+      terminalMarketSubscriptions({ symbol: 'BTCUSDT', interval: '15m' }, [
+        { symbol: 'BTCUSDT', quantity: '1' },
+        { symbol: 'ETHUSDT', quantity: '-2' },
+        { symbol: 'XRPUSDT', quantity: '0' }
+      ])
+    ).toEqual([
+      { symbol: 'BTCUSDT', interval: '15m' },
+      { symbol: 'ETHUSDT', interval: '1m' }
+    ]);
   });
 });
 
@@ -162,19 +222,32 @@ describe('terminal account data', () => {
     expect(result.margin).toBe('');
     expect(positionMetrics(result).returnRate).toBeUndefined();
   });
-  it('does not restore a position closed while a snapshot was queried', () => {
-    expect(mergePositionSnapshots([], [position], true)).toEqual([]);
+  it('keeps snapshot positions while adding a newer account position event', () => {
+    const other = { ...position, symbol: 'ETHUSDT' };
+    const changed = new Map([
+      ['PUMPUSDT:LONG', { revision: 2, row: { ...position, quantity: '5' } }]
+    ]);
+
+    expect(mergePositionSnapshots([other], changed, 1)).toEqual([other, { ...position, quantity: '5' }]);
   });
-  it('preserves newer quantities and PnL while enriching metadata', () => {
+
+  it('does not restore a position closed after the snapshot request started', () => {
+    const changed = new Map([['PUMPUSDT:LONG', { revision: 2 }]]);
+
+    expect(mergePositionSnapshots([position], changed, 1)).toEqual([]);
+  });
+
+  it('preserves a newer position event while enriching metadata from snapshot', () => {
     const current = { ...position, quantity: '50', unrealizedPnl: '0.5', margin: '', markPrice: '' };
-    const result = mergePositionSnapshots([current], [position], true)[0]!;
+    const changed = new Map([['PUMPUSDT:LONG', { revision: 2, row: current }]]);
+    const result = mergePositionSnapshots([position], changed, 1)[0]!;
     expect(result.quantity).toBe('50');
     expect(result.unrealizedPnl).toBe('0.5');
     expect(result.markPrice).toBe('2.01');
     expect(result.margin).toBe('');
   });
   it('accepts a full authoritative snapshot if no newer events arrived', () => {
-    expect(mergePositionSnapshots([], [position], false)).toEqual([position]);
+    expect(mergePositionSnapshots([position], new Map(), 0)).toEqual([position]);
   });
 });
 

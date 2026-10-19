@@ -20,13 +20,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="当前策略"><el-input v-model="query.strategyName" clearable /></el-form-item>
-        <el-form-item label="策略实例">
-          <el-input v-model="query.strategyInstanceId" clearable placeholder="实例 ID" />
-        </el-form-item>
         <el-form-item label="交易对"><el-input v-model="query.symbol" clearable placeholder="BTCUSDT" /></el-form-item>
         <el-form-item label="运行模式">
           <el-select v-model="query.runMode" clearable style="width: 130px">
-            <el-option v-for="(label, value) in modes" :key="value" :label="label" :value="value" />
+            <el-option v-for="dict in quant_run_mode" :key="dict.value" :label="dict.label" :value="dict.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="操作">
@@ -37,11 +34,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="query.status" clearable style="width: 140px">
+          <el-select v-model="query.status" clearable style="width: 220px">
             <el-option v-for="(label, value) in statuses" :key="value" :label="label" :value="value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="原因"><el-input v-model="query.reason" clearable /></el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker
             v-model="range"
@@ -66,32 +62,37 @@
       </template>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb-3" />
       <el-table v-loading="loading" :data="rows" border empty-text="所选条件下暂无开平仓日志">
-        <el-table-column prop="accountName" label="交易账户" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="accountName" label="交易账户" min-width="120" align="center" show-overflow-tooltip />
         <el-table-column prop="strategyName" label="当前策略" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="symbol" label="交易对" min-width="120" />
-        <el-table-column label="操作及方向" min-width="120">
+        <el-table-column prop="symbol" label="交易对" min-width="120" align="center" />
+        <el-table-column label="方向" min-width="100" align="center">
           <template #default="{ row }">{{ operationLabel(row) }}</template>
         </el-table-column>
-        <el-table-column label="金额（USDT）" min-width="160">
+        <el-table-column label="名义金额（USDT）" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
             {{ displayDecimal(row.amount) }}
-            <small v-if="row.amount">（{{ kind(row) }}）</small>
+            <small v-if="row.amount">（{{ row.priceKind === 'ACTUAL' ? '按成交均价' : '按参考价估算' }}）</small>
           </template>
         </el-table-column>
-        <el-table-column label="价格" min-width="160">
+        <el-table-column label="价格" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
             {{ displayDecimal(row.price) }}
             <small v-if="row.price">（{{ row.priceKind === 'ACTUAL' ? '成交均价' : '参考价' }}）</small>
           </template>
         </el-table-column>
         <el-table-column prop="reason" label="原因" min-width="260" show-overflow-tooltip />
-        <el-table-column label="状态" min-width="140">
+        <el-table-column label="状态" min-width="100" align="center" show-overflow-tooltip>
           <template #default="{ row }">{{ statusLabel(row) }}</template>
         </el-table-column>
-        <el-table-column label="时间" min-width="190">
+        <el-table-column align="center" label="运行模式" min-width="100">
+          <template #default="scope">
+            <dict-tag :options="quant_run_mode" :value="scope.row.runMode" />
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" min-width="190" align="center">
           <template #default="{ row }">{{ row.tradeTime || row.eventTime }}</template>
         </el-table-column>
-        <el-table-column label="详情" fixed="right" width="80">
+        <el-table-column label="详情" fixed="right" width="80" align="center">
           <template #default="{ row }">
             <el-button v-hasPermi="['quant:tradeDecisionLog:query']" link type="primary" @click="showDetail(row.id)">
               查看
@@ -122,9 +123,13 @@
 import type { TradeDecisionLog, TradeDecisionQuery } from '@/api/quant/trade-decision-log';
 import { displayDecimal } from '../components/ledger-display';
 import { useCredentialOptions } from '../components/useCredentialOptions';
+import { getTradeDecisionLog, listTradeDecisionLogs } from '@/api/quant/trade-decision-log';
+import {useDict} from "@/utils/dict";
+
+const { quant_run_mode } = toRefs<any>(useDict('quant_run_mode'));
 
 const { credentialFilter } = useCredentialOptions();
-import { getTradeDecisionLog, listTradeDecisionLogs } from '@/api/quant/trade-decision-log';
+
 
 const statuses: Record<string, string> = {
   BLOCKED: '未开仓',
@@ -147,7 +152,6 @@ const statusLabel = (row: Partial<TradeDecisionLog>) => {
     return row.operation === 'OPEN' ? '部分开仓成交' : row.operation === 'CLOSE' ? '部分平仓成交' : '部分成交';
   return (row.status && statuses[row.status]) || row.status || '-';
 };
-const modes = { LIVE: '实盘', TESTNET: '测试网', PAPER: '模拟' };
 const query = reactive<TradeDecisionQuery>({ pageNum: 1, pageSize: 20 });
 // 未选择时间时后端按当前时刻查询最近 24 小时，手动刷新可以看到新日志。
 const range = ref<[string, string] | null>(null);
@@ -200,7 +204,6 @@ const operationLabel = (row: Partial<TradeDecisionLog>) => {
     return row.operation === 'OPEN' ? '开仓（方向未确认）' : '平仓（方向未确认）';
   return `${row.operation === 'OPEN' ? '开' : '平'}${row.direction === 'LONG' ? '多' : '空'}`;
 };
-const kind = (row: Partial<TradeDecisionLog>) => (row.priceKind === 'ACTUAL' ? '实际' : '计划');
 const showDetail = async (id: string) => {
   detailVisible.value = true;
   detailLoading.value = true;

@@ -88,6 +88,7 @@ export interface PositionSnapshot {
   liquidationPrice: string;
   margin: string;
   leverage?: number;
+  maximumReturnRate?: number;
   takeProfitPrice?: string;
   stopLossPrice?: string;
 }
@@ -278,15 +279,21 @@ export interface StrategyPositionStateQuery extends PageQuery {
 export interface StrategyPositionStateVO {
   id: number | string;
   instanceId?: number | string;
+  positionId?: number | string;
+  positionCycleKey?: string;
   instanceName?: string;
   credentialId?: number | string;
   status?: string;
   statusLabel?: string;
   direction?: string;
   directionLabel?: string;
+  symbol?: string;
   entryPrice?: string | number;
   positionQty?: string | number;
   initialPositionQty?: string | number;
+  initialMargin?: string | number;
+  highestPriceSinceEntry?: string | number;
+  lowestPriceSinceEntry?: string | number;
   highestStep?: number;
   firstTakeProfitTriggered?: boolean;
   pendingAction?: string;
