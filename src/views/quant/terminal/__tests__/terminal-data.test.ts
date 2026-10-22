@@ -13,6 +13,7 @@ import {
   positionMetrics,
   positionMaximumReturnRate,
   protectionPrices,
+  protectionPriceLines,
   slopeStreamQuery,
   chunkSlopeSubscriptions,
   terminalMarketSubscriptions,
@@ -293,6 +294,17 @@ const protection = {
   closePosition: false
 };
 describe('terminal protection and pagination', () => {
+  it('builds chart lines only from active exchange protections for the selected symbol and open position', () => {
+    expect(protectionPriceLines([position, { ...position, symbol: 'BTCUSDT' }], [
+      protection,
+      { ...protection, algoId: '124', type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
+      { ...protection, algoId: '125', status: 'CANCELED', triggerPrice: '1.7' }
+    ], 'PUMPUSDT')).toEqual([
+      { value: 2.2, kind: 'takeProfit' },
+      { value: 1.8, kind: 'stopLoss' }
+    ]);
+  });
+
   it('matches active protection by symbol, position side and closing side', () => {
     const prices = protectionPrices(position, [
       protection,

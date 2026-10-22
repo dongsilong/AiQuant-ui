@@ -336,6 +336,25 @@ export function protectionPrices(position: PositionSnapshot, orders: ProtectionO
   return { takeProfit: prices(['TAKE_PROFIT', 'TAKE_PROFIT_MARKET']), stopLoss: prices(['STOP', 'STOP_MARKET']) };
 }
 
+export function protectionPriceLines(
+  positions: PositionSnapshot[],
+  orders: ProtectionOrderSnapshot[],
+  symbol: string
+): Array<{ value: number; kind: 'takeProfit' | 'stopLoss' }> {
+  const lines = new Map<string, { value: number; kind: 'takeProfit' | 'stopLoss' }>();
+  for (const position of positions) {
+    if (position.symbol.toUpperCase() !== symbol.toUpperCase() || Number(position.quantity) === 0) continue;
+    const prices = protectionPrices(position, orders);
+    for (const [kind, values] of Object.entries(prices) as Array<['takeProfit' | 'stopLoss', string[]]>) {
+      for (const rawValue of values) {
+        const value = Number(rawValue);
+        if (Number.isFinite(value) && value > 0) lines.set(`${kind}:${value}`, { value, kind });
+      }
+    }
+  }
+  return [...lines.values()];
+}
+
 export function updateProtectionOrders(
   rows: ProtectionOrderSnapshot[],
   raw: RawFields,

@@ -58,6 +58,14 @@
                 {{ tool.label }}
               </el-button>
             </div>
+            <div v-if="chartProtectionLines.length" class="protection-legend">
+              <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
+                交易所止盈
+              </span>
+              <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
+                交易所止损
+              </span>
+            </div>
             <div class="chart-countdown">
               剩余
               <strong>{{ candleCountdown }}</strong>
@@ -373,6 +381,7 @@ import {
   parseBinanceAccountEvent,
   liveTradePage,
   protectionPrices,
+  protectionPriceLines,
   updateProtectionOrders,
   mergeAccountPosition,
   mergePositionSnapshots,
@@ -544,6 +553,11 @@ const positionRows = computed(() =>
       )
     };
   })
+);
+const chartProtectionLines = computed(() =>
+  protectionLoaded.value
+    ? protectionPriceLines(positions.value, protectionOrders.value, symbol.value)
+    : []
 );
 const ordersError = ref('');
 const tradesError = ref('');
@@ -727,11 +741,13 @@ async function loadProtectionOrders() {
     protectionOrders.value = [...snapshot.values()];
     protectionError.value = '';
     protectionLoaded.value = true;
+    renderOverlays();
   } catch (error) {
     if (generation === dataGeneration && requestId === protectionRequest) {
       protectionError.value = queryError(error, '条件单查询失败');
       protectionLoaded.value = false;
       protectionOrders.value = [];
+      renderOverlays();
     }
   } finally {
     if (requestId === protectionRequest) protectionLoading.value = false;
@@ -851,10 +867,12 @@ function renderOverlays() {
   const lines = [
     ...currentPositions.flatMap(item => [
       { value: Number(item.entryPrice), color: '#409eff' },
-      { value: Number(item.liquidationPrice), color: '#f56c6c' },
-      { value: Number(item.takeProfitPrice), color: '#67c23a' },
-      { value: Number(item.stopLossPrice), color: '#e6a23c' }
+      { value: Number(item.liquidationPrice), color: '#f56c6c' }
     ]),
+    ...chartProtectionLines.value.map(line => ({
+      value: line.value,
+      color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c'
+    })),
     ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
   ].filter(item => Number.isFinite(item.value) && item.value > 0);
   for (const line of lines) {
@@ -1210,7 +1228,7 @@ function connectAccountStream() {
             if (Number.isFinite(eventAt)) lastAccountEvents.set(event.type, eventAt);
           }
           if (event.type === 'SNAPSHOT') {
-            void loadProtectionOrders();
+            if (!protectionLoading.value) void loadProtectionOrders();
             void refreshPositionHistories();
           }
           if (event.type === 'CONNECTED') void refreshPositionHistories();
@@ -1564,6 +1582,7 @@ async function loadData() {
   void ensureQuantSymbolTickSizes().catch(() => undefined);
   renderChart();
   renderOverlays();
+  if (id) void loadProtectionOrders();
   connect();
   connectAccountStream();
 }
@@ -1888,6 +1907,19 @@ onBeforeUnmount(() => {
 }
 .chart-countdown strong {
   color: var(--el-color-danger);
+}
+.protection-legend {
+  display: flex;
+  gap: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.protection-legend .take-profit {
+  color: #67c23a;
+}
+.protection-legend .stop-loss {
+  color: #e6a23c;
 }
 .slope-floating-button {
   position: fixed;
