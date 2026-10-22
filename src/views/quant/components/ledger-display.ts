@@ -62,6 +62,7 @@ export const displayLabel = (labels: Record<string, string>, value: unknown) => 
   if (value === undefined || value === null || value === '') return '-';
   return labels[String(value)] || `未知（${String(value)}）`;
 };
+
 export const labelOptions = (labels: Record<string, string>) =>
   Object.entries(labels).map(([value, label]) => ({ value, label }));
 

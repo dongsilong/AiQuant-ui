@@ -47,11 +47,17 @@
               </template>
             </el-table-column>
             <el-table-column label="策略名称" min-width="160" prop="strategyName" show-overflow-tooltip />
-            <el-table-column label="插件 Code" min-width="160" prop="pluginCode" show-overflow-tooltip />
+            <el-table-column label="插件 Code" min-width="160" prop="pluginCode" align="center" show-overflow-tooltip />
+            <el-table-column label="最大开仓数量" min-width="110" prop="maxOpenCount" align="center" />
             <el-table-column label="插件版本" width="110" prop="pluginVersion" align="center" />
             <el-table-column label="插件说明" min-width="180" show-overflow-tooltip>
               <template #default="scope">
                 {{ pluginDescription(scope.row.pluginCode) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="策略账户" min-width="180" show-overflow-tooltip>
+              <template #default="scope">
+                {{ strategyAccountNames[String(scope.row.id)] || '未绑定' }}
               </template>
             </el-table-column>
             <el-table-column label="登录账户授权" min-width="180" show-overflow-tooltip>
@@ -129,7 +135,7 @@
             <el-table-column label="实例名称" prop="instanceName" align="center" min-width="220" show-overflow-tooltip />
             <el-table-column label="实例编号" prop="instanceId" align="center" min-width="180" show-overflow-tooltip />
             <el-table-column label="方向" align="center" width="100">
-              <template #default="scope">{{ scope.row.directionLabel || directionLabel(scope.row.direction) }}</template>
+              <template #default="scope"><dict-tag :options="quant_position_direction" :value="scope.row.direction" /></template>
             </el-table-column>
             <el-table-column label="数量" align="center" width="140">
               <template #default="scope">{{ formatDecimal(scope.row.positionQty) }}</template>
@@ -304,6 +310,9 @@ import {
 import { listUser } from '@/api/system/user';
 import StrategyRuntimeConfigPanel from '@/components/quant/StrategyRuntimeConfigPanel.vue';
 import modal from '@/plugins/modal';
+import { useDict } from '@/utils/dict';
+
+const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
 
 const loading = ref(false);
 const plugins = ref<StrategyPluginVO[]>([]);
@@ -330,6 +339,7 @@ const credentials = ref<CredentialVO[]>([]);
 const symbols = ref<SymbolVO[]>([]);
 const users = ref<UserVO[]>([]);
 const strategyUserNames = ref<Record<string, string>>({});
+const strategyAccountNames = ref<Record<string, string>>({});
 const userIds = ref<Array<number | string>>([]);
 const credentialIds = ref<Array<number | string>>([]);
 const selectedSymbolIds = ref<Array<number | string>>([]);
@@ -383,11 +393,6 @@ const formatDecimal = (value: unknown) => {
   }
   return text.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
-const directionLabel = (direction: unknown) => {
-  if (String(direction).toUpperCase() === 'LONG') return '做多';
-  if (String(direction).toUpperCase() === 'SHORT') return '做空';
-  return direction ? String(direction) : '-';
-};
 const positionStatusLabel = (status: unknown) => {
   const value = String(status || '').toUpperCase();
   if (value === 'OPEN') return '持仓中';
@@ -417,8 +422,8 @@ const load = async () => {
     credentials.value = credentialRes.data?.rows || [];
     symbols.value = symbolRes.data?.rows || [];
     users.value = userRes.data?.rows || [];
-    const authorizationEntries = await Promise.all(
-      strategies.value.map(async strategy => {
+    const [authorizationEntries, accountEntries] = await Promise.all([
+      Promise.all(strategies.value.map(async strategy => {
         try {
           const response = await listStrategyUsers(strategy.id);
           const names = (response.data || [])
@@ -429,9 +434,24 @@ const load = async () => {
         } catch {
           return [String(strategy.id), ''] as const;
         }
-      })
-    );
+      })),
+      Promise.all(strategies.value.map(async strategy => {
+        try {
+          const response = await listStrategyAccounts(strategy.id);
+          const names = (response.data || [])
+            .filter(binding => String(binding.status) === '0')
+            .map(binding => {
+              const credential = credentials.value.find(item => String(item.id) === String(binding.credentialId));
+              return credential?.accountName || `账户 ${binding.credentialId}`;
+            });
+          return [String(strategy.id), [...new Set(names)].join('、')] as const;
+        } catch {
+          return [String(strategy.id), '读取失败'] as const;
+        }
+      }))
+    ]);
     strategyUserNames.value = Object.fromEntries(authorizationEntries);
+    strategyAccountNames.value = Object.fromEntries(accountEntries);
   } finally {
     loading.value = false;
   }

@@ -41,12 +41,15 @@
         </div>
       </template>
       <el-table v-loading="loading" :data="rows" border>
+        <el-table-column type="index" label="序号" width="80" align="center">
+          <template #default="scope">{{ scope.$index + 1 }}</template>
+        </el-table-column>
         <el-table-column label="交易对" prop="symbol" />
         <el-table-column label="Exchange ID" prop="orderId" />
         <el-table-column label="ClientOrderId" min-width="180" prop="clientOrderId" />
         <el-table-column label="方向" prop="side" />
         <el-table-column label="类型" prop="type" />
-        <el-table-column label="价格" prop="price" />
+        <el-table-column label="价格" prop="price"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template></el-table-column>
         <el-table-column label="数量" prop="originalQuantity" />
         <el-table-column label="已成交" prop="executedQuantity" />
         <el-table-column label="状态" prop="status" />
@@ -71,6 +74,7 @@
 <script lang="ts" setup>
 import type { CredentialVO, OrderSnapshot } from '@/api/quant/types';
 import { cancelOrder, listCredential, listOrders } from '@/api/quant';
+import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
 import modal from '@/plugins/modal';
 
 const loading = ref(false);
@@ -90,6 +94,7 @@ const load = async () => {
   loading.value = true;
   try {
     rows.value = (await listOrders(credentialId.value, symbol.value || undefined)).data || [];
+    void ensureQuantSymbolTickSizes().catch(() => undefined);
   } finally {
     loading.value = false;
   }

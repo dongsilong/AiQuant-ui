@@ -131,11 +131,12 @@ export function positionMetrics(item: PositionSnapshot, liveMark?: number | stri
   };
 }
 
-/** Calculate the persisted peak return for the matching strategy-managed position cycle. */
+/** Return the highest Binance-style return-rate sample for this position cycle. */
 export function positionMaximumReturnRate(
   position: PositionSnapshot,
   credentialId: string | number | undefined,
-  histories: readonly StrategyPositionStateVO[]
+  histories: readonly StrategyPositionStateVO[],
+  currentReturnRate?: number
 ): number | undefined {
   const quantity = numeric(position.quantity);
   const positionEntry = numeric(position.entryPrice);
@@ -157,26 +158,11 @@ export function positionMaximumReturnRate(
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
   );
   const rates = matching.flatMap(item => {
-    const entry = numeric(item.entryPrice);
-    const originalQuantity = numeric(item.initialPositionQty);
-    const initialMargin = numeric(item.initialMargin);
-    const favorablePrice = numeric(direction === 'SHORT' ? item.lowestPriceSinceEntry : item.highestPriceSinceEntry);
-    if (
-      entry === undefined ||
-      entry <= 0 ||
-      originalQuantity === undefined ||
-      originalQuantity <= 0 ||
-      initialMargin === undefined ||
-      initialMargin <= 0 ||
-      favorablePrice === undefined ||
-      favorablePrice <= 0
-    ) {
-      return [];
-    }
-    const favorablePnl = (direction === 'SHORT' ? entry - favorablePrice : favorablePrice - entry) * originalQuantity;
-    return [Math.max(0, (favorablePnl / initialMargin) * 100)];
+    const rate = numeric(item.maximumReturnRate);
+    return rate === undefined || !Number.isFinite(rate) ? [] : [rate];
   });
-  return rates.length ? Math.max(...rates) : undefined;
+  if (currentReturnRate !== undefined && Number.isFinite(currentReturnRate)) rates.push(currentReturnRate);
+  return rates.length ? Math.max(0, ...rates) : undefined;
 }
 
 export function mergeAccountPosition(previous: PositionSnapshot | undefined, raw: RawFields): PositionSnapshot {
@@ -314,6 +300,19 @@ export function mergePositionSnapshots(
     );
   }
   return [...rows.values()];
+}
+
+export function mergePositionSymbolSnapshot(
+  current: PositionSnapshot[],
+  snapshot: PositionSnapshot[],
+  symbol: string,
+  changes: ReadonlyMap<string, { revision: number; row?: PositionSnapshot }>,
+  snapshotRevision: number
+): PositionSnapshot[] {
+  const matchesSymbol = (row: PositionSnapshot) => row.symbol.toUpperCase() === symbol.toUpperCase();
+  const symbolChanges = new Map([...changes].filter(([key]) => key.toUpperCase().startsWith(`${symbol.toUpperCase()}:`)));
+  const merged = mergePositionSnapshots(snapshot.filter(matchesSymbol), symbolChanges, snapshotRevision);
+  return [...current.filter(row => !matchesSymbol(row)), ...merged];
 }
 
 export function liveTradePage(rows: TradeRecord[], trade: TradeRecord, page: number, size: number): TradeRecord[] {

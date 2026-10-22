@@ -24,7 +24,8 @@
           </template>
           <el-form :inline="true" class="query-form">
             <el-form-item label="交易账户">
-              <el-select v-model="credentialId" clearable placeholder="请选择账户" @change="load">
+              <el-select v-model="credentialId" clearable placeholder="全部交易用户" @change="handleCredentialChange">
+                <el-option label="全部交易用户" value="ALL" />
                 <el-option v-for="item in credentials" :key="item.id" :label="item.accountName" :value="item.id" />
               </el-select>
             </el-form-item>
@@ -39,11 +40,17 @@
       </div>
       <el-card class="table-panel" shadow="hover">
         <el-table v-loading="loading" :data="rows" border>
+          <el-table-column type="index" label="序号" width="80" align="center">
+            <template #default="scope">{{ (query.pageNum - 1) * query.pageSize + scope.$index + 1 }}</template>
+          </el-table-column>
+          <el-table-column label="交易用户" min-width="120" show-overflow-tooltip>
+            <template #default="scope">{{ scope.row.customerName || '-' }}</template>
+          </el-table-column>
           <el-table-column label="成交时间" prop="tradeTime" min-width="160" />
           <el-table-column label="交易对" prop="symbol" min-width="160" />
           <el-table-column label="方向" prop="side" min-width="100" />
           <el-table-column label="价格" min-width="150">
-            <template #default="scope">{{ formatDecimal(scope.row.price) }}</template>
+            <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
           </el-table-column>
           <el-table-column label="数量" min-width="150">
             <template #default="scope">{{ formatDecimal(scope.row.quantity) }}</template>
@@ -70,14 +77,15 @@
 </template>
 <script lang="ts" setup>
 import type { CredentialVO, TradeRecord } from '@/api/quant/types';
-import { listCredential, listTrades, syncTrades } from '@/api/quant';
+import { listAccessibleTrades, listCredential, syncTrades } from '@/api/quant';
+import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
 import modal from '@/plugins/modal';
 
 const loading = ref(false);
 const credentials = ref<CredentialVO[]>([]);
 const rows = ref<TradeRecord[]>([]);
 const total = ref(0);
-const credentialId = ref<number | string>();
+const credentialId = ref<number | string>('ALL');
 const symbol = ref('');
 const query = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
 const formatDecimal = (value: string | number | undefined) => {
@@ -89,25 +97,28 @@ const formatDecimal = (value: string | number | undefined) => {
 };
 const loadCredentials = async () => {
   credentials.value = (await listCredential({ pageNum: 1, pageSize: 100 })).data?.rows || [];
-  if (!credentialId.value) credentialId.value = credentials.value[0]?.id;
 };
 const load = async () => {
-  if (!credentialId.value) {
-    rows.value = [];
-    total.value = 0;
-    return;
-  }
   loading.value = true;
   try {
-    const result = await listTrades(credentialId.value, symbol.value || undefined, query);
+    const result = await listAccessibleTrades(
+      credentialId.value === 'ALL' ? undefined : credentialId.value,
+      symbol.value || undefined,
+      query
+    );
     rows.value = result.data?.rows || [];
     total.value = result.data?.total || 0;
+    void ensureQuantSymbolTickSizes().catch(() => undefined);
   } finally {
     loading.value = false;
   }
 };
+const handleCredentialChange = () => {
+  query.pageNum = 1;
+  load();
+};
 const sync = async () => {
-  if (!credentialId.value || !symbol.value) return modal.msgWarning('请先选择账户并输入交易对');
+  if (!credentialId.value || credentialId.value === 'ALL' || !symbol.value) return modal.msgWarning('请先选择账户并输入交易对');
   await syncTrades(credentialId.value, symbol.value);
   await load();
 };

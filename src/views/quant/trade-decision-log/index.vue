@@ -62,11 +62,16 @@
       </template>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="mb-3" />
       <el-table v-loading="loading" :data="rows" border empty-text="所选条件下暂无开平仓日志">
-        <el-table-column prop="accountName" label="交易账户" min-width="120" align="center" show-overflow-tooltip />
+        <el-table-column type="index" label="序号" width="80" align="center">
+          <template #default="scope">{{ (query.pageNum - 1) * query.pageSize + scope.$index + 1 }}</template>
+        </el-table-column>
+        <el-table-column prop="accountName" label="交易账户" min-width="100" align="center" show-overflow-tooltip />
         <el-table-column prop="strategyName" label="当前策略" min-width="200" show-overflow-tooltip />
         <el-table-column prop="symbol" label="交易对" min-width="120" align="center" />
         <el-table-column label="方向" min-width="100" align="center">
-          <template #default="{ row }">{{ operationLabel(row) }}</template>
+          <template #default="scope">
+            <dict-tag :options="quant_position_direction" :value="scope.row.direction" />
+          </template>
         </el-table-column>
         <el-table-column label="名义金额（USDT）" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
@@ -76,7 +81,7 @@
         </el-table-column>
         <el-table-column label="价格" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            {{ displayDecimal(row.price) }}
+            {{ formatQuantPrice(row.symbol, row.price) }}
             <small v-if="row.price">（{{ row.priceKind === 'ACTUAL' ? '成交均价' : '参考价' }}）</small>
           </template>
         </el-table-column>
@@ -124,9 +129,10 @@ import type { TradeDecisionLog, TradeDecisionQuery } from '@/api/quant/trade-dec
 import { displayDecimal } from '../components/ledger-display';
 import { useCredentialOptions } from '../components/useCredentialOptions';
 import { getTradeDecisionLog, listTradeDecisionLogs } from '@/api/quant/trade-decision-log';
-import {useDict} from "@/utils/dict";
+import { useDict } from '@/utils/dict';
+import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
 
-const { quant_run_mode } = toRefs<any>(useDict('quant_run_mode'));
+const { quant_run_mode, quant_position_direction } = toRefs<any>(useDict('quant_run_mode', 'quant_position_direction'));
 
 const { credentialFilter } = useCredentialOptions();
 
@@ -179,6 +185,7 @@ const load = async () => {
     if (current !== generation) return;
     rows.value = result.data?.rows || [];
     total.value = result.data?.total || 0;
+    void ensureQuantSymbolTickSizes().catch(() => undefined);
   } catch (e) {
     if (current !== generation) return;
     rows.value = [];
@@ -198,12 +205,6 @@ const reset = () => {
   range.value = null;
   load();
 };
-const operationLabel = (row: Partial<TradeDecisionLog>) => {
-  if (row.operation !== 'OPEN' && row.operation !== 'CLOSE') return '操作未确认';
-  if (row.direction !== 'LONG' && row.direction !== 'SHORT')
-    return row.operation === 'OPEN' ? '开仓（方向未确认）' : '平仓（方向未确认）';
-  return `${row.operation === 'OPEN' ? '开' : '平'}${row.direction === 'LONG' ? '多' : '空'}`;
-};
 const showDetail = async (id: string) => {
   detailVisible.value = true;
   detailLoading.value = true;
@@ -211,6 +212,7 @@ const showDetail = async (id: string) => {
   detail.value = undefined;
   try {
     detail.value = (await getTradeDecisionLog(id)).data;
+    void ensureQuantSymbolTickSizes().catch(() => undefined);
   } catch (e) {
     detailError.value = errorText(e);
   } finally {
@@ -219,6 +221,7 @@ const showDetail = async (id: string) => {
 };
 const detailValue = (key: keyof TradeDecisionLog) => {
   if (key === 'status' && detail.value) return statusLabel(detail.value);
+  if (key === 'price' && detail.value) return formatQuantPrice(detail.value.symbol, detail.value.price);
   if (['amount', 'price', 'quantity', 'margin', 'angle', 'threshold'].includes(key))
     return displayDecimal(detail.value?.[key]);
   return detail.value?.[key] ?? '-';

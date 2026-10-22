@@ -78,6 +78,11 @@ export interface AccountSnapshot {
   unrealizedPnl: string;
 }
 
+export interface DailyAccountBaseline {
+  equity: string;
+  observedAt: string;
+}
+
 export interface PositionSnapshot {
   symbol: string;
   side: string;
@@ -292,6 +297,7 @@ export interface StrategyPositionStateVO {
   positionQty?: string | number;
   initialPositionQty?: string | number;
   initialMargin?: string | number;
+  maximumReturnRate?: string | number;
   highestPriceSinceEntry?: string | number;
   lowestPriceSinceEntry?: string | number;
   highestStep?: number;

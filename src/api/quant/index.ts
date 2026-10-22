@@ -3,6 +3,7 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   AccountSnapshot,
+  DailyAccountBaseline,
   CancelOrderForm,
   ClosePositionForm,
   CredentialForm,
@@ -58,6 +59,8 @@ export const delRisk = (id: number | number[]) => request({ url: `/quant/risk/${
 
 export const getAccountSnapshot = (credentialId: string | number): AxiosPromise<AccountSnapshot> =>
   request({ url: `/quant/account/${credentialId}`, method: 'get' });
+export const getDailyAccountBaseline = (credentialId: string | number): AxiosPromise<DailyAccountBaseline | null> =>
+  request({ url: `/quant/account/${credentialId}/daily-baseline`, method: 'get' });
 export const listPositions = (credentialId: string | number, symbol?: string): AxiosPromise<PositionSnapshot[]> =>
   request({ url: `/quant/position/${credentialId}`, method: 'get', params: { symbol } });
 export const listOrders = (credentialId: string | number, symbol?: string): AxiosPromise<OrderSnapshot[]> =>
@@ -73,14 +76,25 @@ export const listTrades = (
   query: PageQuery & { side?: string; from?: string; to?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query } });
+export const listAccessibleTrades = (
+  credentialId: string | number | undefined,
+  symbol: string | undefined,
+  query: PageQuery & { side?: string; from?: string; to?: string }
+): AxiosPromise<PageResult<TradeRecord>> =>
+  request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
 export const syncTrades = (credentialId: string | number, symbol: string) =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: { symbol } });
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>
   request({ url: '/quant/market/price', method: 'get', params: { symbol } });
-export const listRealtimeKlines = (symbol: string, interval: string, limit = 100): AxiosPromise<KlineSnapshot[]> =>
-  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit } });
+export const listRealtimeKlines = (
+  symbol: string,
+  interval: string,
+  limit = 100,
+  runMode = 'LIVE'
+): AxiosPromise<KlineSnapshot[]> =>
+  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit, runMode } });
 export const closePosition = (data: ClosePositionForm) =>
   request({ url: '/quant/execution/close', method: 'post', data });
 export const cancelOrder = (data: CancelOrderForm) => request({ url: '/quant/execution/cancel', method: 'post', data });

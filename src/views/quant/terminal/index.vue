@@ -71,15 +71,16 @@
           <el-card shadow="never" class="side-card account-card">
             <template #header><b>账户资金</b></template>
             <div v-if="account" class="fund">
-              <strong>{{ format(account.marginBalance) }} USDT</strong>
-              <span>账户权益</span>
+              <strong>{{ formatFixed(account.marginBalance, 2) }} USDT</strong>
               <dl>
                 <dt>钱包余额</dt>
-                <dd>{{ format(account.walletBalance) }}</dd>
+                <dd>{{ formatFixed(account.walletBalance, 2) }}</dd>
                 <dt>可用余额</dt>
-                <dd>{{ format(account.availableBalance) }}</dd>
+                <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
-                <dd>{{ format(account.unrealizedPnl) }}</dd>
+                <dd>{{ formatFixed(account.unrealizedPnl, 2) }}</dd>
+                <dt>当天总收益率</dt>
+                <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
               </dl>
             </div>
             <el-empty v-else description="暂无账户数据" />
@@ -126,125 +127,135 @@
           </el-card>
         </div>
       </div>
+
+      <el-card shadow="never" class="table-card">
+        <el-tabs v-model="activeTab" @tab-change="handleDataTab">
+          <el-tab-pane label="当前持仓" name="positions">
+            <el-table
+              :data="positionRows"
+              :empty-text="accountSnapshotAvailable ? '暂无持仓' : '账户数据暂不可用'"
+              border
+              @row-dblclick="selectRowSymbol"
+            >
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" min-width="100" />
+              <el-table-column label="方向" width="100" align="center">
+                <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
+              </el-table-column>
+              <el-table-column label="数量 / 名义价值" min-width="150">
+                <template #default="scope">
+                  {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }} U
+                </template>
+              </el-table-column>
+              <el-table-column label="开仓均价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.entryPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="标记价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.markPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="未实现盈亏" min-width="100">
+                <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="回报率" min-width="100">
+                <template #default="scope">
+                  {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
+                </template>
+              </el-table-column>
+              <el-table-column label="最大回报率" min-width="110">
+                <template #default="scope">
+                  {{
+                    scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
+                  }}
+                </template>
+              </el-table-column>
+              <el-table-column label="强平价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.liquidationPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="交易所止盈 / 止损" min-width="220" show-overflow-tooltip>
+                <template #default="scope">
+                  {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="110" align="center">
+                <template #default="scope">
+                  <el-button link type="danger" @click="close(scope.row)">平仓</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="当前委托" name="orders">
+            <el-alert
+              v-if="ordersError || protectionError"
+              :title="[ordersError, protectionError].filter(Boolean).join('；')"
+              type="error"
+              :closable="false"
+              show-icon
+            />
+            <el-table
+              :data="orderRows"
+              :empty-text="protectionLoading ? '条件单加载中' : ordersError || protectionError || '暂无普通或条件委托'"
+              border
+              @row-dblclick="selectRowSymbol"
+            >
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="side" label="方向" />
+              <el-table-column prop="type" label="类型" />
+              <el-table-column prop="source" label="来源" />
+              <el-table-column label="价格 / 触发价">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
+              </el-table-column>
+              <el-table-column label="数量">
+                <template #default="scope">{{ format(scope.row.originalQuantity) }}</template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" />
+              <el-table-column label="操作" width="110">
+                <template #default="scope">
+                  <el-button v-if="scope.row.kind === 'normal'" link type="danger" @click="cancel(scope.row)">
+                    撤单
+                  </el-button>
+                  <span v-else>条件单只读</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="成交记录" name="trades">
+            <el-alert v-if="tradesError" :title="tradesError" type="error" :closable="false" show-icon />
+            <el-button v-if="tradesError" link type="primary" @click="loadTrades">重试</el-button>
+            <el-button v-if="tradePending" link type="primary" @click="loadTrades">有新成交，刷新列表</el-button>
+            <el-table v-loading="tradeLoading" :data="trades" :empty-text="tradesError || '暂无成交'" border>
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ (tradeQuery.pageNum - 1) * tradeQuery.pageSize + scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="side" label="方向" />
+              <el-table-column label="数量">
+                <template #default="scope">{{ format(scope.row.quantity) }}</template>
+              </el-table-column>
+              <el-table-column label="价格">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
+              </el-table-column>
+              <el-table-column label="已实现盈亏">
+                <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
+              </el-table-column>
+              <el-table-column prop="tradeTime" label="成交时间" />
+            </el-table>
+            <pagination
+              v-show="tradeTotal > 0"
+              v-model:page="tradeQuery.pageNum"
+              v-model:limit="tradeQuery.pageSize"
+              :total="tradeTotal"
+              @pagination="loadTrades"
+            />
+          </el-tab-pane>
+        </el-tabs>
+      </el-card>
     </el-card>
 
-    <el-card shadow="never" class="table-card">
-      <el-tabs v-model="activeTab" @tab-change="handleDataTab">
-        <el-tab-pane label="当前持仓" name="positions">
-          <el-table
-            :data="positionRows"
-            :empty-text="accountSnapshotAvailable ? '暂无持仓' : '账户数据暂不可用'"
-            border
-            @row-dblclick="selectRowSymbol"
-          >
-            <el-table-column prop="symbol" label="交易对" min-width="100" />
-            <el-table-column label="方向" width="100" align="center">
-              <template #default="scope">{{ directionLabel(scope.row) }}</template>
-            </el-table-column>
-            <el-table-column label="数量 / 名义价值" min-width="150">
-              <template #default="scope">
-                {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }} U
-              </template>
-            </el-table-column>
-            <el-table-column label="开仓均价" min-width="100">
-              <template #default="scope">{{ format(scope.row.entryPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="标记价" min-width="100">
-              <template #default="scope">{{ format(scope.row.markPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="未实现盈亏" min-width="100">
-              <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
-            </el-table-column>
-            <el-table-column label="回报率" min-width="100">
-              <template #default="scope">
-                {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
-              </template>
-            </el-table-column>
-            <el-table-column label="最大回报率" min-width="110">
-              <template #default="scope">
-                {{
-                  scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
-                }}
-              </template>
-            </el-table-column>
-            <el-table-column label="强平价" min-width="100">
-              <template #default="scope">{{ format(scope.row.liquidationPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="交易所止盈 / 止损" min-width="220" show-overflow-tooltip>
-              <template #default="scope">
-                {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="110" align="center">
-              <template #default="scope">
-                <el-button link type="danger" @click="close(scope.row)">平仓</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="当前委托" name="orders">
-          <el-alert
-            v-if="ordersError || protectionError"
-            :title="[ordersError, protectionError].filter(Boolean).join('；')"
-            type="error"
-            :closable="false"
-            show-icon
-          />
-          <el-table
-            :data="orderRows"
-            :empty-text="protectionLoading ? '条件单加载中' : ordersError || protectionError || '暂无普通或条件委托'"
-            border
-            @row-dblclick="selectRowSymbol"
-          >
-            <el-table-column prop="symbol" label="交易对" />
-            <el-table-column prop="side" label="方向" />
-            <el-table-column prop="type" label="类型" />
-            <el-table-column prop="source" label="来源" />
-            <el-table-column label="价格 / 触发价">
-              <template #default="scope">{{ format(scope.row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="数量">
-              <template #default="scope">{{ format(scope.row.originalQuantity) }}</template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" />
-            <el-table-column label="操作" width="110">
-              <template #default="scope">
-                <el-button v-if="scope.row.kind === 'normal'" link type="danger" @click="cancel(scope.row)">
-                  撤单
-                </el-button>
-                <span v-else>条件单只读</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="成交记录" name="trades">
-          <el-alert v-if="tradesError" :title="tradesError" type="error" :closable="false" show-icon />
-          <el-button v-if="tradesError" link type="primary" @click="loadTrades">重试</el-button>
-          <el-button v-if="tradePending" link type="primary" @click="loadTrades">有新成交，刷新列表</el-button>
-          <el-table v-loading="tradeLoading" :data="trades" :empty-text="tradesError || '暂无成交'" border>
-            <el-table-column prop="symbol" label="交易对" />
-            <el-table-column prop="side" label="方向" />
-            <el-table-column label="数量">
-              <template #default="scope">{{ format(scope.row.quantity) }}</template>
-            </el-table-column>
-            <el-table-column label="价格">
-              <template #default="scope">{{ format(scope.row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="已实现盈亏">
-              <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
-            </el-table-column>
-            <el-table-column prop="tradeTime" label="成交时间" />
-          </el-table>
-          <pagination
-            v-show="tradeTotal > 0"
-            v-model:page="tradeQuery.pageNum"
-            v-model:limit="tradeQuery.pageSize"
-            :total="tradeTotal"
-            @pagination="loadTrades"
-          />
-        </el-tab-pane>
-      </el-tabs>
-    </el-card>
     <el-button class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
       斜率
     </el-button>
@@ -254,6 +265,8 @@
       direction="rtl"
       size="620px"
       :modal="false"
+      :modal-penetrable="true"
+      :resizable="true"
       :lock-scroll="false"
       @closed="closeSlopePanel"
     >
@@ -291,7 +304,7 @@
           <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
         </el-table-column>-->
         <el-table-column label="当前价" min-width="110">
-          <template #default="scope">{{ format(scope.row.currentPrice) }}</template>
+          <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
         </el-table-column>
         <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
         <el-table-column label="角度" min-width="82">
@@ -315,6 +328,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { type Chart, dispose, init, type KLineData } from 'klinecharts';
 import type {
   AccountSnapshot,
+  DailyAccountBaseline,
   CancelOrderForm,
   ClosePositionForm,
   CredentialVO,
@@ -334,6 +348,7 @@ import {
   listCredential,
   listStrategies,
   getAccountSnapshot,
+  getDailyAccountBaseline,
   listPositions,
   listOrders,
   listProtectionOrders,
@@ -351,7 +366,8 @@ import {
 } from '@/api/quant';
 import { getToken, removeToken } from '@/utils/auth';
 import { useDict } from '@/utils/dict';
-import { parseTime } from '@/utils/ruoyi';
+import { parseTime, selectDictLabel } from '@/utils/ruoyi';
+import { cacheQuantSymbolTickSize, ensureQuantSymbolTickSizes, formatQuantPrice, priceScaleFromTickSize } from '../components/price-format';
 import {
   accountTrade,
   parseBinanceAccountEvent,
@@ -360,6 +376,7 @@ import {
   updateProtectionOrders,
   mergeAccountPosition,
   mergePositionSnapshots,
+  mergePositionSymbolSnapshot,
   positionSnapshotKey,
   mergeTrades,
   positionMetrics,
@@ -371,7 +388,7 @@ import {
   calculateRealtimeSlope,
   slopeStreamQuery
 } from './terminal-data';
-const { quant_kline_period, quant_indicator } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator'));
+const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator', 'quant_position_direction'));
 const symbol = ref('BTCUSDT'),
   interval = ref('15m'),
   strategyId = ref<string | number>(),
@@ -382,22 +399,55 @@ const symbol = ref('BTCUSDT'),
   streamStatus = ref('CONNECTING'),
   accountSnapshotAvailable = ref(false),
   now = ref(Date.now());
+const dailyBaselineDay = ref('');
 const currentInterval = interval;
 const credentials = ref<CredentialVO[]>([]),
   strategies = ref<StrategyVO[]>([]),
   account = ref<AccountSnapshot>(),
+  dailyAccountBaseline = ref<DailyAccountBaseline | null>(),
   positions = ref<PositionSnapshot[]>([]),
   orders = ref<OrderSnapshot[]>([]),
   trades = ref<TradeRecord[]>([]),
   instances = ref<StrategyInstanceVO[]>([]),
   positionHistories = ref<StrategyPositionStateVO[]>([]),
   positionMarketMarks = ref(new Map<string, { price: string; receivedAt: number }>()),
+  positionReturnRatePeaks = ref(new Map<string, number>()),
   klines = ref<KlineSnapshot[]>([]),
   price = ref<PriceSnapshot>(),
   symbolInfo = ref<SymbolVO>(),
   symbolOptions = ref<SymbolVO[]>([]),
   symbolLoading = ref(false);
 const indicatorOptions = computed(() => quant_indicator.value || []);
+const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
+const dailyReturnRate = computed(() => {
+  const baseline = Number(dailyAccountBaseline.value?.equity);
+  const walletBalance = Number(account.value?.walletBalance);
+  const currentUnrealizedPnl = positionRows.value.reduce((sum, row) => sum + Number(row.unrealizedPnl || 0), 0);
+  const currentEquity = Number.isFinite(walletBalance) ? walletBalance + currentUnrealizedPnl : Number(account.value?.marginBalance);
+  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(currentEquity)) return undefined;
+  return ((currentEquity - baseline) / baseline) * 100;
+});
+let dailyBaselineRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => shanghaiDateKey(now.value),
+  day => {
+    if (!dailyBaselineDay.value || day === dailyBaselineDay.value) return;
+    dailyBaselineDay.value = day;
+    dailyAccountBaseline.value = null;
+    if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
+    dailyBaselineRefreshTimer = setTimeout(async () => {
+      const id = credentialId.value;
+      const generation = dataGeneration;
+      if (!id) return;
+      try {
+        const result = await getDailyAccountBaseline(id);
+        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = result.data;
+      } catch {
+        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = null;
+      }
+    }, 90_000);
+  }
+);
 type SlopeRow = {
   symbol: string;
   interval: string;
@@ -468,24 +518,37 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   if (protectionError.value) return '查询失败';
   if (!protectionLoaded.value) return '加载中';
   const prices = protectionPrices(row as PositionSnapshot, protectionOrders.value);
-  return prices[kind].map(format).join('、') || '未挂载';
+  const symbol = (row as PositionSnapshot).symbol;
+  return prices[kind].map(value => formatQuantPrice(symbol, value)).join('、') || '未挂载';
 };
 const positionRows = computed(() =>
-  positions.value.map(item => ({
-    ...positionMetrics(
+  positions.value.map(item => {
+    const metrics = positionMetrics(
       item,
       (positionMarketMarks.value.get(item.symbol)?.receivedAt || 0) > now.value - 3000
         ? positionMarketMarks.value.get(item.symbol)?.price
         : item.symbol === symbol.value && streamStatus.value === 'CONNECTED'
           ? price.value?.markPrice
           : undefined
-    ),
-    maximumReturnRate: positionMaximumReturnRate(item, credentialId.value, positionHistories.value)
-  }))
+    );
+    const peakKey = `${credentialId.value}|${item.symbol.toUpperCase()}|${item.side.toUpperCase()}|${item.entryPrice}`;
+    const observedPeak = positionReturnRatePeaks.value.get(peakKey);
+    const returnRatePeak = Math.max(metrics.returnRate ?? Number.NEGATIVE_INFINITY, observedPeak ?? Number.NEGATIVE_INFINITY);
+    return {
+      ...metrics,
+      maximumReturnRate: positionMaximumReturnRate(
+        item,
+        credentialId.value,
+        positionHistories.value,
+        Number.isFinite(returnRatePeak) ? returnRatePeak : undefined
+      )
+    };
+  })
 );
 const ordersError = ref('');
 const tradesError = ref('');
 let dataGeneration = 0;
+let symbolRequest = 0;
 let accountRevision = 0;
 let positionRevision = 0;
 const positionEventChanges = new Map<string, { revision: number; row?: PositionSnapshot }>();
@@ -535,8 +598,17 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
     const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
     const oldPeak = Number(old[field]);
     const newPeak = Number(item[field]);
-    if (!Number.isFinite(oldPeak) || !Number.isFinite(newPeak)) return item;
-    return { ...item, [field]: short ? Math.min(oldPeak, newPeak) : Math.max(oldPeak, newPeak) };
+    const oldReturnPeak = Number(old.maximumReturnRate);
+    const newReturnPeak = Number(item.maximumReturnRate);
+    return {
+      ...item,
+      [field]: Number.isFinite(oldPeak) && Number.isFinite(newPeak)
+        ? short ? Math.min(oldPeak, newPeak) : Math.max(oldPeak, newPeak)
+        : Number.isFinite(oldPeak) ? old[field] : item[field],
+      maximumReturnRate: Number.isFinite(oldReturnPeak) && Number.isFinite(newReturnPeak)
+        ? Math.max(oldReturnPeak, newReturnPeak)
+        : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate
+    };
   });
 }
 
@@ -563,6 +635,13 @@ function applyPositionPerformanceEvent(event: any) {
         : Math.max(oldPeak, incomingPeak)
       : event[field];
   const row: StrategyPositionStateVO = { ...(old || ({} as StrategyPositionStateVO)), ...event, [field]: peak };
+  const oldMaximumReturnRate = Number(old?.maximumReturnRate);
+  const eventMaximumReturnRate = Number(event.maximumReturnRate);
+  if (Number.isFinite(oldMaximumReturnRate) || Number.isFinite(eventMaximumReturnRate)) {
+    row.maximumReturnRate = Number.isFinite(oldMaximumReturnRate) && Number.isFinite(eventMaximumReturnRate)
+      ? Math.max(oldMaximumReturnRate, eventMaximumReturnRate)
+      : Number.isFinite(eventMaximumReturnRate) ? eventMaximumReturnRate : oldMaximumReturnRate;
+  }
   if (index >= 0) positionHistories.value.splice(index, 1, row);
   else positionHistories.value = [...positionHistories.value, row];
 }
@@ -679,9 +758,13 @@ function handleDataTab(tab: string | number) {
     void loadProtectionOrders();
   }
 }
-const directionLabel = (item: { side?: string; quantity?: string | number }) => {
+const directionCode = (item: { side?: string; quantity?: string | number }) => {
   const short = item.side === 'SHORT' || (item.side === 'BOTH' && Number(item.quantity) < 0);
-  return short ? '开空' : '开多';
+  return short ? 'SHORT' : 'LONG';
+};
+const directionLabel = (item: { side?: string; quantity?: string | number }) => {
+  const label = selectDictLabel(quant_position_direction.value, directionCode(item));
+  return label || '方向未知';
 };
 const chartRef = ref<HTMLElement>(),
   chart = shallowRef<Chart>();
@@ -746,9 +829,10 @@ function renderChart() {
       updateChartBar = undefined;
     }
   });
+  const chartPriceScale = priceScaleFromTickSize(symbolInfo.value?.priceTickSize);
   chart.value.setSymbol({
     ticker: symbol.value,
-    pricePrecision: symbolInfo.value?.pricePrecision ?? 8,
+    ...(chartPriceScale === undefined ? {} : { pricePrecision: chartPriceScale }),
     volumePrecision: symbolInfo.value?.quantityPrecision ?? 8
   });
   chart.value.setPeriod(period());
@@ -839,6 +923,18 @@ function applyEvent(e: any) {
     const next = new Map(positionMarketMarks.value);
     next.set(eventSymbol, { price: String(e.price), receivedAt: Date.now() });
     positionMarketMarks.value = next;
+    const returnRatePeaks = new Map(positionReturnRatePeaks.value);
+    let changed = false;
+    for (const position of positions.value) {
+      if (position.symbol.toUpperCase() !== eventSymbol) continue;
+      const rate = positionMetrics(position, e.price).returnRate;
+      const key = `${credentialId.value}|${position.symbol.toUpperCase()}|${position.side.toUpperCase()}|${position.entryPrice}`;
+      if (rate !== undefined && rate > (returnRatePeaks.get(key) ?? Number.NEGATIVE_INFINITY)) {
+        returnRatePeaks.set(key, rate);
+        changed = true;
+      }
+    }
+    if (changed) positionReturnRatePeaks.value = returnRatePeaks;
   }
   if (e.type === 'CONNECTING' && !eventSymbol) streamStatus.value = 'CONNECTING';
   else if (e.type === 'CONNECTED' && eventSymbol === symbol.value.toUpperCase()) streamStatus.value = 'CONNECTED';
@@ -861,6 +957,15 @@ function applyEvent(e: any) {
     const updatedBar = toChart([e.kline])[0];
     if (updatedBar) updateChartBar?.(updatedBar);
   }
+}
+
+function clearPositionReturnRatePeak(symbol: string, side: string) {
+  const prefix = `${credentialId.value}|${symbol.toUpperCase()}|${side.toUpperCase()}|`;
+  const next = new Map(positionReturnRatePeaks.value);
+  for (const key of next.keys()) {
+    if (key.startsWith(prefix)) next.delete(key);
+  }
+  positionReturnRatePeaks.value = next;
 }
 
 function openSse(
@@ -922,6 +1027,7 @@ function openSse(
 function handleSseUnauthorized() {
   streamStatus.value = 'ERROR';
   accountSnapshotAvailable.value = false;
+  dailyAccountBaseline.value = null;
   removeToken();
   if (retry) clearTimeout(retry);
   if (accountRetry) clearTimeout(accountRetry);
@@ -1019,6 +1125,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
         const positionKey = positionSnapshotKey(row.symbol, row.side);
         if (Number(row.quantity) === 0) {
           if (index >= 0) positions.value.splice(index, 1);
+          clearPositionReturnRatePeak(row.symbol, row.side);
           positionEventChanges.set(positionKey, { revision: eventPositionRevision });
         } else if (index >= 0) positions.value[index] = row;
         else positions.value.push(row);
@@ -1038,6 +1145,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
       if (credentialId.value) {
         const trade = accountTrade(raw.o, credentialId.value, time => parseTime(time) || '');
         if (trade) {
+          scheduleAccountHydration();
           const isNew =
             !liveTrades.value.some(
               row => row.symbol === trade.symbol && row.exchangeTradeId === trade.exchangeTradeId
@@ -1365,6 +1473,7 @@ async function handleStrategyChange() {
 }
 async function loadData() {
   const generation = ++dataGeneration;
+  ++symbolRequest;
   ++tradeRequest;
   ++protectionRequest;
   tradeQuery.pageNum = 1;
@@ -1395,6 +1504,8 @@ async function loadData() {
   ordersError.value = '';
   tradesError.value = '';
   const id = credentialId.value;
+  const baselineDay = shanghaiDateKey(now.value);
+  dailyBaselineDay.value = baselineDay;
   // 切换交易对时先清理旧快照，避免新请求失败时继续显示上一个交易对的数据。
   klines.value = [];
   symbolInfo.value = undefined;
@@ -1407,7 +1518,7 @@ async function loadData() {
   trades.value = [];
   renderOverlays();
   const [k, s, p, i, h] = await Promise.allSettled([
-    listRealtimeKlines(symbol.value, interval.value, 1000),
+    listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode()),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }),
     id ? listPositions(id) : Promise.resolve({ data: [] as PositionSnapshot[] }),
     id
@@ -1424,6 +1535,7 @@ async function loadData() {
     ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
   }
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
@@ -1434,19 +1546,22 @@ async function loadData() {
   );
   positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
   if (id) {
-    const [a, o, t] = await Promise.allSettled([
+    const [a, o, t, baseline] = await Promise.allSettled([
       getAccountSnapshot(id),
       listOrders(id),
-      listTrades(id, undefined, { ...tradeQuery })
+      listTrades(id, undefined, { ...tradeQuery }),
+      getDailyAccountBaseline(id)
     ]);
     if (generation !== dataGeneration) return;
     ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
     tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
     account.value = a.status === 'fulfilled' ? a.value.data : undefined;
+    dailyAccountBaseline.value = baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay ? baseline.value.data : null;
     orders.value = o.status === 'fulfilled' ? o.value.data || [] : [];
     trades.value = t.status === 'fulfilled' ? t.value.data?.rows || [] : [];
     tradeTotal.value = t.status === 'fulfilled' ? t.value.data?.total || 0 : 0;
   }
+  void ensureQuantSymbolTickSizes().catch(() => undefined);
   renderChart();
   renderOverlays();
   connect();
@@ -1486,21 +1601,32 @@ function toggleStrategy(item: StrategyInstanceVO) {
   );
 }
 async function selectRowSymbol(row: { symbol?: string }) {
-  if (!row?.symbol || row.symbol === symbol.value) return;
+  if (!row?.symbol) return;
+  // 新点击（包括重新选中当前交易对）使之前尚未完成的切换请求失效。
+  const requestId = ++symbolRequest;
+  if (row.symbol === symbol.value) return;
   const nextSymbol = row.symbol;
   const generation = dataGeneration;
+  const requestedInterval = interval.value;
+  const runMode = selectedMarketRunMode();
   const [k, s] = await Promise.allSettled([
-    listRealtimeKlines(nextSymbol, interval.value, 1000),
+    listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol })
   ]);
-  if (generation !== dataGeneration) return;
+  if (
+    generation !== dataGeneration ||
+    requestId !== symbolRequest ||
+    requestedInterval !== interval.value ||
+    runMode !== selectedMarketRunMode()
+  ) return;
   if (k.status !== 'fulfilled') {
-    ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换`);
+    ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
     return;
   }
   symbol.value = nextSymbol;
   klines.value = k.value.data || [];
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
@@ -1519,7 +1645,7 @@ function cancel(row: unknown) {
     clientOrderId: order.clientOrderId,
     idempotencyKey: idempotency()
   };
-  confirmAction('确认撤单', `${order.symbol} ${order.side} ${order.originalQuantity} @ ${order.price}`, () =>
+  confirmAction('确认撤单', `${order.symbol} ${order.side} ${order.originalQuantity} @ ${formatQuantPrice(order.symbol, order.price)}`, () =>
     cancelOrder(data)
   );
 }
@@ -1552,9 +1678,18 @@ async function waitForPositionClosed(positionSymbol: string) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 500));
     try {
+      const snapshotPositionRevision = positionRevision;
       const response = await listPositions(credentialId.value, positionSymbol);
-      const remaining = (response.data || []).some(
-        item => item.symbol === positionSymbol && Math.abs(Number(item.quantity)) > 0
+      positions.value = mergePositionSymbolSnapshot(
+        positions.value,
+        response.data || [],
+        positionSymbol,
+        positionEventChanges,
+        snapshotPositionRevision
+      );
+      renderOverlays();
+      const remaining = positions.value.some(
+        item => item.symbol.toUpperCase() === positionSymbol.toUpperCase() && Math.abs(Number(item.quantity)) > 0
       );
       if (!remaining) return;
     } catch {
@@ -1592,6 +1727,7 @@ onBeforeUnmount(() => {
   if (accountRetry) clearTimeout(accountRetry);
   resize?.disconnect();
   if (clock) clearInterval(clock);
+  if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   if (chart.value) {
     chart.value.removeOverlay();
     dispose(chart.value);
@@ -1603,7 +1739,7 @@ onBeforeUnmount(() => {
 @include pageShell.table-crud-page;
 .terminal-card,
 .table-card {
-  margin-bottom: 12px;
+  margin-top: 12px;
 }
 .section-head,
 .terminal-overview {
@@ -1635,6 +1771,51 @@ onBeforeUnmount(() => {
 .toolbar-label {
   margin-left: 10px;
   color: var(--el-text-color-secondary);
+}
+.period-control {
+  display: flex;
+  align-items: center;
+
+  /* 1. 作用在每一个按钮上 */
+  :deep(.control-group-item) {
+
+    /* 统一宽度，默认直角 */
+    .el-radio-button__inner {
+      width: 55px;
+      //padding: 8px 0; /* 确保文字居中 */
+      border-radius: 0 !important;
+    }
+
+    /* 拦截选中状态，防止选中后变成四个圆角 */
+    &.is-active .el-radio-button__inner,
+    .el-radio-button__original-radio:checked + .el-radio-button__inner {
+      border-radius: 0 !important;
+    }
+
+    /* 2. 第一个按钮：左侧圆角 */
+    &:first-child {
+      .el-radio-button__inner {
+        border-radius: 5px 0 0 5px !important;
+      }
+      /* 选中时的左圆角 */
+      &.is-active .el-radio-button__inner,
+      .el-radio-button__original-radio:checked + .el-radio-button__inner {
+        border-radius: 5px 0 0 5px !important;
+      }
+    }
+
+    /* 3. 最后一个按钮：右侧圆角 */
+    &:last-child {
+      .el-radio-button__inner {
+        border-radius: 0 5px 5px 0 !important;
+      }
+      /* 选中时的右圆角 */
+      &.is-active .el-radio-button__inner,
+      .el-radio-button__original-radio:checked + .el-radio-button__inner {
+        border-radius: 0 5px 5px 0 !important;
+      }
+    }
+  }
 }
 .overview-label {
   font-size: 14px;
@@ -1794,7 +1975,7 @@ onBeforeUnmount(() => {
 }
 .account-card {
   overflow: hidden;
-  height: 250px;
+  height: 260px;
 }
 .strategy-side-card {
   //flex: 1;

@@ -7,6 +7,7 @@ import {
   liveTradePage,
   mergeAccountPosition,
   mergePositionSnapshots,
+  mergePositionSymbolSnapshot,
   mergeTrades,
   parseBinanceAccountEvent,
   positionMetrics,
@@ -60,28 +61,39 @@ describe('position maximum return calculation', () => {
     entryPrice: '2',
     initialPositionQty: '100',
     initialMargin: '20',
+    maximumReturnRate: '12.5',
     highestPriceSinceEntry: '2.2',
     lowestPriceSinceEntry: '1.9'
   };
 
-  it('uses the persisted favorable price and original margin for a long position', () => {
-    expect(positionMaximumReturnRate(position, 'account-1', [history])).toBeCloseTo(100);
+  it('uses the persisted peak from Binance-style return-rate samples instead of reconstructing it from trade-price extrema', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [history])).toBe(12.5);
   });
 
-  it('uses the persisted favorable price for a short position', () => {
+  it('uses the persisted return-rate peak for a short position', () => {
     expect(
       positionMaximumReturnRate({ ...position, side: 'SHORT', quantity: '-100' }, 'account-1', [
         { ...history, direction: 'SHORT' }
       ])
-    ).toBeCloseTo(50);
+    ).toBe(12.5);
   });
 
-  it('does not infer lifetime maximum from current price when no matching history exists', () => {
-    expect(positionMaximumReturnRate(position, 'account-1', [])).toBeUndefined();
+  it('never reports a maximum below the currently displayed return rate', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [history], 105)).toBe(105);
   });
 
-  it('does not attach a previous position cycle peak to a new entry at a different price', () => {
-    expect(positionMaximumReturnRate({ ...position, entryPrice: '2.5' }, 'account-1', [history])).toBeUndefined();
+  it('uses current return rate as the maximum until a higher live sample arrives', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [], 10)).toBe(10);
+  });
+
+  it('does not derive the maximum from the strategy trade-price extrema', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [
+      { ...history, maximumReturnRate: undefined, highestPriceSinceEntry: '2.5' }
+    ], 7)).toBe(7);
+  });
+
+  it('does not attach a previous position peak to a new entry at a different price', () => {
+    expect(positionMaximumReturnRate({ ...position, entryPrice: '2.5' }, 'account-1', [history], 4)).toBe(4);
   });
 });
 
@@ -248,6 +260,21 @@ describe('terminal account data', () => {
   });
   it('accepts a full authoritative snapshot if no newer events arrived', () => {
     expect(mergePositionSnapshots([position], new Map(), 0)).toEqual([position]);
+  });
+
+  it('replaces only the requested symbol after a position confirmation', () => {
+    const other = { ...position, symbol: 'ETHUSDT' };
+    expect(mergePositionSymbolSnapshot([position, other], [], 'PUMPUSDT', new Map(), 0)).toEqual([other]);
+    expect(mergePositionSymbolSnapshot([other], [{ ...position, quantity: '50' }], 'PUMPUSDT', new Map(), 0)).toEqual([
+      other,
+      { ...position, quantity: '50' }
+    ]);
+  });
+
+  it('keeps a position event newer than a symbol confirmation request', () => {
+    const newer = { ...position, quantity: '25' };
+    const changes = new Map([['PUMPUSDT:LONG', { revision: 2, row: newer }]]);
+    expect(mergePositionSymbolSnapshot([position], [], 'PUMPUSDT', changes, 1)).toEqual([newer]);
   });
 });
 

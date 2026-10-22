@@ -55,17 +55,26 @@
         </div>
       </template>
       <el-table v-loading="loading" class="data-table" :data="rows" border>
+        <el-table-column type="index" label="序号" width="80" align="center">
+          <template #default="scope">{{ (query.pageNum - 1) * query.pageSize + scope.$index + 1 }}</template>
+        </el-table-column>
         <el-table-column
           v-for="column in columns"
           :key="column.prop"
           :label="column.label"
+          :align="column.align"
+          :header-align="column.headerAlign"
           :min-width="column.width || 140"
           :prop="column.prop"
           show-overflow-tooltip
         >
-          <template #default="scope">{{ formatCell(scope.row, column) }}</template>
+          <template #default="scope">
+            <slot :name="`column-${column.prop}`" :row="scope.row">
+              {{ formatCell(scope.row, column) }}
+            </slot>
+          </template>
         </el-table-column>
-        <el-table-column v-if="detail" fixed="right" label="详情" width="80">
+        <el-table-column v-if="detail" fixed="right" label="详情" width="80" align="center" header-align="center">
           <template #default="scope">
             <el-button link type="primary" @click="showDetail(scope.row)">查看</el-button>
           </template>
@@ -88,7 +97,7 @@
 import type { PageResult } from '@/api/types';
 
 type LedgerRow = Record<string, unknown> & { id?: string | number };
-type LedgerColumn = { prop: string; label: string; width?: number; formatter?: (row: LedgerRow) => string };
+type LedgerColumn = { prop: string; label: string; width?: number; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
 type LedgerFilter = {
   key: string;
   label: string;

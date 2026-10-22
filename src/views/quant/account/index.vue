@@ -59,10 +59,12 @@
               <template #default>{{ selectedCredential?.accountName || '-' }}</template>
             </el-table-column>
             <el-table-column label="交易对" min-width="150" prop="symbol" />
-            <el-table-column label="方向" min-width="80" prop="side" />
+            <el-table-column label="方向" min-width="80">
+              <template #default="scope"><dict-tag :options="quant_position_direction" :value="positionDirection(scope.row)" /></template>
+            </el-table-column>
             <el-table-column label="持仓数量" min-width="100" prop="quantity" />
-            <el-table-column label="开仓均价" min-width="100" prop="entryPrice" />
-            <el-table-column label="标记价" min-width="100" prop="markPrice" />
+            <el-table-column label="开仓均价" min-width="100" prop="entryPrice"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.entryPrice) }}</template></el-table-column>
+            <el-table-column label="标记价" min-width="100" prop="markPrice"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.markPrice) }}</template></el-table-column>
             <el-table-column label="未实现盈亏" min-width="100" prop="unrealizedPnl">
               <template #default="scope">
                 {{ formatDecimal(scope.row.unrealizedPnl) }}
@@ -73,9 +75,9 @@
             </el-table-column>
             <el-table-column label="杠杆" min-width="80" prop="leverage" />
             <el-table-column label="保证金" min-width="100" prop="margin" />
-            <el-table-column label="强平价" min-width="100" prop="liquidationPrice" />
-            <el-table-column label="止盈价" min-width="100" prop="takeProfitPrice" />
-            <el-table-column label="止损价" min-width="100" prop="stopLossPrice" />
+            <el-table-column label="强平价" min-width="100" prop="liquidationPrice"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.liquidationPrice) }}</template></el-table-column>
+            <el-table-column label="止盈价" min-width="100" prop="takeProfitPrice"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.takeProfitPrice) }}</template></el-table-column>
+            <el-table-column label="止损价" min-width="100" prop="stopLossPrice"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.stopLossPrice) }}</template></el-table-column>
             <el-table-column fixed="right" label="操作" width="100">
               <template #default="scope">
                 <el-button link type="danger" @click="openClose(scope.row as PositionSnapshot)">平仓</el-button>
@@ -94,7 +96,7 @@
             <el-table-column label="方向" min-width="80" prop="side" />
             <el-table-column label="持仓数量" min-width="100" prop="originalQuantity" />
             <el-table-column label="开仓均价" min-width="100">-</el-table-column>
-            <el-table-column label="委托价格" min-width="100" prop="price" />
+            <el-table-column label="委托价格" min-width="100" prop="price"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template></el-table-column>
             <el-table-column align="center" label="委托时间" prop="updateTime" width="220" />
             <el-table-column fixed="right" label="操作" width="100">
               <template #default="scope">
@@ -127,7 +129,7 @@
             <el-table-column label="成交方向" min-width="100" prop="side" />
             <el-table-column label="成交数量" min-width="110" prop="quantity" />
             <el-table-column label="成交价" min-width="110">
-              <template #default="scope">{{ formatDecimal(scope.row.price) }}</template>
+              <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
             </el-table-column>
             <el-table-column label="成交金额" min-width="120">
               <template #default="scope">{{ formatAmount(scope.row.quantity, scope.row.price) }}</template>
@@ -152,7 +154,7 @@
           <span>{{ closeForm.symbol }}</span>
         </el-form-item>
         <el-form-item label="持仓方向">
-          <span>{{ closeForm.positionSide }}</span>
+          <dict-tag :options="quant_position_direction" :value="closeForm.direction" />
         </el-form-item>
         <el-form-item label="平仓数量">
           <el-input-number
@@ -184,6 +186,12 @@ import {
   listTrades,
   syncTrades
 } from '@/api/quant';
+import { useDict } from '@/utils/dict';
+import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
+
+const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
+const positionDirection = (item: { side?: string; quantity?: string | number }) =>
+  item.side === 'BOTH' ? (Number(item.quantity) < 0 ? 'SHORT' : 'LONG') : item.side;
 
 const loading = ref(false);
 const loadingTab = ref(false);
@@ -205,7 +213,7 @@ const tradeTimeRange = ref<string[]>([]);
 const syncLoading = ref(false);
 const closeDialogVisible = ref(false);
 const closeLoading = ref(false);
-const closeForm = reactive({ symbol: '', positionSide: '', side: '', quantity: 0, maxQuantity: 0 });
+const closeForm = reactive({ symbol: '', positionSide: '', direction: '', side: '', quantity: 0, maxQuantity: 0 });
 
 const formatDecimal = (value: string | number | undefined) => {
   if (value === undefined || value === null || value === '') return '-';
@@ -258,6 +266,7 @@ const loadTab = async () => {
       trades.value = result.data?.rows || [];
       tradesTotal.value = result.data?.total || 0;
     }
+    void ensureQuantSymbolTickSizes().catch(() => undefined);
   } finally {
     loadingTab.value = false;
   }
@@ -303,6 +312,7 @@ const openClose = (row: PositionSnapshot) => {
   const quantity = Number(row.quantity);
   closeForm.symbol = row.symbol;
   closeForm.positionSide = row.side;
+  closeForm.direction = positionDirection(row) || '';
   closeForm.side = row.side === 'SHORT' ? 'BUY' : row.side === 'LONG' ? 'SELL' : quantity >= 0 ? 'SELL' : 'BUY';
   closeForm.quantity = Math.abs(quantity);
   closeForm.maxQuantity = Math.abs(quantity);

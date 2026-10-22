@@ -77,6 +77,9 @@
       <el-alert v-if="unresolvedDispatches.length" type="warning" :closable="false" show-icon
         :title="`当前有 ${unresolvedDispatches.length} 个交易对存在未解决的外发操作，相关交易可能被阻断`" />
       <el-table v-loading="dispatchLoading" class="data-table mt-2" :data="unresolvedDispatches" border empty-text="无待核查调度占用">
+        <el-table-column type="index" label="序号" width="80" align="center">
+          <template #default="scope">{{ scope.$index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="credentialId" label="账户 ID" min-width="175" />
         <el-table-column prop="symbol" label="交易对" min-width="115" />
         <el-table-column prop="operation" label="操作" min-width="130" />

@@ -4,7 +4,7 @@
       class="history-note"
       type="info"
       :closable="false"
-      title="一行代表一个持仓周期；开仓金额为实际保证金，盈亏为已实现盈亏（未扣手续费）。历史保证金、杠杆未记录时显示 —；手续费沿用原账本金额，币种未记录。时间为北京时间。"
+      title="一行代表一个持仓周期；开仓名义金额按成交数量 × 加权开仓价计算，不等同于实际保证金。账户余额为成交后核实的账户钱包余额及时间，不代表该笔交易单独造成的变化。旧记录缺少事实时显示 —；时间为北京时间。"
     />
     <el-alert
       v-if="incompleteCount"
@@ -13,7 +13,11 @@
       :closable="false"
       :title="`${incompleteCount} 个账户与交易对的成交链不完整或来源不明确，已排除，避免展示错误开平仓记录。`"
     />
-    <AdminLedgerTable title="开平仓记录" :columns="columns" :filters="filters" :load-page="loadPage" />
+    <AdminLedgerTable title="开平仓记录" :columns="columns" :filters="filters" :load-page="loadPage">
+      <template #column-direction="scope">
+        <dict-tag :options="quant_position_direction" :value="scope.row.direction" />
+      </template>
+    </AdminLedgerTable>
   </div>
 </template>
 <script lang="ts" setup>
@@ -21,8 +25,10 @@ import { listTradeHistory } from '@/api/quant/trade-history';
 import AdminLedgerTable from '../components/AdminLedgerTable.vue';
 import { displayDecimal } from '../components/ledger-display';
 import { useCredentialOptions } from '../components/useCredentialOptions';
+import { useDict } from '@/utils/dict';
 
 const { credentialFilter } = useCredentialOptions();
+const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
 const incompleteCount = ref(0);
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
@@ -35,28 +41,39 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   hourCycle: 'h23'
 });
 const decimal = (value: unknown) => (value == null ? '—' : displayDecimal(value));
+const price = (value: unknown) => (value == null ? '—' : String(value));
 const time = (value: unknown) => (value ? timeFormatter.format(new Date(String(value))) : '—');
+const balance = (value: unknown, checkedAt: unknown) => {
+  if (value == null) return '—';
+  const checked = checkedAt ? `（${time(checkedAt)}）` : '';
+  return `${String(value)}${checked}`;
+};
+const centered = { align: 'center' as const, headerAlign: 'center' as const };
 const columns = [
-  { prop: 'accountName', label: '客户名称' },
-  { prop: 'symbol', label: '交易对' },
+  { prop: 'accountName', label: '客户名称', ...centered, width: 120 },
+  { prop: 'symbol', label: '交易对', ...centered, minWidth: 100 },
   {
     prop: 'direction',
     label: '开仓方向',
-    formatter: (row: Record<string, unknown>) =>
-      row.direction === 'LONG' ? '开多' : row.direction === 'SHORT' ? '开空' : '—'
+    ...centered,
+    width: 80,
   },
-  { prop: 'entryPrice', label: '开仓价', formatter: (row: Record<string, unknown>) => decimal(row.entryPrice) },
-  { prop: 'openingMargin', label: '开仓金额', formatter: (row: Record<string, unknown>) => decimal(row.openingMargin) },
+  { prop: 'entryPrice', label: '开仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => price(row.entryPrice) },
+  { prop: 'openingNotional', label: '开仓名义金额(U)', ...centered, formatter: (row: Record<string, unknown>) => decimal(row.openingNotional) },
   {
     prop: 'leverage',
     label: '杠杆',
+    width: 80,
+    ...centered,
     formatter: (row: Record<string, unknown>) => (row.leverage == null ? '—' : `${row.leverage}x`)
   },
-  { prop: 'openedAt', label: '开仓时间', width: 180, formatter: (row: Record<string, unknown>) => time(row.openedAt) },
-  { prop: 'closePrice', label: '平仓价', formatter: (row: Record<string, unknown>) => decimal(row.closePrice) },
-  { prop: 'realizedPnl', label: '盈亏', formatter: (row: Record<string, unknown>) => decimal(row.realizedPnl) },
-  { prop: 'commission', label: '手续费', formatter: (row: Record<string, unknown>) => decimal(row.commission) },
-  { prop: 'closedAt', label: '平仓时间', width: 180, formatter: (row: Record<string, unknown>) => time(row.closedAt) }
+  { prop: 'openingBalance', label: '开仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.openingBalance, row.openingBalanceAt) },
+  { prop: 'openedAt', label: '开仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.openedAt) },
+  { prop: 'closePrice', label: '平仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => price(row.closePrice) },
+  { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => decimal(row.realizedPnl) },
+  { prop: 'commission', label: '手续费', ...centered, width: 100,formatter: (row: Record<string, unknown>) => price(row.commission) },
+  { prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },
+  { prop: 'closedAt', label: '平仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closedAt) }
 ];
 const filters = computed(() => [
   { ...credentialFilter.value, label: '客户名称', placeholder: '全部客户' },
