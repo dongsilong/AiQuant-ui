@@ -120,15 +120,28 @@
                     </el-link>
                     <span v-else>{{ symbol }}</span>
                   </p>
-                  <small>{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}</small>
+                  <small>
+                    实例：{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}
+                    <span> · 交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</span>
+                  </small>
                 </div>
-                <el-button
-                  size="small"
-                  :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
-                  @click="toggleStrategy(item)"
-                >
-                  {{ item.status === 'RUNNING' || item.status === '1' ? '停止' : '启动' }}
-                </el-button>
+                <div class="strategy-actions">
+                  <el-button
+                    size="small"
+                    :type="item.runtimeEnabled === false ? 'success' : 'warning'"
+                    :disabled="!item.strategySymbolId"
+                    @click="toggleStrategySymbol(item)"
+                  >
+                    {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
+                  </el-button>
+                  <el-button
+                    size="small"
+                    :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
+                    @click="toggleStrategy(item)"
+                  >
+                    {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
+                  </el-button>
+                </div>
               </div>
             </div>
             <el-empty v-else description="暂无可运行策略" />
@@ -369,6 +382,7 @@ import {
   listStrategySymbols,
   startStrategy,
   stopStrategy,
+  setStrategySymbolRuntimeEnabled,
   cancelOrder,
   closePosition
 } from '@/api/quant';
@@ -1608,6 +1622,33 @@ async function confirmAction(title: string, message: string, action: () => Promi
   ElMessage.success('操作已提交');
   await refresh();
 }
+async function toggleStrategySymbol(item: StrategyInstanceVO) {
+  if (item.strategyId === undefined || item.strategySymbolId === undefined) {
+    ElMessage.error('缺少策略或策略交易对标识，无法切换运行状态');
+    return;
+  }
+  const enabled = item.runtimeEnabled === false;
+  const symbolName = item.symbol || '当前交易对';
+  const title = enabled ? '恢复交易对' : '暂停交易对';
+  const message = enabled
+    ? `确认恢复 ${symbolName} 的开仓信号评估？恢复后仍必须通过现有风控、持仓核验和开仓幂等检查。`
+    : `确认暂停 ${symbolName} 的新开仓？策略整体和其他交易对不受影响；该交易对已有持仓不会自动平仓，止盈、止损、保护单、对账和异常恢复仍继续运行。`;
+  try {
+    await ElMessageBox.confirm(message, title, {
+      type: 'warning',
+      confirmButtonText: '确认执行',
+      cancelButtonText: '取消'
+    });
+    await setStrategySymbolRuntimeEnabled(item.strategyId, item.strategySymbolId, enabled);
+    ElMessage.success(enabled ? '已恢复该交易对的开仓评估' : '已暂停该交易对的新开仓');
+    await refresh();
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(queryError(error, '交易对运行状态切换失败'));
+      await refresh();
+    }
+  }
+}
 function toggleStrategy(item: StrategyInstanceVO) {
   if (item.id === undefined) return;
   confirmAction(
@@ -2040,6 +2081,13 @@ onBeforeUnmount(() => {
   text-align: right;
   margin: 0;
 }
+.strategy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .strategy-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
