@@ -240,6 +240,7 @@ export interface StrategySymbolBinding {
   marginMode?: string;
   paramsJson?: string;
   status?: string;
+  runtimeEnabled?: boolean;
 }
 export interface StrategyPreflightResult {
   valid: boolean;
@@ -262,6 +263,7 @@ export interface StrategyInstanceVO {
   strategyId?: number | string;
   strategyName?: string;
   strategySymbolId?: number | string;
+  runtimeEnabled?: boolean;
   credentialId?: number | string;
   accountName?: string;
   symbol?: string;

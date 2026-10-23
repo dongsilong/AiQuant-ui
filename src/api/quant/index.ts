@@ -138,6 +138,8 @@ export const replaceStrategyUsers = (id: number | string, userIds: Array<number 
   request({ url: '/quant/strategy/' + id + '/users', method: 'put', data: { userIds } });
 export const listStrategySymbols = (id: number | string): AxiosPromise<StrategySymbolBinding[]> =>
   request({ url: '/quant/strategy/' + id + '/symbols', method: 'get' });
+export const setStrategySymbolRuntimeEnabled = (strategyId: number | string, strategySymbolId: number | string, enabled: boolean) =>
+  request({ url: `/quant/strategy/${strategyId}/symbols/${strategySymbolId}/runtime`, method: 'post', params: { enabled } });
 export const bindStrategySymbol = (id: number | string, data: StrategySymbolBinding) =>
   request({ url: '/quant/strategy/' + id + '/symbols', method: 'post', data });
 export const unbindStrategySymbol = (id: number | string, symbolId: number | string) =>
