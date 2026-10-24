@@ -58,6 +58,14 @@
                 {{ tool.label }}
               </el-button>
             </div>
+            <div v-if="chartProtectionLines.length" class="protection-legend">
+              <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
+                交易所止盈
+              </span>
+              <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
+                交易所止损
+              </span>
+            </div>
             <div class="chart-countdown">
               剩余
               <strong>{{ candleCountdown }}</strong>
@@ -71,15 +79,16 @@
           <el-card shadow="never" class="side-card account-card">
             <template #header><b>账户资金</b></template>
             <div v-if="account" class="fund">
-              <strong>{{ format(account.marginBalance) }} USDT</strong>
-              <span>账户权益</span>
+              <strong>{{ formatFixed(account.marginBalance, 2) }} USDT</strong>
               <dl>
                 <dt>钱包余额</dt>
-                <dd>{{ format(account.walletBalance) }}</dd>
+                <dd>{{ formatFixed(account.walletBalance, 2) }}</dd>
                 <dt>可用余额</dt>
-                <dd>{{ format(account.availableBalance) }}</dd>
+                <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
-                <dd>{{ format(account.unrealizedPnl) }}</dd>
+                <dd>{{ formatFixed(account.unrealizedPnl, 2) }}</dd>
+                <dt>当天总收益率</dt>
+                <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
               </dl>
             </div>
             <el-empty v-else description="暂无账户数据" />
@@ -104,138 +113,184 @@
               <div v-for="item in instances" :key="item.id" class="strategy">
                 <div>
                   <b>{{ item.strategyName || '策略实例' }}</b>
-                  <p>{{ item.accountName || '-' }} · {{ item.symbol || symbol }}</p>
-                  <small>{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}</small>
+                  <p>
+                    {{ item.accountName || '-' }} ·
+                    <el-link v-if="item.symbol" type="primary" :underline="'never'" @click.stop="selectRowSymbol(item)">
+                      {{ item.symbol }}
+                    </el-link>
+                    <span v-else>{{ symbol }}</span>
+                  </p>
+                  <small>
+                    实例：{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}
+                    <span> · 交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</span>
+                  </small>
                 </div>
-                <el-button
-                  size="small"
-                  :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
-                  @click="toggleStrategy(item)"
-                >
-                  {{ item.status === 'RUNNING' || item.status === '1' ? '停止' : '启动' }}
-                </el-button>
+                <div class="strategy-actions">
+                  <el-button
+                    size="small"
+                    :type="item.runtimeEnabled === false ? 'success' : 'warning'"
+                    :disabled="!item.strategySymbolId"
+                    @click="toggleStrategySymbol(item)"
+                  >
+                    {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
+                  </el-button>
+                  <el-button
+                    size="small"
+                    :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
+                    @click="toggleStrategy(item)"
+                  >
+                    {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
+                  </el-button>
+                </div>
               </div>
             </div>
             <el-empty v-else description="暂无可运行策略" />
           </el-card>
         </div>
       </div>
+
+      <el-card shadow="never" class="table-card">
+        <el-tabs v-model="activeTab" @tab-change="handleDataTab">
+          <el-tab-pane label="当前持仓" name="positions">
+            <el-table
+              :data="positionRows"
+              :empty-text="accountSnapshotAvailable ? '暂无持仓' : '账户数据暂不可用'"
+              border
+              @row-dblclick="selectRowSymbol"
+            >
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" min-width="100" />
+              <el-table-column label="方向" width="100" align="center">
+                <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
+              </el-table-column>
+              <el-table-column label="数量 / 名义价值" min-width="150">
+                <template #default="scope">
+                  {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }} U
+                </template>
+              </el-table-column>
+              <el-table-column label="开仓均价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.entryPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="标记价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.markPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="未实现盈亏" min-width="100">
+                <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
+              </el-table-column>
+              <el-table-column label="回报率" min-width="100">
+                <template #default="scope">
+                  {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
+                </template>
+              </el-table-column>
+              <el-table-column label="最大回报率" min-width="110">
+                <template #default="scope">
+                  {{
+                    scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
+                  }}
+                </template>
+              </el-table-column>
+              <el-table-column label="强平价" min-width="100">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.liquidationPrice) }}</template>
+              </el-table-column>
+              <el-table-column label="交易所止盈 / 止损" min-width="220" show-overflow-tooltip>
+                <template #default="scope">
+                  {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="110" align="center">
+                <template #default="scope">
+                  <el-button link type="danger" @click="close(scope.row)">平仓</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="当前委托" name="orders">
+            <el-alert
+              v-if="ordersError || protectionError"
+              :title="[ordersError, protectionError].filter(Boolean).join('；')"
+              type="error"
+              :closable="false"
+              show-icon
+            />
+            <el-table
+              :data="orderRows"
+              :empty-text="protectionLoading ? '条件单加载中' : ordersError || protectionError || '暂无普通或条件委托'"
+              border
+              @row-dblclick="selectRowSymbol"
+            >
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="side" label="方向" />
+              <el-table-column prop="type" label="类型" />
+              <el-table-column prop="source" label="来源" />
+              <el-table-column label="价格 / 触发价">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
+              </el-table-column>
+              <el-table-column label="数量">
+                <template #default="scope">{{ format(scope.row.originalQuantity) }}</template>
+              </el-table-column>
+              <el-table-column prop="status" label="状态" />
+              <el-table-column label="操作" width="110">
+                <template #default="scope">
+                  <el-button v-if="scope.row.kind === 'normal'" link type="danger" @click="cancel(scope.row)">
+                    撤单
+                  </el-button>
+                  <span v-else>条件单只读</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="成交记录" name="trades">
+            <el-alert v-if="tradesError" :title="tradesError" type="error" :closable="false" show-icon />
+            <el-button v-if="tradesError" link type="primary" @click="loadTrades">重试</el-button>
+            <el-button v-if="tradePending" link type="primary" @click="loadTrades">有新成交，刷新列表</el-button>
+            <el-table v-loading="tradeLoading" :data="trades" :empty-text="tradesError || '暂无成交'" border>
+              <el-table-column type="index" label="序号" align="center" width="80">
+                <template #default="scope">{{ (tradeQuery.pageNum - 1) * tradeQuery.pageSize + scope.$index + 1 }}</template>
+              </el-table-column>
+              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="side" label="方向" />
+              <el-table-column label="数量">
+                <template #default="scope">{{ format(scope.row.quantity) }}</template>
+              </el-table-column>
+              <el-table-column label="价格">
+                <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
+              </el-table-column>
+              <el-table-column label="已实现盈亏">
+                <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
+              </el-table-column>
+              <el-table-column prop="tradeTime" label="成交时间" />
+            </el-table>
+            <pagination
+              v-show="tradeTotal > 0"
+              v-model:page="tradeQuery.pageNum"
+              v-model:limit="tradeQuery.pageSize"
+              :total="tradeTotal"
+              @pagination="loadTrades"
+            />
+          </el-tab-pane>
+        </el-tabs>
+      </el-card>
     </el-card>
 
-    <el-card shadow="never" class="table-card">
-      <el-tabs v-model="activeTab" @tab-change="handleDataTab">
-        <el-tab-pane label="当前持仓" name="positions">
-          <el-table
-            :data="positionRows"
-            :empty-text="accountSnapshotAvailable ? '暂无持仓' : '账户数据暂不可用'"
-            border
-            @row-dblclick="selectRowSymbol"
-          >
-            <el-table-column prop="symbol" label="交易对" min-width="100" />
-            <el-table-column label="方向" width="100" align="center">
-              <template #default="scope">{{ directionLabel(scope.row) }}</template>
-            </el-table-column>
-            <el-table-column label="数量 / 名义价值" min-width="150">
-              <template #default="scope">
-                {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }} U
-              </template>
-            </el-table-column>
-            <el-table-column label="开仓均价" min-width="100">
-              <template #default="scope">{{ format(scope.row.entryPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="标记价" min-width="100">
-              <template #default="scope">{{ format(scope.row.markPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="未实现盈亏" min-width="100">
-              <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
-            </el-table-column>
-            <el-table-column label="回报率" min-width="100">
-              <template #default="scope">
-                {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
-              </template>
-            </el-table-column>
-            <el-table-column label="强平价" min-width="100">
-              <template #default="scope">{{ format(scope.row.liquidationPrice) }}</template>
-            </el-table-column>
-            <el-table-column label="交易所止盈 / 止损" min-width="220" show-overflow-tooltip>
-              <template #default="scope">
-                {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="110" align="center">
-              <template #default="scope">
-                <el-button link type="danger" @click="close(scope.row)">平仓</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="当前委托" name="orders">
-          <el-alert
-            v-if="ordersError || protectionError"
-            :title="[ordersError, protectionError].filter(Boolean).join('；')"
-            type="error"
-            :closable="false"
-            show-icon
-          />
-          <el-table
-            :data="orderRows"
-            :empty-text="protectionLoading ? '条件单加载中' : ordersError || protectionError || '暂无普通或条件委托'"
-            border
-            @row-dblclick="selectRowSymbol"
-          >
-            <el-table-column prop="symbol" label="交易对" />
-            <el-table-column prop="side" label="方向" />
-            <el-table-column prop="type" label="类型" />
-            <el-table-column prop="source" label="来源" />
-            <el-table-column label="价格 / 触发价">
-              <template #default="scope">{{ format(scope.row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="数量">
-              <template #default="scope">{{ format(scope.row.originalQuantity) }}</template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" />
-            <el-table-column label="操作" width="110">
-              <template #default="scope">
-                <el-button v-if="scope.row.kind === 'normal'" link type="danger" @click="cancel(scope.row)">
-                  撤单
-                </el-button>
-                <span v-else>条件单只读</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-        <el-tab-pane label="成交记录" name="trades">
-          <el-alert v-if="tradesError" :title="tradesError" type="error" :closable="false" show-icon />
-          <el-button v-if="tradesError" link type="primary" @click="loadTrades">重试</el-button>
-          <el-button v-if="tradePending" link type="primary" @click="loadTrades">有新成交，刷新列表</el-button>
-          <el-table v-loading="tradeLoading" :data="trades" :empty-text="tradesError || '暂无成交'" border>
-            <el-table-column prop="symbol" label="交易对" />
-            <el-table-column prop="side" label="方向" />
-            <el-table-column label="数量">
-              <template #default="scope">{{ format(scope.row.quantity) }}</template>
-            </el-table-column>
-            <el-table-column label="价格">
-              <template #default="scope">{{ format(scope.row.price) }}</template>
-            </el-table-column>
-            <el-table-column label="已实现盈亏">
-              <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
-            </el-table-column>
-            <el-table-column prop="tradeTime" label="成交时间" />
-          </el-table>
-          <pagination
-            v-show="tradeTotal > 0"
-            v-model:page="tradeQuery.pageNum"
-            v-model:limit="tradeQuery.pageSize"
-            :total="tradeTotal"
-            @pagination="loadTrades"
-          />
-        </el-tab-pane>
-      </el-tabs>
-    </el-card>
     <el-button class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
       斜率
     </el-button>
-    <el-drawer v-model="slopePanelVisible" title="实时斜率" direction="rtl" size="620px" @closed="closeSlopePanel">
+    <el-drawer
+      v-model="slopePanelVisible"
+      title="实时斜率"
+      direction="rtl"
+      size="620px"
+      :modal="false"
+      :modal-penetrable="true"
+      :resizable="true"
+      :lock-scroll="false"
+      @closed="closeSlopePanel"
+    >
       <el-select
         v-model="slopeStrategyId"
         class="slope-strategy-select"
@@ -244,6 +299,10 @@
       >
         <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
       </el-select>
+      <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
+        <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
+        <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
+      </div>
       <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
       <el-table
         v-else-if="slopeRows.length"
@@ -253,13 +312,20 @@
         stripe
         class="slope-table"
       >
-        <el-table-column prop="symbol" label="交易对" width="120" />
-        <el-table-column prop="interval" label="周期" width="72" />
-        <el-table-column label="参考开盘价" min-width="110">
-          <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
+        <el-table-column type="index" label="序号" align="center" width="60" />
+        <el-table-column label="交易对" width="120">
+          <template #default="scope">
+            <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
+              {{ scope.row.symbol }}
+            </el-link>
+          </template>
         </el-table-column>
+        <el-table-column prop="interval" label="周期" width="72" />
+        <!--<el-table-column label="参考开盘价" min-width="110">
+          <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
+        </el-table-column>-->
         <el-table-column label="当前价" min-width="110">
-          <template #default="scope">{{ format(scope.row.currentPrice) }}</template>
+          <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
         </el-table-column>
         <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
         <el-table-column label="角度" min-width="82">
@@ -273,7 +339,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else description="当前策略暂无交易对" />
+      <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
     </el-drawer>
   </div>
 </template>
@@ -283,6 +349,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { type Chart, dispose, init, type KLineData } from 'klinecharts';
 import type {
   AccountSnapshot,
+  DailyAccountBaseline,
   CancelOrderForm,
   ClosePositionForm,
   CredentialVO,
@@ -293,6 +360,7 @@ import type {
   PriceSnapshot,
   SymbolVO,
   StrategyInstanceVO,
+  StrategyPositionStateVO,
   StrategySymbolBinding,
   StrategyVO,
   TradeRecord
@@ -301,6 +369,7 @@ import {
   listCredential,
   listStrategies,
   getAccountSnapshot,
+  getDailyAccountBaseline,
   listPositions,
   listOrders,
   listProtectionOrders,
@@ -309,27 +378,40 @@ import {
   listSymbol,
   getSymbol,
   listStrategyInstances,
+  listStrategyPositionStates,
   listStrategySymbols,
   startStrategy,
   stopStrategy,
+  setStrategySymbolRuntimeEnabled,
   cancelOrder,
   closePosition
 } from '@/api/quant';
 import { getToken, removeToken } from '@/utils/auth';
 import { useDict } from '@/utils/dict';
-import { parseTime } from '@/utils/ruoyi';
+import { parseTime, selectDictLabel } from '@/utils/ruoyi';
+import { cacheQuantSymbolTickSize, ensureQuantSymbolTickSizes, formatQuantPrice, priceScaleFromTickSize } from '../components/price-format';
 import {
   accountTrade,
+  parseBinanceAccountEvent,
   liveTradePage,
   protectionPrices,
+  protectionPriceLines,
   updateProtectionOrders,
   mergeAccountPosition,
   mergePositionSnapshots,
+  mergePositionSymbolSnapshot,
+  positionSnapshotKey,
   mergeTrades,
   positionMetrics,
-  updateOrders
+  positionMaximumReturnRate,
+  terminalMarketSubscriptions,
+  chunkSlopeSubscriptions,
+  updateOrders,
+  exactCloseQuantity,
+  calculateRealtimeSlope,
+  slopeStreamQuery
 } from './terminal-data';
-const { quant_kline_period, quant_indicator } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator'));
+const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator', 'quant_position_direction'));
 const symbol = ref('BTCUSDT'),
   interval = ref('15m'),
   strategyId = ref<string | number>(),
@@ -340,30 +422,70 @@ const symbol = ref('BTCUSDT'),
   streamStatus = ref('CONNECTING'),
   accountSnapshotAvailable = ref(false),
   now = ref(Date.now());
+const dailyBaselineDay = ref('');
 const currentInterval = interval;
 const credentials = ref<CredentialVO[]>([]),
   strategies = ref<StrategyVO[]>([]),
   account = ref<AccountSnapshot>(),
+  dailyAccountBaseline = ref<DailyAccountBaseline | null>(),
   positions = ref<PositionSnapshot[]>([]),
   orders = ref<OrderSnapshot[]>([]),
   trades = ref<TradeRecord[]>([]),
   instances = ref<StrategyInstanceVO[]>([]),
+  positionHistories = ref<StrategyPositionStateVO[]>([]),
+  positionMarketMarks = ref(new Map<string, { price: string; receivedAt: number }>()),
+  positionReturnRatePeaks = ref(new Map<string, number>()),
   klines = ref<KlineSnapshot[]>([]),
   price = ref<PriceSnapshot>(),
   symbolInfo = ref<SymbolVO>(),
   symbolOptions = ref<SymbolVO[]>([]),
   symbolLoading = ref(false);
 const indicatorOptions = computed(() => quant_indicator.value || []);
+const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
+const dailyReturnRate = computed(() => {
+  const baseline = Number(dailyAccountBaseline.value?.equity);
+  const walletBalance = Number(account.value?.walletBalance);
+  const currentUnrealizedPnl = positionRows.value.reduce((sum, row) => sum + Number(row.unrealizedPnl || 0), 0);
+  const currentEquity = Number.isFinite(walletBalance) ? walletBalance + currentUnrealizedPnl : Number(account.value?.marginBalance);
+  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(currentEquity)) return undefined;
+  return ((currentEquity - baseline) / baseline) * 100;
+});
+let dailyBaselineRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+watch(
+  () => shanghaiDateKey(now.value),
+  day => {
+    if (!dailyBaselineDay.value || day === dailyBaselineDay.value) return;
+    dailyBaselineDay.value = day;
+    dailyAccountBaseline.value = null;
+    if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
+    dailyBaselineRefreshTimer = setTimeout(async () => {
+      const id = credentialId.value;
+      const generation = dataGeneration;
+      if (!id) return;
+      try {
+        const result = await getDailyAccountBaseline(id);
+        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = result.data;
+      } catch {
+        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = null;
+      }
+    }, 90_000);
+  }
+);
 type SlopeRow = {
   symbol: string;
   interval: string;
   status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
   currentPrice?: number;
+  latestTradePrice?: number;
   referencePrice?: number;
   slopePercent?: number;
   degrees?: number;
   entryAngleDegrees?: number;
+};
+type SlopeStreamState = {
   klines: KlineSnapshot[];
+  latestTradePrice?: number;
+  handshakeComplete: boolean;
 };
 const statusMap: Record<string, string> = {
   CONNECTING: '连接中',
@@ -376,8 +498,13 @@ const slopePanelVisible = ref(false);
 const slopeLoading = ref(false);
 const slopeStrategyId = ref<string | number>();
 const slopeRows = ref<SlopeRow[]>([]);
+const slopeLoadError = ref('');
+const slopeSymbolErrors = ref<string[]>([]);
 type SseConnection = { close: () => void };
-let slopeStream: SseConnection | undefined;
+let slopeStreams: SseConnection[] = [];
+const slopeStreamStates = new Map<string, SlopeStreamState>();
+const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
+let slopeRenderFrame: number | undefined;
 let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
 const protectionOrders = ref<ProtectionOrderSnapshot[]>([]);
 const protectionError = ref('');
@@ -414,28 +541,149 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   if (protectionError.value) return '查询失败';
   if (!protectionLoaded.value) return '加载中';
   const prices = protectionPrices(row as PositionSnapshot, protectionOrders.value);
-  return prices[kind].map(format).join('、') || '未挂载';
+  const symbol = (row as PositionSnapshot).symbol;
+  return prices[kind].map(value => formatQuantPrice(symbol, value)).join('、') || '未挂载';
 };
 const positionRows = computed(() =>
-  positions.value.map(item =>
-    positionMetrics(
+  positions.value.map(item => {
+    const metrics = positionMetrics(
       item,
-      item.symbol === symbol.value && streamStatus.value === 'CONNECTED' ? price.value?.markPrice : undefined
-    )
-  )
+      (positionMarketMarks.value.get(item.symbol)?.receivedAt || 0) > now.value - 3000
+        ? positionMarketMarks.value.get(item.symbol)?.price
+        : item.symbol === symbol.value && streamStatus.value === 'CONNECTED'
+          ? price.value?.markPrice
+          : undefined
+    );
+    const peakKey = `${credentialId.value}|${item.symbol.toUpperCase()}|${item.side.toUpperCase()}|${item.entryPrice}`;
+    const observedPeak = positionReturnRatePeaks.value.get(peakKey);
+    const returnRatePeak = Math.max(metrics.returnRate ?? Number.NEGATIVE_INFINITY, observedPeak ?? Number.NEGATIVE_INFINITY);
+    return {
+      ...metrics,
+      maximumReturnRate: positionMaximumReturnRate(
+        item,
+        credentialId.value,
+        positionHistories.value,
+        Number.isFinite(returnRatePeak) ? returnRatePeak : undefined
+      )
+    };
+  })
+);
+const chartProtectionLines = computed(() =>
+  protectionLoaded.value
+    ? protectionPriceLines(positions.value, protectionOrders.value, symbol.value)
+    : []
 );
 const ordersError = ref('');
 const tradesError = ref('');
 let dataGeneration = 0;
+let symbolRequest = 0;
 let accountRevision = 0;
+let positionRevision = 0;
+const positionEventChanges = new Map<string, { revision: number; row?: PositionSnapshot }>();
 let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
+let positionHistoryRefreshing = false;
+let positionHistoryRefreshPending = false;
 let hydrationRunning = false;
 let hydrationPending = false;
+let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
 const queryError = (error: any, fallback: string) =>
   typeof error === 'string' ? error : error?.msg || error?.message || fallback;
 
+async function refreshPositionHistories() {
+  const id = credentialId.value;
+  if (!id) return;
+  if (positionHistoryRefreshing) {
+    positionHistoryRefreshPending = true;
+    return;
+  }
+  positionHistoryRefreshing = true;
+  try {
+    const response = await listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id });
+    if (String(credentialId.value) === String(id))
+      positionHistories.value = mergePositionHistories(response.data?.rows || []);
+  } catch {
+    // Keep the last confirmed peak values visible if the history refresh temporarily fails.
+  } finally {
+    positionHistoryRefreshing = false;
+    if (positionHistoryRefreshPending) {
+      positionHistoryRefreshPending = false;
+      void refreshPositionHistories();
+    }
+  }
+}
+
+function mergePositionHistories(rows: StrategyPositionStateVO[]) {
+  const previous = new Map(
+    positionHistories.value.map(item => [
+      `${item.instanceId}:${item.positionCycleKey || item.positionId || item.id}`,
+      item
+    ])
+  );
+  return rows.map(item => {
+    const old = previous.get(`${item.instanceId}:${item.positionCycleKey || item.positionId || item.id}`);
+    if (!old) return item;
+    const short = String(item.direction || old.direction).toUpperCase() === 'SHORT';
+    const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
+    const oldPeak = Number(old[field]);
+    const newPeak = Number(item[field]);
+    const oldReturnPeak = Number(old.maximumReturnRate);
+    const newReturnPeak = Number(item.maximumReturnRate);
+    return {
+      ...item,
+      [field]: Number.isFinite(oldPeak) && Number.isFinite(newPeak)
+        ? short ? Math.min(oldPeak, newPeak) : Math.max(oldPeak, newPeak)
+        : Number.isFinite(oldPeak) ? old[field] : item[field],
+      maximumReturnRate: Number.isFinite(oldReturnPeak) && Number.isFinite(newReturnPeak)
+        ? Math.max(oldReturnPeak, newReturnPeak)
+        : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate
+    };
+  });
+}
+
+function applyPositionPerformanceEvent(event: any) {
+  if (event.type === 'CONNECTED') {
+    void refreshPositionHistories();
+    return;
+  }
+  if (String(event.credentialId) !== String(credentialId.value)) return;
+  const index = positionHistories.value.findIndex(
+    item =>
+      String(item.instanceId) === String(event.instanceId) &&
+      String(item.positionCycleKey || '') === String(event.positionCycleKey || '')
+  );
+  const old = index >= 0 ? positionHistories.value[index] : undefined;
+  const short = String(event.direction || old?.direction).toUpperCase() === 'SHORT';
+  const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
+  const oldPeak = Number(old?.[field]);
+  const incomingPeak = Number(event[field]);
+  const peak =
+    Number.isFinite(oldPeak) && Number.isFinite(incomingPeak)
+      ? short
+        ? Math.min(oldPeak, incomingPeak)
+        : Math.max(oldPeak, incomingPeak)
+      : event[field];
+  const row: StrategyPositionStateVO = { ...(old || ({} as StrategyPositionStateVO)), ...event, [field]: peak };
+  const oldMaximumReturnRate = Number(old?.maximumReturnRate);
+  const eventMaximumReturnRate = Number(event.maximumReturnRate);
+  if (Number.isFinite(oldMaximumReturnRate) || Number.isFinite(eventMaximumReturnRate)) {
+    row.maximumReturnRate = Number.isFinite(oldMaximumReturnRate) && Number.isFinite(eventMaximumReturnRate)
+      ? Math.max(oldMaximumReturnRate, eventMaximumReturnRate)
+      : Number.isFinite(eventMaximumReturnRate) ? eventMaximumReturnRate : oldMaximumReturnRate;
+  }
+  if (index >= 0) positionHistories.value.splice(index, 1, row);
+  else positionHistories.value = [...positionHistories.value, row];
+}
+
+function closeMarketStream() {
+  marketStreams.forEach(connection => connection.close());
+  marketStreams = [];
+  if (retry) clearTimeout(retry);
+  retry = undefined;
+}
+
 // Hydrate fields absent from ACCOUNT_UPDATE after a position changes; coalesce bursts without REST polling.
-function scheduleAccountHydration() {
+function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision) {
+  hydrationPositionRevisionFloor = Math.min(hydrationPositionRevisionFloor, positionRevisionBeforeEvent);
   hydrationPending = true;
   if (hydrationRunning || hydrationTimer) return;
   hydrationTimer = setTimeout(async () => {
@@ -444,6 +692,8 @@ function scheduleAccountHydration() {
     if (!id) return;
     const generation = dataGeneration;
     const revision = accountRevision;
+    const snapshotPositionRevision = hydrationPositionRevisionFloor === Number.MAX_SAFE_INTEGER ? positionRevision : hydrationPositionRevisionFloor;
+    hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
     hydrationPending = false;
     hydrationRunning = true;
     try {
@@ -451,7 +701,7 @@ function scheduleAccountHydration() {
       if (generation !== dataGeneration) return;
       if (a.status === 'fulfilled' && revision === accountRevision) account.value = a.value.data;
       if (p.status === 'fulfilled') {
-        positions.value = mergePositionSnapshots(positions.value, p.value.data || [], revision !== accountRevision);
+        positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, snapshotPositionRevision);
         accountSnapshotAvailable.value = true;
         renderOverlays();
       }
@@ -505,11 +755,13 @@ async function loadProtectionOrders() {
     protectionOrders.value = [...snapshot.values()];
     protectionError.value = '';
     protectionLoaded.value = true;
+    renderOverlays();
   } catch (error) {
     if (generation === dataGeneration && requestId === protectionRequest) {
       protectionError.value = queryError(error, '条件单查询失败');
       protectionLoaded.value = false;
       protectionOrders.value = [];
+      renderOverlays();
     }
   } finally {
     if (requestId === protectionRequest) protectionLoading.value = false;
@@ -536,34 +788,29 @@ function handleDataTab(tab: string | number) {
     void loadProtectionOrders();
   }
 }
-const directionLabel = (item: { side?: string; quantity?: string | number }) => {
+const directionCode = (item: { side?: string; quantity?: string | number }) => {
   const short = item.side === 'SHORT' || (item.side === 'BOTH' && Number(item.quantity) < 0);
-  return short ? '开空' : '开多';
+  return short ? 'SHORT' : 'LONG';
+};
+const directionLabel = (item: { side?: string; quantity?: string | number }) => {
+  const label = selectDictLabel(quant_position_direction.value, directionCode(item));
+  return label || '方向未知';
 };
 const chartRef = ref<HTMLElement>(),
   chart = shallowRef<Chart>();
-let stream: SseConnection | undefined,
+let marketStreams: SseConnection[] = [],
   retry: ReturnType<typeof setTimeout> | undefined,
   accountStream: SseConnection | undefined,
   accountRetry: ReturnType<typeof setTimeout> | undefined,
+  marketStreamKey = '',
   resize: ResizeObserver | undefined;
 let updateChartBar: ((data: KLineData) => void) | undefined;
 let overlayIds: string[] = [];
 const lastAccountEvents = new Map<string, number>();
 const lastOrderEvents = new Map<string, number>();
-const statusType = computed(() =>
-  streamStatus.value === 'CONNECTED' ? 'success' : streamStatus.value === 'ERROR' ? 'danger' : 'warning'
-);
-const streamStatusLabel = computed(
-  () =>
-    ({ CONNECTING: '连接中', CONNECTED: '已连接', ERROR: '连接异常', DISCONNECTED: '已断开' })[streamStatus.value] ||
-    streamStatus.value
-);
 const indicatorNames = computed<Record<string, string>>(() =>
   Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label]))
 );
-const priceChangeClass = computed(() => (price.value?.lastTradePrice ? 'price-positive' : 'price-muted'));
-const priceChangeText = computed(() => (price.value?.lastTradePrice ? '实时' : '暂无行情'));
 const candleCountdown = computed(() => {
   const match = /^(\d+)([smhdwM])$/.exec(interval.value);
   if (!match) return '--:--';
@@ -612,14 +859,15 @@ function renderChart() {
       updateChartBar = undefined;
     }
   });
+  const chartPriceScale = priceScaleFromTickSize(symbolInfo.value?.priceTickSize);
   chart.value.setSymbol({
     ticker: symbol.value,
-    pricePrecision: symbolInfo.value?.pricePrecision ?? 8,
+    ...(chartPriceScale === undefined ? {} : { pricePrecision: chartPriceScale }),
     volumePrecision: symbolInfo.value?.quantityPrecision ?? 8
   });
   chart.value.setPeriod(period());
   chart.value.setMaxOffsetLeftDistance(0);
-  chart.value.setMaxOffsetRightDistance(0);
+  resizeChartWithRightGap();
   chart.value.setLeftMinVisibleBarCount(30);
   chart.value.setLocale('zh-CN');
   renderIndicators();
@@ -633,10 +881,12 @@ function renderOverlays() {
   const lines = [
     ...currentPositions.flatMap(item => [
       { value: Number(item.entryPrice), color: '#409eff' },
-      { value: Number(item.liquidationPrice), color: '#f56c6c' },
-      { value: Number(item.takeProfitPrice), color: '#67c23a' },
-      { value: Number(item.stopLossPrice), color: '#e6a23c' }
+      { value: Number(item.liquidationPrice), color: '#f56c6c' }
     ]),
+    ...chartProtectionLines.value.map(line => ({
+      value: line.value,
+      color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c'
+    })),
     ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
   ].filter(item => Number.isFinite(item.value) && item.value > 0);
   for (const line of lines) {
@@ -647,6 +897,13 @@ function renderOverlays() {
     });
     if (typeof id === 'string') overlayIds.push(id);
   }
+}
+function resizeChartWithRightGap() {
+  if (!chart.value || !chartRef.value) return;
+  const rightGap = Math.round(chartRef.value.clientWidth / 3);
+  chart.value.setMaxOffsetRightDistance(rightGap);
+  chart.value.setOffsetRightDistance(rightGap);
+  chart.value.resize();
 }
 function renderIndicators() {
   if (!chart.value) return;
@@ -693,15 +950,34 @@ async function handleSymbolChange() {
   await refresh();
 }
 function applyEvent(e: any) {
-  if (e.type === 'CONNECTING') streamStatus.value = 'CONNECTING';
-  else if (e.type === 'CONNECTED') streamStatus.value = 'CONNECTED';
-  else if (e.type === 'ERROR') {
+  const eventSymbol = String(e.symbol || '').toUpperCase();
+  if (e.type === 'MARK' && e.price && !e.replay && eventSymbol) {
+    const next = new Map(positionMarketMarks.value);
+    next.set(eventSymbol, { price: String(e.price), receivedAt: Date.now() });
+    positionMarketMarks.value = next;
+    const returnRatePeaks = new Map(positionReturnRatePeaks.value);
+    let changed = false;
+    for (const position of positions.value) {
+      if (position.symbol.toUpperCase() !== eventSymbol) continue;
+      const rate = positionMetrics(position, e.price).returnRate;
+      const key = `${credentialId.value}|${position.symbol.toUpperCase()}|${position.side.toUpperCase()}|${position.entryPrice}`;
+      if (rate !== undefined && rate > (returnRatePeaks.get(key) ?? Number.NEGATIVE_INFINITY)) {
+        returnRatePeaks.set(key, rate);
+        changed = true;
+      }
+    }
+    if (changed) positionReturnRatePeaks.value = returnRatePeaks;
+  }
+  if (e.type === 'CONNECTING' && !eventSymbol) streamStatus.value = 'CONNECTING';
+  else if (e.type === 'CONNECTED' && eventSymbol === symbol.value.toUpperCase()) streamStatus.value = 'CONNECTED';
+  else if (e.type === 'ERROR' && (!eventSymbol || eventSymbol === symbol.value.toUpperCase())) {
     streamStatus.value = 'ERROR';
     ElMessage.error(e.message || '行情订阅失败');
-  } else if (e.type === 'DISCONNECTED') {
+  } else if (e.type === 'DISCONNECTED' && eventSymbol === symbol.value.toUpperCase()) {
     streamStatus.value = 'DISCONNECTED';
     price.value = undefined;
-  } else if (e.type === 'TRADE' && e.price)
+  } else if (eventSymbol !== symbol.value.toUpperCase()) return;
+  else if (e.type === 'TRADE' && e.price)
     price.value = { ...(price.value as PriceSnapshot), lastTradePrice: e.price, observedAt: e.eventTime };
   else if (e.type === 'MARK' && e.price) {
     price.value = { ...(price.value as PriceSnapshot), markPrice: e.price, observedAt: e.eventTime };
@@ -713,6 +989,15 @@ function applyEvent(e: any) {
     const updatedBar = toChart([e.kline])[0];
     if (updatedBar) updateChartBar?.(updatedBar);
   }
+}
+
+function clearPositionReturnRatePeak(symbol: string, side: string) {
+  const prefix = `${credentialId.value}|${symbol.toUpperCase()}|${side.toUpperCase()}|`;
+  const next = new Map(positionReturnRatePeaks.value);
+  for (const key of next.keys()) {
+    if (key.startsWith(prefix)) next.delete(key);
+  }
+  positionReturnRatePeaks.value = next;
 }
 
 function openSse(
@@ -774,6 +1059,7 @@ function openSse(
 function handleSseUnauthorized() {
   streamStatus.value = 'ERROR';
   accountSnapshotAvailable.value = false;
+  dailyAccountBaseline.value = null;
   removeToken();
   if (retry) clearTimeout(retry);
   if (accountRetry) clearTimeout(accountRetry);
@@ -782,37 +1068,82 @@ function handleSseUnauthorized() {
 }
 
 function connect() {
-  stream?.close();
-  if (retry) clearTimeout(retry);
-  streamStatus.value = 'CONNECTING';
-  const q = new URLSearchParams({
-    symbol: symbol.value,
-    interval: interval.value
-  });
-  stream = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/market/stream?${q}`,
-    'quant.market',
-    data => {
-      try {
-        applyEvent(JSON.parse(data));
-      } catch {
-        streamStatus.value = 'ERROR';
-      }
-    },
-    () => {
-      streamStatus.value = 'DISCONNECTED';
-      stream?.close();
-      retry = setTimeout(connect, 3000);
-    },
-    handleSseUnauthorized
+  const runMode = selectedMarketRunMode();
+  const subscriptions = terminalMarketSubscriptions(
+    { symbol: symbol.value, interval: interval.value },
+    positions.value
   );
+  const key = `${runMode}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
+  if (marketStreamKey === key && marketStreams.length) return;
+  closeMarketStream();
+  marketStreamKey = key;
+  streamStatus.value = 'CONNECTING';
+  const generation = dataGeneration;
+  const reconnect = () => {
+    if (generation !== dataGeneration) return;
+    closeMarketStream();
+    retry = setTimeout(connect, 3000);
+  };
+  for (let start = 0; start < subscriptions.length; start += 50) {
+    const query = new URLSearchParams({ runMode });
+    subscriptions.slice(start, start + 50).forEach(item => {
+      query.append('symbol', item.symbol);
+      query.append('interval', item.interval);
+    });
+    marketStreams.push(
+      openSse(
+        `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+        'quant.market',
+        data => {
+          try {
+            const event = JSON.parse(data);
+            applyEvent(event);
+            if (event.type === 'ERROR' || event.type === 'DISCONNECTED') reconnect();
+          } catch {
+            streamStatus.value = 'ERROR';
+          }
+        },
+        () => {
+          streamStatus.value = 'DISCONNECTED';
+          reconnect();
+        },
+        handleSseUnauthorized
+      )
+    );
+  }
 }
+
+function selectedMarketRunMode() {
+  return credentials.value.find(item => String(item.id) === String(credentialId.value))?.runMode || 'LIVE';
+}
+
+watch(
+  () => {
+    const credential = credentials.value.find(item => String(item.id) === String(credentialId.value));
+    const subscriptions = terminalMarketSubscriptions(
+      { symbol: symbol.value, interval: interval.value },
+      positions.value
+    );
+    return `${credential?.runMode || 'LIVE'}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
+  },
+  () => connect(),
+  { flush: 'post' }
+);
+
+watch(
+  () => selectedMarketRunMode(),
+  () => {
+    if (slopePanelVisible.value) connectSlopeStream();
+  }
+);
+
 function applyRawAccountEvent(rawJson: string | undefined) {
   if (!rawJson) return;
   try {
-    const raw = JSON.parse(rawJson);
+    const raw = parseBinanceAccountEvent(rawJson);
     if (raw.e === 'ACCOUNT_UPDATE' && raw.a) {
       accountRevision++;
+      const eventPositionRevision = ++positionRevision;
       const usdt = (raw.a.B || []).find((item: any) => item.a === 'USDT');
       // cw is cross wallet balance, not available balance.
       if (usdt && account.value && usdt.wb !== undefined) account.value.walletBalance = String(usdt.wb);
@@ -823,12 +1154,16 @@ function applyRawAccountEvent(rawJson: string | undefined) {
         const previous = positions.value[index];
         const row = mergeAccountPosition(previous, item);
         positionChanged ||= !previous || row.quantity !== previous.quantity || row.entryPrice !== previous.entryPrice;
+        const positionKey = positionSnapshotKey(row.symbol, row.side);
         if (Number(row.quantity) === 0) {
           if (index >= 0) positions.value.splice(index, 1);
+          clearPositionReturnRatePeak(row.symbol, row.side);
+          positionEventChanges.set(positionKey, { revision: eventPositionRevision });
         } else if (index >= 0) positions.value[index] = row;
         else positions.value.push(row);
+        if (Number(row.quantity) !== 0) positionEventChanges.set(positionKey, { revision: eventPositionRevision, row });
       }
-      if (positionChanged || usdt) scheduleAccountHydration();
+      if (positionChanged || usdt) scheduleAccountHydration(eventPositionRevision - 1);
     }
     if (raw.e === 'ORDER_TRADE_UPDATE' && raw.o) {
       accountRevision++;
@@ -842,6 +1177,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
       if (credentialId.value) {
         const trade = accountTrade(raw.o, credentialId.value, time => parseTime(time) || '');
         if (trade) {
+          scheduleAccountHydration();
           const isNew =
             !liveTrades.value.some(
               row => row.symbol === trade.symbol && row.exchangeTradeId === trade.exchangeTradeId
@@ -875,6 +1211,7 @@ function connectAccountStream() {
   lastAccountEvents.clear();
   const generation = dataGeneration;
   const snapshotRevision = accountRevision;
+  const snapshotPositionRevision = positionRevision;
   const q = new URLSearchParams({
     credentialId: String(credentialId.value)
   });
@@ -885,6 +1222,11 @@ function connectAccountStream() {
       try {
         const event = JSON.parse(data);
         if (generation !== dataGeneration) return;
+        if (event.type === 'POSITION_MAX_RETURN') {
+          if (String(event.credentialId) === String(credentialId.value))
+            applyPositionPerformanceEvent(event.performance);
+          return;
+        }
         if (
           event.type === 'ACCOUNT_UPDATE' ||
           event.type === 'ORDER_TRADE_UPDATE' ||
@@ -899,18 +1241,22 @@ function connectAccountStream() {
             if (Number.isFinite(eventAt) && eventAt < (lastAccountEvents.get(event.type) || 0)) return;
             if (Number.isFinite(eventAt)) lastAccountEvents.set(event.type, eventAt);
           }
-          if (event.type === 'SNAPSHOT') void loadProtectionOrders();
+          if (event.type === 'SNAPSHOT') {
+            if (!protectionLoading.value) void loadProtectionOrders();
+            void refreshPositionHistories();
+          }
+          if (event.type === 'CONNECTED') void refreshPositionHistories();
           if (event.snapshotAvailable) {
             accountSnapshotAvailable.value = true;
             const changed = snapshotRevision !== accountRevision;
             if (event.account && !changed) account.value = event.account;
             if (Array.isArray(event.positions))
-              positions.value = mergePositionSnapshots(positions.value, event.positions, changed);
+              positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
             if (Array.isArray(event.orders) && !changed) {
               orders.value = event.orders;
               ordersError.value = '';
             }
-            if (changed && event.type === 'SNAPSHOT') scheduleAccountHydration();
+            if (changed && event.type === 'SNAPSHOT') scheduleAccountHydration(snapshotPositionRevision);
             applyRawAccountEvent(event.rawJson);
           } else {
             accountSnapshotAvailable.value = false;
@@ -951,50 +1297,131 @@ function connectAccountStream() {
 }
 
 function closeSlopeStream() {
-  slopeStream?.close();
-  slopeStream = undefined;
+  slopeStreams.forEach(connection => connection.close());
+  slopeStreams = [];
+  slopeStreamStates.clear();
+  pendingSlopeRows.clear();
+  if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
+  slopeRenderFrame = undefined;
   if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
   slopeStreamRetry = undefined;
 }
 
+function flushSlopeRows() {
+  slopeRenderFrame = undefined;
+  pendingSlopeRows.forEach((state, row) => {
+    const latestKline = state.klines[state.klines.length - 1];
+    const referenceKline = state.klines[state.klines.length - 2];
+    row.latestTradePrice = state.latestTradePrice;
+    row.currentPrice = state.latestTradePrice ?? (latestKline ? Number(latestKline.close) : undefined);
+    row.referencePrice = referenceKline ? Number(referenceKline.open) : undefined;
+    const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
+    row.slopePercent = slope?.slopePercent;
+    row.degrees = slope?.degrees;
+    if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
+  });
+  pendingSlopeRows.clear();
+}
+
+function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
+  pendingSlopeRows.set(row, state);
+  if (slopeRenderFrame === undefined) slopeRenderFrame = requestAnimationFrame(flushSlopeRows);
+}
+
+function clearSlopeRowValues(row: SlopeRow, state: SlopeStreamState, status: SlopeRow['status']) {
+  pendingSlopeRows.delete(row);
+  state.latestTradePrice = undefined;
+  row.status = status;
+  row.latestTradePrice = undefined;
+  row.currentPrice = undefined;
+  row.referencePrice = undefined;
+  row.slopePercent = undefined;
+  row.degrees = undefined;
+}
+
 function connectSlopeStream() {
   closeSlopeStream();
-  if (!slopeStrategyId.value || !credentialId.value) return;
-  const query = new URLSearchParams({
-    strategyId: String(slopeStrategyId.value),
-    credentialId: String(credentialId.value)
-  });
-  const source = openSse(
-    `${import.meta.env.VITE_APP_BASE_API}/quant/strategy/slope/stream?${query}`,
-    'quant.strategy.slope',
-    data => {
-      try {
-        const payload = JSON.parse(data);
-        if (payload.type === 'CONNECTED') {
-          slopeRows.value.forEach(row => (row.status = 'CONNECTED'));
-          return;
-        }
-        const row = slopeRows.value.find(item => item.symbol === payload.symbol);
-        if (!row) return;
-        row.status = 'CONNECTED';
-        row.currentPrice = Number(payload.currentPrice);
-        row.referencePrice = Number(payload.referenceOpenPrice);
-        row.slopePercent = Number(payload.slopePercent);
-        row.degrees = Number(payload.degrees);
-      } catch {
-        slopeRows.value.forEach(row => (row.status = 'ERROR'));
+  if (!slopeStrategyId.value || !slopeRows.value.length) return;
+  for (const row of slopeRows.value) {
+    row.status = 'CONNECTING';
+    const state: SlopeStreamState = { klines: [], handshakeComplete: false };
+    slopeStreamStates.set(`${row.symbol}:${row.interval}`, state);
+    row.latestTradePrice = undefined;
+    row.currentPrice = undefined;
+    row.referencePrice = undefined;
+    row.slopePercent = undefined;
+    row.degrees = undefined;
+  }
+  const scheduleReconnect = () => {
+    if (!slopePanelVisible.value || slopeStreamRetry) return;
+    slopeStreamRetry = setTimeout(() => {
+      slopeStreamRetry = undefined;
+      connectSlopeStream();
+    }, 3000);
+  };
+  const onMessage = (data: string) => {
+    try {
+      const event = JSON.parse(data);
+      if (event.type === 'CONNECTING' && !event.symbol) return;
+      const key = `${event.symbol}:${event.interval}`;
+      const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
+      const state = slopeStreamStates.get(key);
+      if (!row || !state) return;
+      if (event.type === 'CONNECTING') {
+        clearSlopeRowValues(row, state, 'CONNECTING');
+        return;
       }
-    },
-    () => {
-      slopeRows.value.forEach(row => (row.status = 'DISCONNECTED'));
-      source.close();
-      if (slopePanelVisible.value) {
-        slopeStreamRetry = setTimeout(connectSlopeStream, 3000);
+      if (event.type === 'CONNECTED') {
+        state.handshakeComplete = true;
+        scheduleSlopeRowUpdate(row, state);
+        return;
       }
-    },
-    handleSseUnauthorized
-  );
-  slopeStream = source;
+      if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
+        clearSlopeRowValues(row, state, event.type);
+        // MarketStreamHub reconnects the upstream symbol itself; keep this SSE
+        // open so the row can recover when the server publishes CONNECTED again.
+        return;
+      }
+      if (event.type === 'TRADE' && Number(event.price) > 0) {
+        state.latestTradePrice = Number(event.price);
+      } else if (event.type === 'KLINE' && event.kline) {
+        const kline = event.kline as KlineSnapshot;
+        const index = state.klines.findIndex(item => item.openTime === kline.openTime);
+        if (index < 0) state.klines.push(kline);
+        else state.klines[index] = kline;
+        state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
+        state.klines = state.klines.slice(-4);
+      }
+      scheduleSlopeRowUpdate(row, state);
+    } catch {
+      slopeRows.value.forEach(row => {
+        const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
+        if (state) clearSlopeRowValues(row, state, 'ERROR');
+      });
+      scheduleReconnect();
+    }
+  };
+  const onError = () => {
+    slopeRows.value.forEach(row => {
+      const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
+      if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
+    });
+    slopeStreams.forEach(connection => connection.close());
+    slopeStreams = [];
+    scheduleReconnect();
+  };
+  for (const batch of chunkSlopeSubscriptions(slopeRows.value)) {
+    const query = slopeStreamQuery(batch, selectedMarketRunMode());
+    slopeStreams.push(
+      openSse(
+        `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+        'quant.market',
+        onMessage,
+        onError,
+        handleSseUnauthorized
+      )
+    );
+  }
 }
 
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
@@ -1021,9 +1448,13 @@ function slopeRowClassName({ row }: { row: SlopeRow }): string {
 async function openSlopePanel() {
   if (slopeLoading.value) return;
   slopePanelVisible.value = true;
-  slopeStrategyId.value = strategyId.value || strategies.value[0]?.id;
+  // Preserve the drawer's explicit strategy selection; @change invokes this function.
+  // Resetting to the terminal strategy here silently subscribes the wrong SSE key.
+  slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
+  slopeLoadError.value = '';
+  slopeSymbolErrors.value = [];
   if (!slopeStrategyId.value) return;
   slopeLoading.value = true;
   try {
@@ -1031,21 +1462,27 @@ async function openSlopePanel() {
     const activeBindings = bindings.filter((item: StrategySymbolBinding) => item.status !== '1');
     const resolved = await Promise.all(
       activeBindings.map(async binding => {
-        const item = await getSymbol(binding.symbolId);
-        return { binding, symbol: item.data?.symbol };
+        try {
+          const item = await getSymbol(binding.symbolId);
+          return { binding, symbol: item.data?.symbol };
+        } catch {
+          return { binding, symbol: undefined };
+        }
       })
     );
+    slopeSymbolErrors.value = resolved.filter(item => !item.symbol).map(item => String(item.binding.symbolId));
     const rows = resolved
       .filter(item => item.symbol)
       .map(item => ({
         symbol: item.symbol!,
         interval: item.binding.intervalCode || interval.value,
         entryAngleDegrees: slopeEntryAngle(item.binding),
-        status: 'CONNECTING' as const,
-        klines: [] as KlineSnapshot[]
+        status: 'CONNECTING' as const
       }));
     slopeRows.value = rows;
     connectSlopeStream();
+  } catch {
+    slopeLoadError.value = '策略交易对列表加载失败';
   } finally {
     slopeLoading.value = false;
   }
@@ -1068,6 +1505,7 @@ async function handleStrategyChange() {
 }
 async function loadData() {
   const generation = ++dataGeneration;
+  ++symbolRequest;
   ++tradeRequest;
   ++protectionRequest;
   tradeQuery.pageNum = 1;
@@ -1083,33 +1521,44 @@ async function loadData() {
   protectionChanges.clear();
   lastProtectionEvents.clear();
   accountStream?.close();
-  stream?.close();
+  closeMarketStream();
+  marketStreamKey = '';
   if (accountRetry) clearTimeout(accountRetry);
   if (retry) clearTimeout(retry);
   if (hydrationTimer) clearTimeout(hydrationTimer);
   hydrationTimer = undefined;
   hydrationPending = false;
+  hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
   accountRevision = 0;
+  positionRevision = 0;
+  positionEventChanges.clear();
   lastOrderEvents.clear();
   ordersError.value = '';
   tradesError.value = '';
   const id = credentialId.value;
+  const baselineDay = shanghaiDateKey(now.value);
+  dailyBaselineDay.value = baselineDay;
   // 切换交易对时先清理旧快照，避免新请求失败时继续显示上一个交易对的数据。
   klines.value = [];
   symbolInfo.value = undefined;
   price.value = undefined;
   positions.value = [];
+  positionHistories.value = [];
+  positionMarketMarks.value = new Map();
   accountSnapshotAvailable.value = false;
   orders.value = [];
   trades.value = [];
   renderOverlays();
-  const [k, s, p, i] = await Promise.allSettled([
-    listRealtimeKlines(symbol.value, interval.value, 1000),
+  const [k, s, p, i, h] = await Promise.allSettled([
+    listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode()),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }),
     id ? listPositions(id) : Promise.resolve({ data: [] as PositionSnapshot[] }),
     id
       ? listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id })
-      : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any)
+      : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any),
+    id
+      ? listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id })
+      : Promise.resolve({ data: { rows: [] as StrategyPositionStateVO[] } } as any)
   ]);
   if (generation !== dataGeneration) return;
   if (k.status === 'fulfilled') {
@@ -1118,6 +1567,7 @@ async function loadData() {
     ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
   }
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
@@ -1126,22 +1576,27 @@ async function loadData() {
   instances.value = (i.status === 'fulfilled' ? i.value.data?.rows || [] : []).filter(
     item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
   );
+  positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
   if (id) {
-    const [a, o, t] = await Promise.allSettled([
+    const [a, o, t, baseline] = await Promise.allSettled([
       getAccountSnapshot(id),
       listOrders(id),
-      listTrades(id, undefined, { ...tradeQuery })
+      listTrades(id, undefined, { ...tradeQuery }),
+      getDailyAccountBaseline(id)
     ]);
     if (generation !== dataGeneration) return;
     ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
     tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
     account.value = a.status === 'fulfilled' ? a.value.data : undefined;
+    dailyAccountBaseline.value = baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay ? baseline.value.data : null;
     orders.value = o.status === 'fulfilled' ? o.value.data || [] : [];
     trades.value = t.status === 'fulfilled' ? t.value.data?.rows || [] : [];
     tradeTotal.value = t.status === 'fulfilled' ? t.value.data?.total || 0 : 0;
   }
+  void ensureQuantSymbolTickSizes().catch(() => undefined);
   renderChart();
   renderOverlays();
+  if (id) void loadProtectionOrders();
   connect();
   connectAccountStream();
 }
@@ -1167,6 +1622,33 @@ async function confirmAction(title: string, message: string, action: () => Promi
   ElMessage.success('操作已提交');
   await refresh();
 }
+async function toggleStrategySymbol(item: StrategyInstanceVO) {
+  if (item.strategyId === undefined || item.strategySymbolId === undefined) {
+    ElMessage.error('缺少策略或策略交易对标识，无法切换运行状态');
+    return;
+  }
+  const enabled = item.runtimeEnabled === false;
+  const symbolName = item.symbol || '当前交易对';
+  const title = enabled ? '恢复交易对' : '暂停交易对';
+  const message = enabled
+    ? `确认恢复 ${symbolName} 的开仓信号评估？恢复后仍必须通过现有风控、持仓核验和开仓幂等检查。`
+    : `确认暂停 ${symbolName} 的新开仓？策略整体和其他交易对不受影响；该交易对已有持仓不会自动平仓，止盈、止损、保护单、对账和异常恢复仍继续运行。`;
+  try {
+    await ElMessageBox.confirm(message, title, {
+      type: 'warning',
+      confirmButtonText: '确认执行',
+      cancelButtonText: '取消'
+    });
+    await setStrategySymbolRuntimeEnabled(item.strategyId, item.strategySymbolId, enabled);
+    ElMessage.success(enabled ? '已恢复该交易对的开仓评估' : '已暂停该交易对的新开仓');
+    await refresh();
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(queryError(error, '交易对运行状态切换失败'));
+      await refresh();
+    }
+  }
+}
 function toggleStrategy(item: StrategyInstanceVO) {
   if (item.id === undefined) return;
   confirmAction(
@@ -1179,21 +1661,32 @@ function toggleStrategy(item: StrategyInstanceVO) {
   );
 }
 async function selectRowSymbol(row: { symbol?: string }) {
-  if (!row?.symbol || row.symbol === symbol.value) return;
+  if (!row?.symbol) return;
+  // 新点击（包括重新选中当前交易对）使之前尚未完成的切换请求失效。
+  const requestId = ++symbolRequest;
+  if (row.symbol === symbol.value) return;
   const nextSymbol = row.symbol;
   const generation = dataGeneration;
+  const requestedInterval = interval.value;
+  const runMode = selectedMarketRunMode();
   const [k, s] = await Promise.allSettled([
-    listRealtimeKlines(nextSymbol, interval.value, 1000),
+    listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol })
   ]);
-  if (generation !== dataGeneration) return;
+  if (
+    generation !== dataGeneration ||
+    requestId !== symbolRequest ||
+    requestedInterval !== interval.value ||
+    runMode !== selectedMarketRunMode()
+  ) return;
   if (k.status !== 'fulfilled') {
-    ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换`);
+    ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
     return;
   }
   symbol.value = nextSymbol;
   klines.value = k.value.data || [];
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
@@ -1212,17 +1705,19 @@ function cancel(row: unknown) {
     clientOrderId: order.clientOrderId,
     idempotencyKey: idempotency()
   };
-  confirmAction('确认撤单', `${order.symbol} ${order.side} ${order.originalQuantity} @ ${order.price}`, () =>
+  confirmAction('确认撤单', `${order.symbol} ${order.side} ${order.originalQuantity} @ ${formatQuantPrice(order.symbol, order.price)}`, () =>
     cancelOrder(data)
   );
 }
 function close(row: unknown) {
   const position = row as PositionSnapshot;
   if (!credentialId.value) return;
-  const quantity = Math.abs(Number(position.quantity));
-  if (!Number.isFinite(quantity) || quantity <= 0) return;
+  const quantity = exactCloseQuantity(position.quantity);
+  if (!quantity) return;
   const closeSide =
-    position.side === 'SHORT' || (position.side === 'BOTH' && Number(position.quantity) < 0) ? 'BUY' : 'SELL';
+    position.side === 'SHORT' || (position.side === 'BOTH' && position.quantity.trim().startsWith('-'))
+      ? 'BUY'
+      : 'SELL';
   const data: ClosePositionForm = {
     credentialId: credentialId.value,
     symbol: position.symbol,
@@ -1243,9 +1738,18 @@ async function waitForPositionClosed(positionSymbol: string) {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     await new Promise(resolve => setTimeout(resolve, 500));
     try {
+      const snapshotPositionRevision = positionRevision;
       const response = await listPositions(credentialId.value, positionSymbol);
-      const remaining = (response.data || []).some(
-        item => item.symbol === positionSymbol && Math.abs(Number(item.quantity)) > 0
+      positions.value = mergePositionSymbolSnapshot(
+        positions.value,
+        response.data || [],
+        positionSymbol,
+        positionEventChanges,
+        snapshotPositionRevision
+      );
+      renderOverlays();
+      const remaining = positions.value.some(
+        item => item.symbol.toUpperCase() === positionSymbol.toUpperCase() && Math.abs(Number(item.quantity)) > 0
       );
       if (!remaining) return;
     } catch {
@@ -1258,7 +1762,7 @@ onMounted(async () => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
-    resize = new ResizeObserver(() => chart.value?.resize());
+    resize = new ResizeObserver(resizeChartWithRightGap);
     resize.observe(chartRef.value);
   }
   const [c, s] = await Promise.all([
@@ -1274,7 +1778,8 @@ onBeforeUnmount(() => {
   dataGeneration++;
   hydrationPending = false;
   if (hydrationTimer) clearTimeout(hydrationTimer);
-  stream?.close();
+  marketStreams.forEach(connection => connection.close());
+  marketStreams = [];
   accountStream?.close();
   closeSlopeStream();
   updateChartBar = undefined;
@@ -1282,6 +1787,7 @@ onBeforeUnmount(() => {
   if (accountRetry) clearTimeout(accountRetry);
   resize?.disconnect();
   if (clock) clearInterval(clock);
+  if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   if (chart.value) {
     chart.value.removeOverlay();
     dispose(chart.value);
@@ -1293,7 +1799,7 @@ onBeforeUnmount(() => {
 @include pageShell.table-crud-page;
 .terminal-card,
 .table-card {
-  margin-bottom: 12px;
+  margin-top: 12px;
 }
 .section-head,
 .terminal-overview {
@@ -1325,6 +1831,51 @@ onBeforeUnmount(() => {
 .toolbar-label {
   margin-left: 10px;
   color: var(--el-text-color-secondary);
+}
+.period-control {
+  display: flex;
+  align-items: center;
+
+  /* 1. 作用在每一个按钮上 */
+  :deep(.control-group-item) {
+
+    /* 统一宽度，默认直角 */
+    .el-radio-button__inner {
+      width: 55px;
+      //padding: 8px 0; /* 确保文字居中 */
+      border-radius: 0 !important;
+    }
+
+    /* 拦截选中状态，防止选中后变成四个圆角 */
+    &.is-active .el-radio-button__inner,
+    .el-radio-button__original-radio:checked + .el-radio-button__inner {
+      border-radius: 0 !important;
+    }
+
+    /* 2. 第一个按钮：左侧圆角 */
+    &:first-child {
+      .el-radio-button__inner {
+        border-radius: 5px 0 0 5px !important;
+      }
+      /* 选中时的左圆角 */
+      &.is-active .el-radio-button__inner,
+      .el-radio-button__original-radio:checked + .el-radio-button__inner {
+        border-radius: 5px 0 0 5px !important;
+      }
+    }
+
+    /* 3. 最后一个按钮：右侧圆角 */
+    &:last-child {
+      .el-radio-button__inner {
+        border-radius: 0 5px 5px 0 !important;
+      }
+      /* 选中时的右圆角 */
+      &.is-active .el-radio-button__inner,
+      .el-radio-button__original-radio:checked + .el-radio-button__inner {
+        border-radius: 0 5px 5px 0 !important;
+      }
+    }
+  }
 }
 .overview-label {
   font-size: 14px;
@@ -1398,6 +1949,19 @@ onBeforeUnmount(() => {
 .chart-countdown strong {
   color: var(--el-color-danger);
 }
+.protection-legend {
+  display: flex;
+  gap: 10px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.protection-legend .take-profit {
+  color: #67c23a;
+}
+.protection-legend .stop-loss {
+  color: #e6a23c;
+}
 .slope-floating-button {
   position: fixed;
   right: 24px;
@@ -1410,6 +1974,14 @@ onBeforeUnmount(() => {
 .slope-strategy-select {
   width: 100%;
   margin-bottom: 12px;
+}
+.slope-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  color: var(--el-color-warning);
+  font-size: 12px;
 }
 .slope-table {
   width: 100%;
@@ -1476,7 +2048,7 @@ onBeforeUnmount(() => {
 }
 .account-card {
   overflow: hidden;
-  height: 250px;
+  height: 260px;
 }
 .strategy-side-card {
   //flex: 1;
@@ -1509,6 +2081,13 @@ onBeforeUnmount(() => {
   text-align: right;
   margin: 0;
 }
+.strategy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .strategy-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));

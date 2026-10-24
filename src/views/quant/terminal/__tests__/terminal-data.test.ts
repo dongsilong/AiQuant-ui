@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { protectionPrices, updateProtectionOrders, liveTradePage } from '../terminal-data';
 import {
-  positionMetrics,
+  accountTrade,
+  calculateRealtimeSlope,
+  exactCloseQuantity,
+  exactIntegerId,
+  liveTradePage,
   mergeAccountPosition,
   mergePositionSnapshots,
-  accountTrade,
+  mergePositionSymbolSnapshot,
   mergeTrades,
-  updateOrders
+  parseBinanceAccountEvent,
+  positionMetrics,
+  positionMaximumReturnRate,
+  protectionPrices,
+  protectionPriceLines,
+  slopeStreamQuery,
+  chunkSlopeSubscriptions,
+  terminalMarketSubscriptions,
+  updateOrders,
+  updateProtectionOrders
 } from '../terminal-data';
 const position = {
   symbol: 'PUMPUSDT',
@@ -32,6 +44,134 @@ const fill = {
   n: '0.01',
   T: 1000
 };
+describe('realtime slope display calculation', () => {
+  it('calculates the same percent, angle and threshold decision without account state', () => {
+    expect(calculateRealtimeSlope('110', '100', 60)).toEqual({ slopePercent: 10, degrees: 84.29, entryApproved: true });
+  });
+  it('does not emit a slope until both market prices are valid', () => {
+    expect(calculateRealtimeSlope(undefined, '100', 60)).toBeUndefined();
+    expect(calculateRealtimeSlope('110', '0', 60)).toBeUndefined();
+  });
+});
+
+describe('position maximum return calculation', () => {
+  const history = {
+    credentialId: 'account-1',
+    symbol: 'PUMPUSDT',
+    direction: 'LONG',
+    entryPrice: '2',
+    initialPositionQty: '100',
+    initialMargin: '20',
+    maximumReturnRate: '12.5',
+    highestPriceSinceEntry: '2.2',
+    lowestPriceSinceEntry: '1.9'
+  };
+
+  it('uses the persisted peak from Binance-style return-rate samples instead of reconstructing it from trade-price extrema', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [history])).toBe(12.5);
+  });
+
+  it('uses the persisted return-rate peak for a short position', () => {
+    expect(
+      positionMaximumReturnRate({ ...position, side: 'SHORT', quantity: '-100' }, 'account-1', [
+        { ...history, direction: 'SHORT' }
+      ])
+    ).toBe(12.5);
+  });
+
+  it('never reports a maximum below the currently displayed return rate', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [history], 105)).toBe(105);
+  });
+
+  it('uses current return rate as the maximum until a higher live sample arrives', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [], 10)).toBe(10);
+  });
+
+  it('does not derive the maximum from the strategy trade-price extrema', () => {
+    expect(positionMaximumReturnRate(position, 'account-1', [
+      { ...history, maximumReturnRate: undefined, highestPriceSinceEntry: '2.5' }
+    ], 7)).toBe(7);
+  });
+
+  it('does not attach a previous position peak to a new entry at a different price', () => {
+    expect(positionMaximumReturnRate({ ...position, entryPrice: '2.5' }, 'account-1', [history], 4)).toBe(4);
+  });
+});
+
+describe('batched realtime slope stream', () => {
+  it('keeps each symbol paired with its own interval in repeated query parameters', () => {
+    const query = slopeStreamQuery([
+      { symbol: 'BTCUSDT', interval: '15m' },
+      { symbol: 'ETHUSDT', interval: '1h' }
+    ]);
+    expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
+    expect(query.getAll('interval')).toEqual(['15m', '1h']);
+    expect(query.get('runMode')).toBe('LIVE');
+    expect(slopeStreamQuery([{ symbol: 'BTCUSDT', interval: '15m' }], 'TESTNET').get('runMode')).toBe('TESTNET');
+  });
+
+  it('splits subscriptions at the server batch limit', () => {
+    const rows = Array.from({ length: 51 }, (_, index) => ({ symbol: `S${index}`, interval: '15m' }));
+    const batches = chunkSlopeSubscriptions(rows);
+    expect(batches.map(batch => batch.length)).toEqual([50, 1]);
+    expect(batches.flat()).toEqual(rows);
+  });
+});
+
+describe('terminal market stream subscriptions', () => {
+  it('combines chart and position symbols, using the chart interval when symbols match', () => {
+    expect(
+      terminalMarketSubscriptions({ symbol: 'BTCUSDT', interval: '15m' }, [
+        { symbol: 'BTCUSDT', quantity: '1' },
+        { symbol: 'ETHUSDT', quantity: '-2' },
+        { symbol: 'XRPUSDT', quantity: '0' }
+      ])
+    ).toEqual([
+      { symbol: 'BTCUSDT', interval: '15m' },
+      { symbol: 'ETHUSDT', interval: '1m' }
+    ]);
+  });
+});
+
+describe('exact close order quantity', () => {
+  it('preserves all fractional digits instead of rounding through JavaScript number', () => {
+    expect(exactCloseQuantity('-0.000000001234567890123456')).toBe('0.000000001234567890123456');
+    expect(exactCloseQuantity('123456789012345678.001')).toBe('123456789012345678.001');
+  });
+  it('rejects malformed and empty/zero quantities', () => {
+    for (const text of ['0', '-0.0000', '', 'NaN', 'Infinity', '1e9']) {
+      expect(exactCloseQuantity(text)).toBeUndefined();
+    }
+  });
+});
+
+describe('Binance 64-bit ID precision', () => {
+  it('preserves unsafe order, trade and algo numeric JSON tokens before parsing', () => {
+    const raw = parseBinanceAccountEvent(
+      '{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","i":9007199254740993,"t":9007199254740995,"aid":9007199254740997,"X":"NEW"}}'
+    );
+    const order = raw.o as Record<string, unknown>;
+    expect(order.i).toBe('9007199254740993');
+    expect(order.t).toBe('9007199254740995');
+    expect(order.aid).toBe('9007199254740997');
+    expect(updateOrders([], { ...order, q: '1', z: '0', p: '1' })[0]?.orderId).toBe('9007199254740993');
+  });
+  it('fails closed on unsafe JavaScript numeric IDs that are already rounded', () => {
+    expect(exactIntegerId(Number('9007199254740993'))).toBeUndefined();
+    expect(exactIntegerId('9007199254740993')).toBe('9007199254740993');
+    expect(exactIntegerId(-1)).toBeUndefined();
+  });
+  it('deduplicates distinct high-ID fills without collision', () => {
+    const raw = parseBinanceAccountEvent(
+      '{"e":"ORDER_TRADE_UPDATE","o":{"s":"BTCUSDT","S":"BUY","x":"TRADE","i":9007199254740993,"t":9007199254740995,"l":"1","L":"2","T":1000}}'
+    );
+    const first = accountTrade(raw.o as Record<string, unknown>, 'credential', () => '2026-10-14 00:00:00')!;
+    expect(first.exchangeTradeId).toBe('9007199254740995');
+    const next = { ...first, id: 'BTCUSDT:9007199254740997', exchangeTradeId: '9007199254740997' };
+    expect(mergeTrades([first], [next])).toHaveLength(2);
+  });
+});
+
 describe('terminal account data', () => {
   it('does not calculate a loss from a missing mark', () => {
     const result = positionMetrics({ ...position, markPrice: '0', unrealizedPnl: '0', margin: '' });
@@ -95,25 +235,53 @@ describe('terminal account data', () => {
     expect(result.margin).toBe('');
     expect(positionMetrics(result).returnRate).toBeUndefined();
   });
-  it('does not restore a position closed while a snapshot was queried', () => {
-    expect(mergePositionSnapshots([], [position], true)).toEqual([]);
+  it('keeps snapshot positions while adding a newer account position event', () => {
+    const other = { ...position, symbol: 'ETHUSDT' };
+    const changed = new Map([
+      ['PUMPUSDT:LONG', { revision: 2, row: { ...position, quantity: '5' } }]
+    ]);
+
+    expect(mergePositionSnapshots([other], changed, 1)).toEqual([other, { ...position, quantity: '5' }]);
   });
-  it('preserves newer quantities and PnL while enriching metadata', () => {
+
+  it('does not restore a position closed after the snapshot request started', () => {
+    const changed = new Map([['PUMPUSDT:LONG', { revision: 2 }]]);
+
+    expect(mergePositionSnapshots([position], changed, 1)).toEqual([]);
+  });
+
+  it('preserves a newer position event while enriching metadata from snapshot', () => {
     const current = { ...position, quantity: '50', unrealizedPnl: '0.5', margin: '', markPrice: '' };
-    const result = mergePositionSnapshots([current], [position], true)[0]!;
+    const changed = new Map([['PUMPUSDT:LONG', { revision: 2, row: current }]]);
+    const result = mergePositionSnapshots([position], changed, 1)[0]!;
     expect(result.quantity).toBe('50');
     expect(result.unrealizedPnl).toBe('0.5');
     expect(result.markPrice).toBe('2.01');
     expect(result.margin).toBe('');
   });
   it('accepts a full authoritative snapshot if no newer events arrived', () => {
-    expect(mergePositionSnapshots([], [position], false)).toEqual([position]);
+    expect(mergePositionSnapshots([position], new Map(), 0)).toEqual([position]);
+  });
+
+  it('replaces only the requested symbol after a position confirmation', () => {
+    const other = { ...position, symbol: 'ETHUSDT' };
+    expect(mergePositionSymbolSnapshot([position, other], [], 'PUMPUSDT', new Map(), 0)).toEqual([other]);
+    expect(mergePositionSymbolSnapshot([other], [{ ...position, quantity: '50' }], 'PUMPUSDT', new Map(), 0)).toEqual([
+      other,
+      { ...position, quantity: '50' }
+    ]);
+  });
+
+  it('keeps a position event newer than a symbol confirmation request', () => {
+    const newer = { ...position, quantity: '25' };
+    const changes = new Map([['PUMPUSDT:LONG', { revision: 2, row: newer }]]);
+    expect(mergePositionSymbolSnapshot([position], [], 'PUMPUSDT', changes, 1)).toEqual([newer]);
   });
 });
 
 const protection = {
   symbol: 'PUMPUSDT',
-  algoId: 123,
+  algoId: '123',
   clientAlgoId: 'protect',
   status: 'NEW',
   side: 'SELL',
@@ -126,10 +294,21 @@ const protection = {
   closePosition: false
 };
 describe('terminal protection and pagination', () => {
+  it('builds chart lines only from active exchange protections for the selected symbol and open position', () => {
+    expect(protectionPriceLines([position, { ...position, symbol: 'BTCUSDT' }], [
+      protection,
+      { ...protection, algoId: '124', type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
+      { ...protection, algoId: '125', status: 'CANCELED', triggerPrice: '1.7' }
+    ], 'PUMPUSDT')).toEqual([
+      { value: 2.2, kind: 'takeProfit' },
+      { value: 1.8, kind: 'stopLoss' }
+    ]);
+  });
+
   it('matches active protection by symbol, position side and closing side', () => {
     const prices = protectionPrices(position, [
       protection,
-      { ...protection, algoId: 124, type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
+      { ...protection, algoId: '124', type: 'TAKE_PROFIT_MARKET', triggerPrice: '2.2' },
       { ...protection, symbol: 'BTCUSDT', triggerPrice: '999' },
       { ...protection, side: 'BUY', triggerPrice: '99' }
     ]);
@@ -149,7 +328,7 @@ describe('terminal protection and pagination', () => {
     expect(
       protectionPrices(position, [
         protection,
-        { ...protection, algoId: 124, triggerPrice: '1.9' },
+        { ...protection, algoId: '124', triggerPrice: '1.9' },
         { ...protection, status: 'FINISHED', triggerPrice: '9' }
       ]).stopLoss
     ).toEqual(['1.8', '1.9']);
@@ -175,7 +354,7 @@ describe('terminal protection and pagination', () => {
   });
   it('limits live fills to the first page and leaves older pages unchanged', () => {
     const trade = accountTrade(fill, 'account', () => '2026-10-09 12:00:00')!;
-    const older = { ...trade, exchangeTradeId: 1, tradeTime: '2026-10-08 12:00:00' };
+    const older = { ...trade, exchangeTradeId: '1', tradeTime: '2026-10-08 12:00:00' };
     expect(liveTradePage([older], trade, 1, 1)).toEqual([trade]);
     expect(liveTradePage([older], trade, 2, 1)).toEqual([older]);
   });

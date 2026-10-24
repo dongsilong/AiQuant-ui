@@ -78,6 +78,11 @@ export interface AccountSnapshot {
   unrealizedPnl: string;
 }
 
+export interface DailyAccountBaseline {
+  equity: string;
+  observedAt: string;
+}
+
 export interface PositionSnapshot {
   symbol: string;
   side: string;
@@ -88,13 +93,14 @@ export interface PositionSnapshot {
   liquidationPrice: string;
   margin: string;
   leverage?: number;
+  maximumReturnRate?: number;
   takeProfitPrice?: string;
   stopLossPrice?: string;
 }
 
 export interface OrderSnapshot {
   symbol: string;
-  orderId: number;
+  orderId: string;
   clientOrderId: string;
   side: string;
   type: string;
@@ -107,7 +113,7 @@ export interface OrderSnapshot {
 
 export interface ProtectionOrderSnapshot {
   symbol: string;
-  algoId: number;
+  algoId: string;
   clientAlgoId: string;
   status: string;
   side: string;
@@ -123,8 +129,8 @@ export interface ProtectionOrderSnapshot {
 
 export interface TradeSnapshot {
   symbol: string;
-  tradeId: number;
-  orderId: number;
+  tradeId: string;
+  orderId: string;
   side: string;
   quantity: string;
   price: string;
@@ -146,8 +152,8 @@ export interface TradeRecord {
   commission: string;
   realizedPnl: string;
   tradeTime: string;
-  exchangeTradeId: number;
-  exchangeOrderId: number;
+  exchangeTradeId: string;
+  exchangeOrderId: string;
 }
 
 export interface StrategyPluginVO {
@@ -162,7 +168,7 @@ export interface ClosePositionForm {
   symbol: string;
   side: string;
   positionSide: string;
-  quantity: number;
+  quantity: string | number;
   idempotencyKey: string;
 }
 
@@ -187,7 +193,7 @@ export interface KlineSnapshot {
 export interface CancelOrderForm {
   credentialId: string | number;
   symbol: string;
-  orderId: number;
+  orderId: string;
   clientOrderId?: string;
   idempotencyKey: string;
 }
@@ -234,6 +240,7 @@ export interface StrategySymbolBinding {
   marginMode?: string;
   paramsJson?: string;
   status?: string;
+  runtimeEnabled?: boolean;
 }
 export interface StrategyPreflightResult {
   valid: boolean;
@@ -256,6 +263,7 @@ export interface StrategyInstanceVO {
   strategyId?: number | string;
   strategyName?: string;
   strategySymbolId?: number | string;
+  runtimeEnabled?: boolean;
   credentialId?: number | string;
   accountName?: string;
   symbol?: string;
@@ -278,15 +286,22 @@ export interface StrategyPositionStateQuery extends PageQuery {
 export interface StrategyPositionStateVO {
   id: number | string;
   instanceId?: number | string;
+  positionId?: number | string;
+  positionCycleKey?: string;
   instanceName?: string;
   credentialId?: number | string;
   status?: string;
   statusLabel?: string;
   direction?: string;
   directionLabel?: string;
+  symbol?: string;
   entryPrice?: string | number;
   positionQty?: string | number;
   initialPositionQty?: string | number;
+  initialMargin?: string | number;
+  maximumReturnRate?: string | number;
+  highestPriceSinceEntry?: string | number;
+  lowestPriceSinceEntry?: string | number;
   highestStep?: number;
   firstTakeProfitTriggered?: boolean;
   pendingAction?: string;
@@ -303,25 +318,6 @@ export interface DashboardOverview {
   runningInstanceCount: number;
   unknownExecutionCount: number;
   pendingNotificationCount: number;
-}
-export interface ProtectionVO {
-  id: number | string;
-  credentialId?: number | string;
-  positionId?: number | string;
-  symbol?: string;
-  positionSide?: string;
-  exchangeOrderId?: string;
-  clientOrderId?: string;
-  protectionType?: string;
-  orderType?: string;
-  quantity?: string | number;
-  stopPrice?: string | number;
-  status?: string;
-}
-export interface ProtectionQuery extends PageQuery {
-  credentialId?: number | string;
-  symbol?: string;
-  status?: string;
 }
 export interface ExecutionRecordVO {
   id: number | string;
@@ -343,44 +339,39 @@ export interface ExecutionQuery extends PageQuery {
   executionStatus?: string;
   exchangeOrderStatus?: string;
 }
-export interface FinancialEventVO {
-  id: number | string;
-  credentialId?: number | string;
-  symbol?: string;
-  eventType?: string;
-  amount?: string | number;
-  asset?: string;
-  eventTime?: string;
+/** 当前应用节点的 Binance WebSocket 传输模式（需要基础设施权限）。 */
+export interface WebSocketTransportInfo {
+  transport: 'RAW_OKHTTP' | 'BINANCE_SDK';
+  scope: 'THIS_NODE';
+  streamsReconnected?: number;
 }
-export interface FinancialEventQuery extends PageQuery {
-  credentialId?: number | string;
-  eventType?: string;
-  symbol?: string;
+
+/** All identifiers are serialized as strings to preserve Binance/Snowflake precision. */
+export interface UnresolvedLiveDispatch {
+  credentialId: string;
+  symbol: string;
+  dispatchKey: string;
+  operation: string | null;
+  clientOrderId: string | null;
+  status: string | null;
+  exchangeOrderId: string | null;
+  strategyInstanceId: string | null;
+  leaseEpoch: string | null;
+  blockedAt: string | null;
 }
-export interface ReconcileRecordVO {
-  id: number | string;
-  credentialId?: number | string;
-  accountName?: string;
-  reconcileType?: string;
-  result?: string;
-  detailJson?: string;
-  reconciledAt?: string;
-}
-export interface ReconcileQuery extends PageQuery {
-  credentialId?: number | string;
-}
-export interface NotificationVO {
-  id: number | string;
-  credentialId?: number | string;
-  channel?: string;
-  subject?: string;
-  content?: string;
-  status?: string;
-  retryCount?: number;
-  lastError?: string;
-  createdAt?: string;
-}
-export interface NotificationQuery extends PageQuery {
-  credentialId?: number | string;
-  status?: string;
+
+/** Only lifetime verified Binance fill facts, NOT a current strategy position. */
+export interface StrategyFillAuditSummary {
+  credentialId: string;
+  strategyId: string;
+  instanceId: string;
+  symbol: string;
+  allocationScope: 'LIFETIME_VERIFIED_FILLS_NOT_OPEN_POSITION';
+  fillCount: string;
+  boughtQty: string;
+  soldQty: string;
+  boughtNotional: string;
+  soldNotional: string;
+  totalFees: string;
+  realizedPnl: string;
 }

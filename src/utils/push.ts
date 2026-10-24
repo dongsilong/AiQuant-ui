@@ -110,7 +110,7 @@ const initSsePush = (url: string) => {
 };
 
 const initWsPush = (url: string) => {
-  const { close } = useWebSocket(url, {
+  const { close, send } = useWebSocket(url, {
     autoReconnect: {
       retries: 3,
       delay: 1000,
@@ -124,10 +124,15 @@ const initWsPush = (url: string) => {
       pongTimeout: 2000
     },
     onMessage: (_, e) => {
-      if (String(e.data) === 'pong') {
+      const message = String(e.data);
+      if (message === 'ping') {
+        send('pong');
         return;
       }
-      handlePushMessage(String(e.data));
+      if (message === 'pong') {
+        return;
+      }
+      handlePushMessage(message);
     }
   });
   closePushConnection = close;

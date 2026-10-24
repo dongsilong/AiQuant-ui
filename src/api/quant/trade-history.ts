@@ -9,10 +9,14 @@ export interface TradeHistoryRecord {
   symbol: string;
   direction: 'LONG' | 'SHORT';
   entryPrice: string;
-  openingMargin: string | null;
+  openingNotional: string | null;
   leverage: number | null;
+  openingBalance: string | null;
+  openingBalanceAt: string | null;
   openedAt: string;
   closePrice: string | null;
+  closingBalance: string | null;
+  closingBalanceAt: string | null;
   realizedPnl: string | null;
   commission: string | null;
   closedAt: string | null;

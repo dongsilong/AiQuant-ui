@@ -19,6 +19,8 @@ export const useCredentialOptions = () => {
   }));
   const accountName = (id: unknown) =>
     credentials.value.find(credential => String(credential.id) === String(id))?.accountName || '未知账户';
+  // 后端凭证接口为分页查询：必须取完全部页，避免部分账户在筛选框中缺失。
+  // 仅在组件挂载时读取；不在计算属性中发请求，防止重复加载。
   onMounted(async () => {
     const rows: CredentialVO[] = [];
     let pageNum = 1;

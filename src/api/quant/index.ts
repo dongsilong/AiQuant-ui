@@ -3,6 +3,7 @@ import type { AxiosPromise } from '@/utils/api-types';
 import request from '@/utils/request';
 import type {
   AccountSnapshot,
+  DailyAccountBaseline,
   CancelOrderForm,
   ClosePositionForm,
   CredentialForm,
@@ -23,13 +24,12 @@ import type {
   StrategyQuery,
   StrategyInstanceQuery,
   StrategyPositionStateQuery,
-  ProtectionQuery,
   ExecutionQuery,
-  FinancialEventQuery,
-  ReconcileQuery,
-  NotificationQuery,
   StrategyPreflightResult,
-  StrategyUserBinding
+  StrategyUserBinding,
+  WebSocketTransportInfo,
+  UnresolvedLiveDispatch,
+  StrategyFillAuditSummary
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -59,6 +59,8 @@ export const delRisk = (id: number | number[]) => request({ url: `/quant/risk/${
 
 export const getAccountSnapshot = (credentialId: string | number): AxiosPromise<AccountSnapshot> =>
   request({ url: `/quant/account/${credentialId}`, method: 'get' });
+export const getDailyAccountBaseline = (credentialId: string | number): AxiosPromise<DailyAccountBaseline | null> =>
+  request({ url: `/quant/account/${credentialId}/daily-baseline`, method: 'get' });
 export const listPositions = (credentialId: string | number, symbol?: string): AxiosPromise<PositionSnapshot[]> =>
   request({ url: `/quant/position/${credentialId}`, method: 'get', params: { symbol } });
 export const listOrders = (credentialId: string | number, symbol?: string): AxiosPromise<OrderSnapshot[]> =>
@@ -74,14 +76,25 @@ export const listTrades = (
   query: PageQuery & { side?: string; from?: string; to?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query } });
+export const listAccessibleTrades = (
+  credentialId: string | number | undefined,
+  symbol: string | undefined,
+  query: PageQuery & { side?: string; from?: string; to?: string }
+): AxiosPromise<PageResult<TradeRecord>> =>
+  request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
 export const syncTrades = (credentialId: string | number, symbol: string) =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: { symbol } });
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>
   request({ url: '/quant/market/price', method: 'get', params: { symbol } });
-export const listRealtimeKlines = (symbol: string, interval: string, limit = 100): AxiosPromise<KlineSnapshot[]> =>
-  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit } });
+export const listRealtimeKlines = (
+  symbol: string,
+  interval: string,
+  limit = 100,
+  runMode = 'LIVE'
+): AxiosPromise<KlineSnapshot[]> =>
+  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit, runMode } });
 export const closePosition = (data: ClosePositionForm) =>
   request({ url: '/quant/execution/close', method: 'post', data });
 export const cancelOrder = (data: CancelOrderForm) => request({ url: '/quant/execution/cancel', method: 'post', data });
@@ -94,11 +107,7 @@ import type {
   StrategyAccountBinding,
   StrategySymbolBinding,
   DashboardOverview,
-  ProtectionVO,
   ExecutionRecordVO,
-  FinancialEventVO,
-  ReconcileRecordVO,
-  NotificationVO
 } from './types';
 
 export const listStrategies = (query: StrategyQuery): AxiosPromise<PageResult<StrategyVO>> =>
@@ -129,6 +138,8 @@ export const replaceStrategyUsers = (id: number | string, userIds: Array<number 
   request({ url: '/quant/strategy/' + id + '/users', method: 'put', data: { userIds } });
 export const listStrategySymbols = (id: number | string): AxiosPromise<StrategySymbolBinding[]> =>
   request({ url: '/quant/strategy/' + id + '/symbols', method: 'get' });
+export const setStrategySymbolRuntimeEnabled = (strategyId: number | string, strategySymbolId: number | string, enabled: boolean) =>
+  request({ url: `/quant/strategy/${strategyId}/symbols/${strategySymbolId}/runtime`, method: 'post', params: { enabled } });
 export const bindStrategySymbol = (id: number | string, data: StrategySymbolBinding) =>
   request({ url: '/quant/strategy/' + id + '/symbols', method: 'post', data });
 export const unbindStrategySymbol = (id: number | string, symbolId: number | string) =>
@@ -144,21 +155,26 @@ export const listStrategyPositionStates = (
 
 export const getDashboardOverview = (): AxiosPromise<DashboardOverview> =>
   request({ url: '/quant/dashboard/overview', method: 'get' });
-export const listProtection = (query: ProtectionQuery): AxiosPromise<PageResult<ProtectionVO>> =>
-  request({ url: '/quant/protection/page', method: 'get', params: query });
 export const listExecution = (query: ExecutionQuery): AxiosPromise<PageResult<ExecutionRecordVO>> =>
   request({ url: '/quant/execution/page', method: 'get', params: query });
-export const listFinancial = (query: FinancialEventQuery): AxiosPromise<PageResult<FinancialEventVO>> =>
-  request({ url: '/quant/finance/page', method: 'get', params: query });
-export const listReconcile = (query: ReconcileQuery): AxiosPromise<PageResult<ReconcileRecordVO>> =>
-  request({ url: '/quant/reconcile/page', method: 'get', params: query });
-export const runReconcile = (credentialId: number | string, historyHours = 24) =>
-  request({ url: '/quant/reconcile/' + credentialId + '/run', method: 'post', params: { historyHours } });
-export const listNotifications = (query: NotificationQuery): AxiosPromise<PageResult<NotificationVO>> =>
-  request({ url: '/quant/notification/page', method: 'get', params: query });
-export const listTerminalNotifications = (credentialId: number | string): AxiosPromise<NotificationVO[]> =>
-  request({ url: '/quant/notification/terminal/' + credentialId, method: 'get' });
-export const retryNotification = (id: number | string) =>
-  request({ url: '/quant/notification/' + id + '/retry', method: 'post' });
-export const getNotification = (id: number | string): AxiosPromise<NotificationVO> =>
-  request({ url: '/quant/notification/' + id, method: 'get' });
+
+/** 运维端：节点级 Binance WebSocket 传输查询与切换。 */
+
+export const getStrategyFillAuditSummary = (params: {
+  credentialId: string; strategyId: string; instanceId: string; symbol: string;
+}): AxiosPromise<StrategyFillAuditSummary> =>
+  request({ url: '/quant/infrastructure/fill-audit/summary', method: 'get', params });
+
+export const listUnresolvedLiveDispatches = (): AxiosPromise<UnresolvedLiveDispatch[]> =>
+  request({ url: '/quant/infrastructure/dispatch/unresolved', method: 'get' });
+
+
+export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>
+  request({ url: '/quant/infrastructure/websocket/transport', method: 'get' });
+
+export const switchWebSocketTransport = (mode: WebSocketTransportInfo['transport']): AxiosPromise<WebSocketTransportInfo> =>
+  request({
+    url: '/quant/infrastructure/websocket/transport',
+    method: 'post',
+    params: { mode, acknowledgeReconnectionRisk: true }
+  });
