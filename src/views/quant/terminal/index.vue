@@ -58,17 +58,20 @@
                 {{ tool.label }}
               </el-button>
             </div>
-            <div v-if="chartProtectionLines.length" class="protection-legend">
-              <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
-                交易所止盈
-              </span>
-              <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
-                交易所止损
-              </span>
-            </div>
             <div class="chart-countdown">
-              剩余
-              <strong>{{ candleCountdown }}</strong>
+              <div v-if="chartProtectionLines.length" class="protection-legend">
+                <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
+                  交易所止盈
+                </span>
+                <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
+                  交易所止损
+                </span>
+              </div>
+              <span>
+                剩余
+                <strong>{{ candleCountdown }}</strong>
+              </span>
+
             </div>
           </div>
           <div class="kline-chart-wrap">
@@ -1950,8 +1953,7 @@ onBeforeUnmount(() => {
   color: var(--el-color-danger);
 }
 .protection-legend {
-  display: flex;
-  gap: 10px;
+  display: contents;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   white-space: nowrap;
