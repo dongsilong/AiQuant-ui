@@ -115,7 +115,7 @@
                   <b>{{ item.strategyName || '策略实例' }}</b>
                   <p>
                     {{ item.accountName || '-' }} ·
-                    <el-link v-if="item.symbol" type="primary" :underline="false" @click.stop="selectRowSymbol(item)">
+                    <el-link v-if="item.symbol" type="primary" :underline="'never'" @click.stop="selectRowSymbol(item)">
                       {{ item.symbol }}
                     </el-link>
                     <span v-else>{{ symbol }}</span>
@@ -315,7 +315,7 @@
         <el-table-column type="index" label="序号" align="center" width="60" />
         <el-table-column label="交易对" width="120">
           <template #default="scope">
-            <el-link type="primary" :underline="false" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
+            <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
               {{ scope.row.symbol }}
             </el-link>
           </template>
