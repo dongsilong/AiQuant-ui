@@ -40,8 +40,8 @@ export const delCredential = (id: number | number[]) => request({ url: `/quant/c
 export const changeCredentialStatus = (id: string | number, status: string) =>
   request({ url: '/quant/credential/changeStatus', method: 'put', params: { id, status } });
 export const testCredential = (id: string) => request({ url: `/quant/credential/${id}/test`, method: 'post' });
-export const listSymbol = (query: SymbolQuery): AxiosPromise<PageResult<SymbolVO>> =>
-  request({ url: '/quant/symbol/list', method: 'get', params: query });
+export const listSymbol = (query: SymbolQuery, signal?: AbortSignal): AxiosPromise<PageResult<SymbolVO>> =>
+  request({ url: '/quant/symbol/list', method: 'get', params: query, signal });
 export const getSymbol = (id: number | string): AxiosPromise<SymbolVO> =>
   request({ url: `/quant/symbol/${id}`, method: 'get' });
 export const syncSymbol = () => request({ url: '/quant/symbol/sync', method: 'post' });
@@ -57,25 +57,27 @@ export const addRisk = (data: RiskForm) => request({ url: '/quant/risk', method:
 export const updateRisk = (data: RiskForm) => request({ url: '/quant/risk', method: 'put', data });
 export const delRisk = (id: number | number[]) => request({ url: `/quant/risk/${id}`, method: 'delete' });
 
-export const getAccountSnapshot = (credentialId: string | number): AxiosPromise<AccountSnapshot> =>
-  request({ url: `/quant/account/${credentialId}`, method: 'get' });
-export const getDailyAccountBaseline = (credentialId: string | number): AxiosPromise<DailyAccountBaseline | null> =>
-  request({ url: `/quant/account/${credentialId}/daily-baseline`, method: 'get' });
-export const listPositions = (credentialId: string | number, symbol?: string): AxiosPromise<PositionSnapshot[]> =>
-  request({ url: `/quant/position/${credentialId}`, method: 'get', params: { symbol } });
-export const listOrders = (credentialId: string | number, symbol?: string): AxiosPromise<OrderSnapshot[]> =>
-  request({ url: `/quant/order/${credentialId}`, method: 'get', params: { symbol } });
+export const getAccountSnapshot = (credentialId: string | number, signal?: AbortSignal): AxiosPromise<AccountSnapshot> =>
+  request({ url: `/quant/account/${credentialId}`, method: 'get', signal });
+export const getDailyAccountBaseline = (credentialId: string | number, signal?: AbortSignal): AxiosPromise<DailyAccountBaseline | null> =>
+  request({ url: `/quant/account/${credentialId}/daily-baseline`, method: 'get', signal });
+export const listPositions = (credentialId: string | number, symbol?: string, signal?: AbortSignal): AxiosPromise<PositionSnapshot[]> =>
+  request({ url: `/quant/position/${credentialId}`, method: 'get', params: { symbol }, signal });
+export const listOrders = (credentialId: string | number, symbol?: string, signal?: AbortSignal): AxiosPromise<OrderSnapshot[]> =>
+  request({ url: `/quant/order/${credentialId}`, method: 'get', params: { symbol }, signal });
 export const listProtectionOrders = (
   credentialId: string | number,
-  symbol?: string
+  symbol?: string,
+  signal?: AbortSignal
 ): AxiosPromise<ProtectionOrderSnapshot[]> =>
-  request({ url: `/quant/order/${credentialId}/protection`, method: 'get', params: { symbol } });
+  request({ url: `/quant/order/${credentialId}/protection`, method: 'get', params: { symbol }, signal });
 export const listTrades = (
   credentialId: string | number,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string }
+  query: PageQuery & { side?: string; from?: string; to?: string },
+  signal?: AbortSignal
 ): AxiosPromise<PageResult<TradeRecord>> =>
-  request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query } });
+  request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query }, signal });
 export const listAccessibleTrades = (
   credentialId: string | number | undefined,
   symbol: string | undefined,
@@ -92,9 +94,10 @@ export const listRealtimeKlines = (
   symbol: string,
   interval: string,
   limit = 100,
-  runMode = 'LIVE'
+  runMode = 'LIVE',
+  signal?: AbortSignal
 ): AxiosPromise<KlineSnapshot[]> =>
-  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit, runMode } });
+  request({ url: '/quant/market/klines', method: 'get', params: { symbol, interval, limit, runMode }, signal });
 export const closePosition = (data: ClosePositionForm) =>
   request({ url: '/quant/execution/close', method: 'post', data });
 export const cancelOrder = (data: CancelOrderForm) => request({ url: '/quant/execution/cancel', method: 'post', data });
@@ -146,12 +149,13 @@ export const unbindStrategySymbol = (id: number | string, symbolId: number | str
   request({ url: '/quant/strategy/' + id + '/symbols/' + symbolId, method: 'delete' });
 export const replaceStrategySymbols = (id: number | string, items: StrategySymbolBinding[]) =>
   request({ url: '/quant/strategy/' + id + '/symbols', method: 'put', data: { items } });
-export const listStrategyInstances = (query: StrategyInstanceQuery): AxiosPromise<PageResult<StrategyInstanceVO>> =>
-  request({ url: '/quant/strategy/instances', method: 'get', params: query });
+export const listStrategyInstances = (query: StrategyInstanceQuery, signal?: AbortSignal): AxiosPromise<PageResult<StrategyInstanceVO>> =>
+  request({ url: '/quant/strategy/instances', method: 'get', params: query, signal });
 export const listStrategyPositionStates = (
-  query: StrategyPositionStateQuery
+  query: StrategyPositionStateQuery,
+  signal?: AbortSignal
 ): AxiosPromise<PageResult<StrategyPositionStateVO>> =>
-  request({ url: '/quant/strategy/position-states', method: 'get', params: query });
+  request({ url: '/quant/strategy/position-states', method: 'get', params: query, signal });
 
 export const getDashboardOverview = (): AxiosPromise<DashboardOverview> =>
   request({ url: '/quant/dashboard/overview', method: 'get' });
