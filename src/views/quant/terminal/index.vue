@@ -953,21 +953,25 @@ async function handleSymbolChange() {
 function applyEvent(e: any) {
   const eventSymbol = String(e.symbol || '').toUpperCase();
   if (e.type === 'MARK' && e.price && !e.replay && eventSymbol) {
-    const next = new Map(positionMarketMarks.value);
-    next.set(eventSymbol, { price: String(e.price), receivedAt: Date.now() });
-    positionMarketMarks.value = next;
-    const returnRatePeaks = new Map(positionReturnRatePeaks.value);
-    let changed = false;
-    for (const position of positions.value) {
-      if (position.symbol.toUpperCase() !== eventSymbol) continue;
-      const rate = positionMetrics(position, e.price).returnRate;
-      const key = `${credentialId.value}|${position.symbol.toUpperCase()}|${position.side.toUpperCase()}|${position.entryPrice}`;
-      if (rate !== undefined && rate > (returnRatePeaks.get(key) ?? Number.NEGATIVE_INFINITY)) {
-        returnRatePeaks.set(key, rate);
-        changed = true;
+    // Only position symbols need the per-position mark cache. The selected chart symbol's
+    // price is updated below, so unrelated market ticks should not clone reactive Maps.
+    const matchingPositions = positions.value.filter(position => position.symbol.toUpperCase() === eventSymbol);
+    if (matchingPositions.length) {
+      const next = new Map(positionMarketMarks.value);
+      next.set(eventSymbol, { price: String(e.price), receivedAt: Date.now() });
+      positionMarketMarks.value = next;
+      const returnRatePeaks = new Map(positionReturnRatePeaks.value);
+      let changed = false;
+      for (const position of matchingPositions) {
+        const rate = positionMetrics(position, e.price).returnRate;
+        const key = `${credentialId.value}|${position.symbol.toUpperCase()}|${position.side.toUpperCase()}|${position.entryPrice}`;
+        if (rate !== undefined && rate > (returnRatePeaks.get(key) ?? Number.NEGATIVE_INFINITY)) {
+          returnRatePeaks.set(key, rate);
+          changed = true;
+        }
       }
+      if (changed) positionReturnRatePeaks.value = returnRatePeaks;
     }
-    if (changed) positionReturnRatePeaks.value = returnRatePeaks;
   }
   if (e.type === 'CONNECTING' && !eventSymbol) streamStatus.value = 'CONNECTING';
   else if (e.type === 'CONNECTED' && eventSymbol === symbol.value.toUpperCase()) streamStatus.value = 'CONNECTED';
@@ -1560,7 +1564,11 @@ async function loadData() {
   // Keep chart initialization independent from slower account/history endpoints.
   // A pending position/account request must not hold the chart's loading mask or delay market streams.
   const [k, s] = await Promise.allSettled([
-    listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal),
+    // Market data is mode-specific. Until a credential is known, render the chart shell but
+    // do not silently subscribe to LIVE when the user's first credential may be TESTNET.
+    id
+      ? listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal)
+      : Promise.resolve({ data: [] as KlineSnapshot[] }),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal)
   ]);
   if (generation !== dataGeneration) return;
@@ -1577,6 +1585,8 @@ async function loadData() {
   void ensureQuantSymbolTickSizes().catch(() => undefined);
   renderChart();
   renderOverlays();
+  // Do not create mode-specific streams until the selected credential establishes LIVE/TESTNET.
+  if (!id) return;
   connect();
   connectAccountStream();
 
