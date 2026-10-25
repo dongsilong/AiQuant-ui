@@ -72,7 +72,7 @@
             </div>
           </div>
           <div class="kline-chart-wrap">
-            <div ref="chartRef" v-loading="loading" class="kline-chart" />
+            <div ref="chartRef" class="kline-chart" />
           </div>
         </el-card>
         <div class="chart-side">
@@ -1792,21 +1792,32 @@ async function waitForPositionClosed(positionSymbol: string) {
   }
 }
 let clock: ReturnType<typeof setInterval> | undefined;
-onMounted(async () => {
+onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
     resize = new ResizeObserver(resizeChartWithRightGap);
     resize.observe(chartRef.value);
   }
-  const [c, s] = await Promise.all([
-    listCredential({ pageNum: 1, pageSize: 100 }),
-    listStrategies({ pageNum: 1, pageSize: 100 })
-  ]);
-  credentials.value = c.data?.rows || [];
-  strategies.value = s.data?.rows || [];
-  await searchSymbols('');
-  await refresh();
+
+  // Start the chart immediately instead of waiting for credential/strategy/search endpoints.
+  // Each auxiliary result hydrates its own panel when ready; refresh() cancels stale snapshots.
+  void refresh();
+  void listCredential({ pageNum: 1, pageSize: 100 })
+    .then(response => {
+      credentials.value = response.data?.rows || [];
+      if (!credentialId.value && credentials.value.length) {
+        credentialId.value = credentials.value[0].id;
+        void refresh();
+      }
+    })
+    .catch(() => undefined);
+  void listStrategies({ pageNum: 1, pageSize: 100 })
+    .then(response => {
+      strategies.value = response.data?.rows || [];
+    })
+    .catch(() => undefined);
+  void searchSymbols('').catch(() => undefined);
 });
 onBeforeUnmount(() => {
   dataGeneration++;
