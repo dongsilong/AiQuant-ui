@@ -1581,20 +1581,29 @@ async function loadData() {
   connectAccountStream();
 
   if (id) {
-    // Hydrate account panels independently. The chart and user streams are already usable;
-    // stale responses are ignored by generation checks and canceled on the next refresh.
+    // Capture stream revisions before each snapshot request so a slow REST response cannot
+    // overwrite newer account/position events received after the request began.
+    const positionSnapshotRevision = positionRevision;
+    const accountSnapshotRevision = accountRevision;
     void Promise.allSettled([
       listPositions(id, undefined, signal),
       listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
       listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
     ]).then(([p, i, h]) => {
       if (generation !== dataGeneration || signal.aborted) return;
-      positions.value = p.status === 'fulfilled' ? p.value.data || [] : [];
-      accountSnapshotAvailable.value = p.status === 'fulfilled';
-      instances.value = (i.status === 'fulfilled' ? i.value.data?.rows || [] : []).filter(
-        item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
-      );
-      positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
+      if (p.status === 'fulfilled') {
+        positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
+        accountSnapshotAvailable.value = true;
+      } else {
+        // A failed snapshot is not proof of an empty account. Preserve any event-derived positions.
+        accountSnapshotAvailable.value = false;
+      }
+      if (i.status === 'fulfilled') {
+        instances.value = (i.value.data?.rows || []).filter(
+          item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
+        );
+      }
+      if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
       renderOverlays();
       // Rebuild market subscriptions only when the confirmed open-position set arrives.
       connect();
@@ -1610,12 +1619,17 @@ async function loadData() {
       if (generation !== dataGeneration || signal.aborted) return;
       ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
       tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
-      account.value = a.status === 'fulfilled' ? a.value.data : undefined;
-      dailyAccountBaseline.value =
-        baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay ? baseline.value.data : null;
-      orders.value = o.status === 'fulfilled' ? o.value.data || [] : [];
-      trades.value = t.status === 'fulfilled' ? t.value.data?.rows || [] : [];
-      tradeTotal.value = t.status === 'fulfilled' ? t.value.data?.total || 0 : 0;
+      if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
+      if (baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay) {
+        dailyAccountBaseline.value = baseline.value.data;
+      }
+      if (o.status === 'fulfilled' && accountSnapshotRevision === accountRevision) {
+        orders.value = o.value.data || [];
+      }
+      if (t.status === 'fulfilled') {
+        trades.value = mergeTrades(t.value.data?.rows || [], liveTrades.value);
+        tradeTotal.value = t.value.data?.total || 0;
+      }
       renderOverlays();
     });
   }
