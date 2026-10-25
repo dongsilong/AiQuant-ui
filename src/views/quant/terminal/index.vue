@@ -1557,16 +1557,11 @@ async function loadData() {
   orders.value = [];
   trades.value = [];
   renderOverlays();
-  const [k, s, p, i, h] = await Promise.allSettled([
+  // Keep chart initialization independent from slower account/history endpoints.
+  // A pending position/account request must not hold the chart's loading mask or delay market streams.
+  const [k, s] = await Promise.allSettled([
     listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal),
-    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal),
-    id ? listPositions(id, undefined, signal) : Promise.resolve({ data: [] as PositionSnapshot[] }),
-    id
-      ? listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
-      : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any),
-    id
-      ? listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
-      : Promise.resolve({ data: { rows: [] as StrategyPositionStateVO[] } } as any)
+    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal)
   ]);
   if (generation !== dataGeneration) return;
   if (k.status === 'fulfilled') {
@@ -1579,34 +1574,51 @@ async function loadData() {
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
-  positions.value = p.status === 'fulfilled' ? p.value.data || [] : [];
-  accountSnapshotAvailable.value = p.status === 'fulfilled';
-  instances.value = (i.status === 'fulfilled' ? i.value.data?.rows || [] : []).filter(
-    item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
-  );
-  positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
+  void ensureQuantSymbolTickSizes().catch(() => undefined);
+  renderChart();
+  renderOverlays();
+  connect();
+  connectAccountStream();
+
   if (id) {
-    const [a, o, t, baseline] = await Promise.allSettled([
+    // Hydrate account panels independently. The chart and user streams are already usable;
+    // stale responses are ignored by generation checks and canceled on the next refresh.
+    void Promise.allSettled([
+      listPositions(id, undefined, signal),
+      listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
+      listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
+    ]).then(([p, i, h]) => {
+      if (generation !== dataGeneration || signal.aborted) return;
+      positions.value = p.status === 'fulfilled' ? p.value.data || [] : [];
+      accountSnapshotAvailable.value = p.status === 'fulfilled';
+      instances.value = (i.status === 'fulfilled' ? i.value.data?.rows || [] : []).filter(
+        item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
+      );
+      positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
+      renderOverlays();
+      // Rebuild market subscriptions only when the confirmed open-position set arrives.
+      connect();
+      void loadProtectionOrders();
+    });
+
+    void Promise.allSettled([
       getAccountSnapshot(id, signal),
       listOrders(id, undefined, signal),
       listTrades(id, undefined, { ...tradeQuery }, signal),
       getDailyAccountBaseline(id, signal)
-    ]);
-    if (generation !== dataGeneration) return;
-    ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
-    tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
-    account.value = a.status === 'fulfilled' ? a.value.data : undefined;
-    dailyAccountBaseline.value = baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay ? baseline.value.data : null;
-    orders.value = o.status === 'fulfilled' ? o.value.data || [] : [];
-    trades.value = t.status === 'fulfilled' ? t.value.data?.rows || [] : [];
-    tradeTotal.value = t.status === 'fulfilled' ? t.value.data?.total || 0 : 0;
+    ]).then(([a, o, t, baseline]) => {
+      if (generation !== dataGeneration || signal.aborted) return;
+      ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
+      tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
+      account.value = a.status === 'fulfilled' ? a.value.data : undefined;
+      dailyAccountBaseline.value =
+        baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay ? baseline.value.data : null;
+      orders.value = o.status === 'fulfilled' ? o.value.data || [] : [];
+      trades.value = t.status === 'fulfilled' ? t.value.data?.rows || [] : [];
+      tradeTotal.value = t.status === 'fulfilled' ? t.value.data?.total || 0 : 0;
+      renderOverlays();
+    });
   }
-  void ensureQuantSymbolTickSizes().catch(() => undefined);
-  renderChart();
-  renderOverlays();
-  if (id) void loadProtectionOrders();
-  connect();
-  connectAccountStream();
 }
 async function refresh() {
   loading.value = true;
