@@ -115,35 +115,36 @@
             <div v-if="instances.length" class="strategy-grid">
               <div v-for="item in instances" :key="item.id" class="strategy">
                 <div>
+                  <!--<div class="strategy-actions">
+                    <el-button
+                      size="small"
+                      :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
+                      @click="toggleStrategy(item)"
+                    >
+                      {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
+                    </el-button>
+                  </div>-->
                   <b>{{ item.strategyName || '策略实例' }}</b>
                   <p>
-                    {{ item.accountName || '-' }} ·
+                    {{ item.accountName || '-' }}·
                     <el-link v-if="item.symbol" type="primary" :underline="false" @click.stop="selectRowSymbol(item)">
                       {{ item.symbol }}
                     </el-link>
                     <span v-else>{{ symbol }}</span>
+                    <el-button
+                      size="small"
+                      class="strategy-symbol-toggle"
+                      :type="item.runtimeEnabled === false ? 'success' : 'warning'"
+                      :disabled="!item.strategySymbolId"
+                      @click="toggleStrategySymbol(item)"
+                    >
+                      {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
+                    </el-button>
                   </p>
                   <small>
-                    实例：{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}
-                    <span> · 交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</span>
+                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
+                    <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
                   </small>
-                </div>
-                <div class="strategy-actions">
-                  <el-button
-                    size="small"
-                    :type="item.runtimeEnabled === false ? 'success' : 'warning'"
-                    :disabled="!item.strategySymbolId"
-                    @click="toggleStrategySymbol(item)"
-                  >
-                    {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
-                    @click="toggleStrategy(item)"
-                  >
-                    {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
-                  </el-button>
                 </div>
               </div>
             </div>
@@ -2096,14 +2097,23 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 .strategy {
-  display: flex;
+  //display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
-.strategy p,
+.strategy p {
+  display: flex;
+  align-items: center;
+  margin: 4px 0;
+  color: var(--el-text-color-secondary);
+}
+.strategy p .strategy-symbol-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .strategy small {
   display: block;
   margin: 4px 0;
