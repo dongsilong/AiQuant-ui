@@ -577,6 +577,8 @@ const ordersError = ref('');
 const tradesError = ref('');
 let dataGeneration = 0;
 let dataRequestController: AbortController | undefined;
+let symbolSearchController: AbortController | undefined;
+let symbolSearchGeneration = 0;
 let symbolRequest = 0;
 let accountRevision = 0;
 let positionRevision = 0;
@@ -932,19 +934,31 @@ async function loadKline(value: string) {
   await refresh();
 }
 async function searchSymbols(keyword: string) {
+  // Remote select can invoke this for every keystroke. Cancel the previous query and
+  // prevent a slower response for an older keyword from replacing the latest results.
+  symbolSearchController?.abort();
+  const controller = new AbortController();
+  symbolSearchController = controller;
+  const generation = ++symbolSearchGeneration;
   symbolLoading.value = true;
   try {
-    const response = await listSymbol({
-      pageNum: 1,
-      pageSize: 50,
-      quoteAsset: 'USDT',
-      ...(keyword ? { symbol: keyword } : { favorite: true })
-    });
+    const response = await listSymbol(
+      {
+        pageNum: 1,
+        pageSize: 50,
+        quoteAsset: 'USDT',
+        ...(keyword ? { symbol: keyword } : { favorite: true })
+      },
+      controller.signal
+    );
+    if (generation !== symbolSearchGeneration || controller.signal.aborted) return;
     const merged = new Map(symbolOptions.value.map(item => [String(item.id), item]));
     for (const item of response.data?.rows || []) merged.set(String(item.id), item);
     symbolOptions.value = [...merged.values()];
+  } catch {
+    // The shared request interceptor reports genuine failures; canceled searches are expected.
   } finally {
-    symbolLoading.value = false;
+    if (generation === symbolSearchGeneration) symbolLoading.value = false;
   }
 }
 async function handleSymbolChange() {
@@ -1833,6 +1847,9 @@ onBeforeUnmount(() => {
   dataGeneration++;
   dataRequestController?.abort();
   dataRequestController = undefined;
+  symbolSearchGeneration++;
+  symbolSearchController?.abort();
+  symbolSearchController = undefined;
   hydrationPending = false;
   if (hydrationTimer) clearTimeout(hydrationTimer);
   marketStreams.forEach(connection => connection.close());
