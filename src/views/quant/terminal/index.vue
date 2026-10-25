@@ -128,15 +128,16 @@
                       {{ item.symbol }}
                     </el-link>
                     <span v-else>{{ symbol }}</span>
-                    <el-button
-                      size="small"
+                    <el-switch
                       class="strategy-symbol-toggle"
-                      :type="item.runtimeEnabled === false ? 'success' : 'warning'"
-                      :disabled="!item.strategySymbolId"
-                      @click="toggleStrategySymbol(item)"
-                    >
-                      {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
-                    </el-button>
+                      :model-value="item.runtimeEnabled !== false"
+                      :loading="strategySymbolToggling.has(strategySymbolToggleKey(item))"
+                      :disabled="!item.strategySymbolId || strategySymbolToggling.has(strategySymbolToggleKey(item))"
+                      active-text="开"
+                      inactive-text="停"
+                      inline-prompt
+                      @change="(enabled: string | number | boolean) => toggleStrategySymbol(item, Boolean(enabled))"
+                    />
                   </p>
                   <small>
                     <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
@@ -501,6 +502,9 @@ const slopeStrategyId = ref<string | number>();
 const slopeRows = ref<SlopeRow[]>([]);
 const slopeLoadError = ref('');
 const slopeSymbolErrors = ref<string[]>([]);
+const strategySymbolToggling = ref(new Set<string>());
+const strategySymbolToggleKey = (item: StrategyInstanceVO) =>
+  `${String(item.strategyId ?? '')}:${String(item.strategySymbolId ?? '')}`;
 type SseConnection = { close: () => void };
 let slopeStreams: SseConnection[] = [];
 const slopeStreamStates = new Map<string, SlopeStreamState>();
@@ -1707,12 +1711,14 @@ async function confirmAction(title: string, message: string, action: () => Promi
   ElMessage.success('操作已提交');
   await refresh();
 }
-async function toggleStrategySymbol(item: StrategyInstanceVO) {
+async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) {
   if (item.strategyId === undefined || item.strategySymbolId === undefined) {
     ElMessage.error('缺少策略或策略交易对标识，无法切换运行状态');
     return;
   }
-  const enabled = item.runtimeEnabled === false;
+  const key = strategySymbolToggleKey(item);
+  if (strategySymbolToggling.value.has(key)) return;
+  strategySymbolToggling.value.add(key);
   const symbolName = item.symbol || '当前交易对';
   const title = enabled ? '恢复交易对' : '暂停交易对';
   const message = enabled
@@ -1732,6 +1738,8 @@ async function toggleStrategySymbol(item: StrategyInstanceVO) {
       ElMessage.error(queryError(error, '交易对运行状态切换失败'));
       await refresh();
     }
+  } finally {
+    strategySymbolToggling.value.delete(key);
   }
 }
 function toggleStrategy(item: StrategyInstanceVO) {
