@@ -249,6 +249,11 @@ service.interceptors.response.use(
     }
   },
   async (error: any) => {
+    // Cancellation is expected when the user changes account/symbol or leaves the terminal.
+    // Do not show a global error toast for an intentionally aborted stale request.
+    if (error?.code === 'ERR_CANCELED' || axios.isCancel?.(error)) {
+      return Promise.reject(error);
+    }
     const message = (await extractErrorMessage(error)) || errorCode['default'];
     ElMessage({ message: message, type: 'error', duration: 5 * 1000 });
     error.isHandled = true;
