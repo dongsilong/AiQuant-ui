@@ -72,7 +72,7 @@
             </div>
           </div>
           <div class="kline-chart-wrap">
-            <div ref="chartRef" class="kline-chart" />
+            <div ref="chartRef" v-loading="loading" class="kline-chart" />
           </div>
         </el-card>
         <div class="chart-side">
@@ -112,6 +112,15 @@
             <div v-if="instances.length" class="strategy-grid">
               <div v-for="item in instances" :key="item.id" class="strategy">
                 <div>
+                  <!--<div class="strategy-actions">
+                    <el-button
+                      size="small"
+                      :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
+                      @click="toggleStrategy(item)"
+                    >
+                      {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
+                    </el-button>
+                  </div>-->
                   <b>{{ item.strategyName || '策略实例' }}</b>
                   <p>
                     {{ item.accountName || '-' }} ·
@@ -119,28 +128,20 @@
                       {{ item.symbol }}
                     </el-link>
                     <span v-else>{{ symbol }}</span>
+                    <el-button
+                      size="small"
+                      class="strategy-symbol-toggle"
+                      :type="item.runtimeEnabled === false ? 'success' : 'warning'"
+                      :disabled="!item.strategySymbolId"
+                      @click="toggleStrategySymbol(item)"
+                    >
+                      {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
+                    </el-button>
                   </p>
                   <small>
-                    实例：{{ item.status || 'UNKNOWN' }} · {{ item.lastSignalAt || '暂无信号' }}
-                    <span> · 交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</span>
+                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
+                    <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
                   </small>
-                </div>
-                <div class="strategy-actions">
-                  <el-button
-                    size="small"
-                    :type="item.runtimeEnabled === false ? 'success' : 'warning'"
-                    :disabled="!item.strategySymbolId"
-                    @click="toggleStrategySymbol(item)"
-                  >
-                    {{ item.runtimeEnabled === false ? '恢复交易对' : '暂停交易对' }}
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :type="item.status === 'RUNNING' || item.status === '1' ? 'danger' : 'primary'"
-                    @click="toggleStrategy(item)"
-                  >
-                    {{ item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略' }}
-                  </el-button>
                 </div>
               </div>
             </div>
@@ -506,6 +507,9 @@ const slopeStreamStates = new Map<string, SlopeStreamState>();
 const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
 let slopeRenderFrame: number | undefined;
 let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
+let slopeLoadController: AbortController | undefined;
+let slopeLoadGeneration = 0;
+let symbolSwitchController: AbortController | undefined;
 const protectionOrders = ref<ProtectionOrderSnapshot[]>([]);
 const protectionError = ref('');
 const protectionLoaded = ref(false);
@@ -1361,7 +1365,7 @@ function clearSlopeRowValues(row: SlopeRow, state: SlopeStreamState, status: Slo
 
 function connectSlopeStream() {
   closeSlopeStream();
-  if (!slopeStrategyId.value || !slopeRows.value.length) return;
+  if (!slopePanelVisible.value || !slopeStrategyId.value || !slopeRows.value.length) return;
   for (const row of slopeRows.value) {
     row.status = 'CONNECTING';
     const state: SlopeStreamState = { klines: [], handshakeComplete: false };
@@ -1466,7 +1470,12 @@ function slopeRowClassName({ row }: { row: SlopeRow }): string {
 }
 
 async function openSlopePanel() {
-  if (slopeLoading.value) return;
+  // A strategy change or a repeated open supersedes any earlier binding/detail lookup.
+  slopeLoadController?.abort();
+  const controller = new AbortController();
+  slopeLoadController = controller;
+  const generation = ++slopeLoadGeneration;
+
   slopePanelVisible.value = true;
   // Preserve the drawer's explicit strategy selection; @change invokes this function.
   // Resetting to the terminal strategy here silently subscribes the wrong SSE key.
@@ -1475,21 +1484,29 @@ async function openSlopePanel() {
   slopeRows.value = [];
   slopeLoadError.value = '';
   slopeSymbolErrors.value = [];
-  if (!slopeStrategyId.value) return;
+  if (!slopeStrategyId.value) {
+    slopeLoading.value = false;
+    if (slopeLoadController === controller) slopeLoadController = undefined;
+    return;
+  }
+  const strategyIdForLoad = slopeStrategyId.value;
   slopeLoading.value = true;
   try {
-    const bindings = (await listStrategySymbols(slopeStrategyId.value)).data || [];
+    const bindings = (await listStrategySymbols(strategyIdForLoad, controller.signal)).data || [];
+    if (controller.signal.aborted || generation !== slopeLoadGeneration || !slopePanelVisible.value) return;
     const activeBindings = bindings.filter((item: StrategySymbolBinding) => item.status !== '1');
     const resolved = await Promise.all(
       activeBindings.map(async binding => {
         try {
-          const item = await getSymbol(binding.symbolId);
+          const item = await getSymbol(binding.symbolId, controller.signal);
           return { binding, symbol: item.data?.symbol };
         } catch {
+          // An aborted detail lookup is expected when the drawer closes or the strategy changes.
           return { binding, symbol: undefined };
         }
       })
     );
+    if (controller.signal.aborted || generation !== slopeLoadGeneration || !slopePanelVisible.value) return;
     slopeSymbolErrors.value = resolved.filter(item => !item.symbol).map(item => String(item.binding.symbolId));
     const rows = resolved
       .filter(item => item.symbol)
@@ -1502,14 +1519,22 @@ async function openSlopePanel() {
     slopeRows.value = rows;
     connectSlopeStream();
   } catch {
-    slopeLoadError.value = '策略交易对列表加载失败';
+    if (!controller.signal.aborted && generation === slopeLoadGeneration && slopePanelVisible.value) {
+      slopeLoadError.value = '策略交易对列表加载失败';
+    }
   } finally {
-    slopeLoading.value = false;
+    if (generation === slopeLoadGeneration) {
+      slopeLoading.value = false;
+      if (slopeLoadController === controller) slopeLoadController = undefined;
+    }
   }
 }
 
 function closeSlopePanel() {
   slopePanelVisible.value = false;
+  ++slopeLoadGeneration;
+  slopeLoadController?.abort();
+  slopeLoadController = undefined;
   slopeLoading.value = false;
   closeSlopeStream();
 }
@@ -1524,6 +1549,8 @@ async function handleStrategyChange() {
   await refresh();
 }
 async function loadData() {
+  symbolSwitchController?.abort();
+  symbolSwitchController = undefined;
   // Cancel stale REST reads from the previous refresh/account/symbol selection.
   // Generation checks below remain the final guard against out-of-order responses.
   dataRequestController?.abort();
@@ -1720,38 +1747,48 @@ function toggleStrategy(item: StrategyInstanceVO) {
 }
 async function selectRowSymbol(row: { symbol?: string }) {
   if (!row?.symbol) return;
-  // 新点击（包括重新选中当前交易对）使之前尚未完成的切换请求失效。
+  // Cancel the previous switch immediately; request IDs alone only guard state writes,
+  // they do not release network requests that are still pending.
+  symbolSwitchController?.abort();
+  symbolSwitchController = undefined;
   const requestId = ++symbolRequest;
   if (row.symbol === symbol.value) return;
+  const controller = new AbortController();
+  symbolSwitchController = controller;
   const nextSymbol = row.symbol;
   const generation = dataGeneration;
   const requestedInterval = interval.value;
   const runMode = selectedMarketRunMode();
-  const [k, s] = await Promise.allSettled([
-    listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode),
-    listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol })
-  ]);
-  if (
-    generation !== dataGeneration ||
-    requestId !== symbolRequest ||
-    requestedInterval !== interval.value ||
-    runMode !== selectedMarketRunMode()
-  ) return;
-  if (k.status !== 'fulfilled') {
-    ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
-    return;
+  try {
+    const [k, s] = await Promise.allSettled([
+      listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode, controller.signal),
+      listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal)
+    ]);
+    if (
+      controller.signal.aborted ||
+      generation !== dataGeneration ||
+      requestId !== symbolRequest ||
+      requestedInterval !== interval.value ||
+      runMode !== selectedMarketRunMode()
+    ) return;
+    if (k.status !== 'fulfilled') {
+      ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
+      return;
+    }
+    symbol.value = nextSymbol;
+    klines.value = k.value.data || [];
+    symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+    cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
+    if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
+      symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+    }
+    price.value = undefined;
+    renderChart();
+    renderOverlays();
+    connect();
+  } finally {
+    if (symbolSwitchController === controller) symbolSwitchController = undefined;
   }
-  symbol.value = nextSymbol;
-  klines.value = k.value.data || [];
-  symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
-  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
-  if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
-    symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
-  }
-  price.value = undefined;
-  renderChart();
-  renderOverlays();
-  connect();
 }
 function cancel(row: unknown) {
   const order = row as OrderSnapshot;
@@ -1845,6 +1882,11 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   dataGeneration++;
+  slopeLoadGeneration++;
+  slopeLoadController?.abort();
+  slopeLoadController = undefined;
+  symbolSwitchController?.abort();
+  symbolSwitchController = undefined;
   dataRequestController?.abort();
   dataRequestController = undefined;
   symbolSearchGeneration++;
@@ -2024,8 +2066,7 @@ onBeforeUnmount(() => {
   color: var(--el-color-danger);
 }
 .protection-legend {
-  display: flex;
-  gap: 10px;
+  display: contents;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   white-space: nowrap;
@@ -2168,14 +2209,23 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 .strategy {
-  display: flex;
+  //display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
-.strategy p,
+.strategy p {
+  display: flex;
+  align-items: center;
+  margin: 4px 0;
+  color: var(--el-text-color-secondary);
+}
+.strategy p .strategy-symbol-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .strategy small {
   display: block;
   margin: 4px 0;

@@ -42,8 +42,8 @@ export const changeCredentialStatus = (id: string | number, status: string) =>
 export const testCredential = (id: string) => request({ url: `/quant/credential/${id}/test`, method: 'post' });
 export const listSymbol = (query: SymbolQuery, signal?: AbortSignal): AxiosPromise<PageResult<SymbolVO>> =>
   request({ url: '/quant/symbol/list', method: 'get', params: query, signal });
-export const getSymbol = (id: number | string): AxiosPromise<SymbolVO> =>
-  request({ url: `/quant/symbol/${id}`, method: 'get' });
+export const getSymbol = (id: number | string, signal?: AbortSignal): AxiosPromise<SymbolVO> =>
+  request({ url: `/quant/symbol/${id}`, method: 'get', signal });
 export const syncSymbol = () => request({ url: '/quant/symbol/sync', method: 'post' });
 export const addSymbol = (data: Partial<SymbolVO>) => request({ url: '/quant/symbol', method: 'post', data });
 export const updateSymbol = (data: Partial<SymbolVO>) => request({ url: '/quant/symbol', method: 'put', data });
@@ -139,8 +139,8 @@ export const listStrategyUsers = (id: number | string): AxiosPromise<StrategyUse
   request({ url: '/quant/strategy/' + id + '/users', method: 'get' });
 export const replaceStrategyUsers = (id: number | string, userIds: Array<number | string>) =>
   request({ url: '/quant/strategy/' + id + '/users', method: 'put', data: { userIds } });
-export const listStrategySymbols = (id: number | string): AxiosPromise<StrategySymbolBinding[]> =>
-  request({ url: '/quant/strategy/' + id + '/symbols', method: 'get' });
+export const listStrategySymbols = (id: number | string, signal?: AbortSignal): AxiosPromise<StrategySymbolBinding[]> =>
+  request({ url: '/quant/strategy/' + id + '/symbols', method: 'get', signal });
 export const setStrategySymbolRuntimeEnabled = (strategyId: number | string, strategySymbolId: number | string, enabled: boolean) =>
   request({ url: `/quant/strategy/${strategyId}/symbols/${strategySymbolId}/runtime`, method: 'post', params: { enabled } });
 export const bindStrategySymbol = (id: number | string, data: StrategySymbolBinding) =>
