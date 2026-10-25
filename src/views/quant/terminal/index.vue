@@ -136,7 +136,7 @@
                       active-text="开"
                       inactive-text="停"
                       inline-prompt
-                      @change="(enabled: string | number | boolean) => toggleStrategySymbol(item, Boolean(enabled))"
+                      @change="enabled => toggleStrategySymbol(item, Boolean(enabled))"
                     />
                   </p>
                   <small>
