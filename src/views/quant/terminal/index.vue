@@ -576,6 +576,7 @@ const chartProtectionLines = computed(() =>
 const ordersError = ref('');
 const tradesError = ref('');
 let dataGeneration = 0;
+let dataRequestController: AbortController | undefined;
 let symbolRequest = 0;
 let accountRevision = 0;
 let positionRevision = 0;
@@ -719,7 +720,7 @@ async function loadTrades() {
   const query = { ...tradeQuery };
   tradeLoading.value = true;
   try {
-    const result = await listTrades(id, undefined, query);
+    const result = await listTrades(id, undefined, query, dataRequestController?.signal);
     if (generation !== dataGeneration || requestId !== tradeRequest) return;
     const rows = result.data?.rows || [];
     trades.value = query.pageNum === 1 ? mergeTrades(rows, liveTrades.value).slice(0, query.pageSize) : rows;
@@ -743,7 +744,7 @@ async function loadProtectionOrders() {
   const revision = protectionRevision;
   protectionLoading.value = true;
   try {
-    const response = await listProtectionOrders(id);
+    const response = await listProtectionOrders(id, undefined, dataRequestController?.signal);
     if (generation !== dataGeneration || requestId !== protectionRequest) return;
     const snapshot = new Map((response.data || []).map(row => [`${row.symbol}:${row.algoId}`, row]));
     // Replay only updates received during this query, including cancellation tombstones.
@@ -980,8 +981,9 @@ function applyEvent(e: any) {
   else if (e.type === 'TRADE' && e.price)
     price.value = { ...(price.value as PriceSnapshot), lastTradePrice: e.price, observedAt: e.eventTime };
   else if (e.type === 'MARK' && e.price) {
+    // Mark ticks update live price/PnL only. Price-line overlays depend on positions and orders,
+    // not each tick; rebuilding all chart overlays here creates avoidable main-thread work.
     price.value = { ...(price.value as PriceSnapshot), markPrice: e.price, observedAt: e.eventTime };
-    renderOverlays();
   } else if (e.type === 'KLINE' && e.kline) {
     const i = klines.value.findIndex(x => x.openTime === e.kline.openTime);
     if (i < 0) klines.value = [...klines.value, e.kline].slice(-1000);
@@ -1504,6 +1506,12 @@ async function handleStrategyChange() {
   await refresh();
 }
 async function loadData() {
+  // Cancel stale REST reads from the previous refresh/account/symbol selection.
+  // Generation checks below remain the final guard against out-of-order responses.
+  dataRequestController?.abort();
+  const controller = new AbortController();
+  dataRequestController = controller;
+  const signal = controller.signal;
   const generation = ++dataGeneration;
   ++symbolRequest;
   ++tradeRequest;
@@ -1550,14 +1558,14 @@ async function loadData() {
   trades.value = [];
   renderOverlays();
   const [k, s, p, i, h] = await Promise.allSettled([
-    listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode()),
-    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }),
-    id ? listPositions(id) : Promise.resolve({ data: [] as PositionSnapshot[] }),
+    listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal),
+    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal),
+    id ? listPositions(id, undefined, signal) : Promise.resolve({ data: [] as PositionSnapshot[] }),
     id
-      ? listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id })
+      ? listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
       : Promise.resolve({ data: { rows: [] as StrategyInstanceVO[] } } as any),
     id
-      ? listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id })
+      ? listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
       : Promise.resolve({ data: { rows: [] as StrategyPositionStateVO[] } } as any)
   ]);
   if (generation !== dataGeneration) return;
@@ -1579,10 +1587,10 @@ async function loadData() {
   positionHistories.value = h.status === 'fulfilled' ? mergePositionHistories(h.value.data?.rows || []) : [];
   if (id) {
     const [a, o, t, baseline] = await Promise.allSettled([
-      getAccountSnapshot(id),
-      listOrders(id),
-      listTrades(id, undefined, { ...tradeQuery }),
-      getDailyAccountBaseline(id)
+      getAccountSnapshot(id, signal),
+      listOrders(id, undefined, signal),
+      listTrades(id, undefined, { ...tradeQuery }, signal),
+      getDailyAccountBaseline(id, signal)
     ]);
     if (generation !== dataGeneration) return;
     ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
@@ -1776,6 +1784,8 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   dataGeneration++;
+  dataRequestController?.abort();
+  dataRequestController = undefined;
   hydrationPending = false;
   if (hydrationTimer) clearTimeout(hydrationTimer);
   marketStreams.forEach(connection => connection.close());
