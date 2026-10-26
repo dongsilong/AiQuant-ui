@@ -911,9 +911,10 @@ function renderOverlays() {
 }
 function resizeChartWithRightGap() {
   if (!chart.value || !chartRef.value) return;
-  const rightGap = Math.round(chartRef.value.clientWidth / 3);
-  chart.value.setMaxOffsetRightDistance(rightGap);
-  chart.value.setOffsetRightDistance(rightGap);
+
+  // 页面切换、容器显隐或窗口尺寸变化时只重算布局。
+  // 不要在 ResizeObserver 回调中重新设置 offsetRightDistance，
+  // 否则会覆盖用户当前的横向滚动位置，导致切回多页签后 K 线跳到最右侧。
   chart.value.resize();
 }
 function renderIndicators() {
