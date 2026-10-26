@@ -859,19 +859,20 @@ const period = () => {
   const map: any = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month' };
   return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
 };
-// Route-tab restoration must not synthesize a new chart position.
-let renderedChartKey = '';
+// The initial right-side breathing room is applied once. ResizeObserver and route-tab
+// activation only recalculate canvas dimensions and must not overwrite the user's viewport.
+let initialRightGapApplied = false;
+
+function applyInitialChartRightGap() {
+  if (!chart.value || !chartRef.value || initialRightGapApplied) return;
+  const rightGap = Math.max(0, chartRef.value.clientWidth / 3);
+  chart.value.setMaxOffsetRightDistance(rightGap);
+  chart.value.setOffsetRightDistance(rightGap);
+  initialRightGapApplied = true;
+}
 
 function renderChart() {
   if (!chart.value) return;
-
-  const currentKey = `${symbol.value}|${interval.value}`;
-  const canRestore =
-    renderedChartKey === currentKey &&
-    chartViewportSnapshot?.symbol === symbol.value &&
-    chartViewportSnapshot?.interval === interval.value;
-  if (renderedChartKey && renderedChartKey !== currentKey) chartViewportSnapshot = undefined;
-  if (canRestore) captureChartViewport();
 
   chart.value.resetData();
   chart.value.setDataLoader({
@@ -894,15 +895,8 @@ function renderChart() {
   chart.value.setLeftMinVisibleBarCount(30);
   chart.value.setLocale('zh-CN');
   renderIndicators();
+  applyInitialChartRightGap();
   resizeChartWithRightGap();
-  renderedChartKey = currentKey;
-
-  // Data reset may move the viewport to the latest candle. Restore the saved view only
-  // when the symbol and interval are unchanged; a deliberate symbol/period switch starts fresh.
-  if (canRestore && chartViewportSnapshot) {
-    const snapshot = { ...chartViewportSnapshot };
-    void restoreChartViewport(snapshot);
-  }
 }
 function renderOverlays() {
   if (!chart.value) return;
@@ -933,9 +927,8 @@ function renderOverlays() {
 function resizeChartWithRightGap() {
   if (!chart.value || !chartRef.value) return;
 
-  // 页面切换、容器显隐或窗口尺寸变化时只重算布局。
-  // 不要在 ResizeObserver 回调中重新设置 offsetRightDistance，
-  // 否则会覆盖用户当前的横向滚动位置，导致切回多页签后 K 线跳到最右侧。
+  // ResizeObserver and route-tab activation only recalculate layout. Never change
+  // offsetRightDistance here, because doing so overwrites the user's current viewport.
   chart.value.resize();
 }
 function renderIndicators() {
