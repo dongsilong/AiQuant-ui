@@ -348,7 +348,7 @@
 
 <script lang="ts" setup>
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { nextTick, onActivated, onDeactivated } from 'vue';
+import { nextTick, onActivated } from 'vue';
 import { type Chart, dispose, init, type KLineData } from 'klinecharts';
 import type {
   AccountSnapshot,
@@ -859,58 +859,8 @@ const period = () => {
   const map: any = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month' };
   return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
 };
-type ChartViewportSnapshot = {
-  symbol: string;
-  interval: string;
-  visibleRange?: { from: number; to: number };
-  barSpace?: number;
-};
-let chartViewportSnapshot: ChartViewportSnapshot | undefined;
+// Route-tab restoration must not synthesize a new chart position.
 let renderedChartKey = '';
-
-function captureChartViewport() {
-  if (!chart.value) return;
-  const currentChart = chart.value as any;
-  const currentKey = `${symbol.value}|${interval.value}`;
-  if (renderedChartKey && renderedChartKey !== currentKey) {
-    chartViewportSnapshot = undefined;
-    return;
-  }
-  try {
-    const visibleRange = currentChart.getVisibleRange?.();
-    const barSpace = currentChart.getBarSpace?.();
-    const barSpaceValue = typeof barSpace === 'number' ? barSpace : barSpace?.bar;
-    chartViewportSnapshot = {
-      symbol: symbol.value,
-      interval: interval.value,
-      ...(visibleRange && Number.isFinite(visibleRange.from) && Number.isFinite(visibleRange.to)
-        ? { visibleRange: { from: visibleRange.from, to: visibleRange.to } }
-        : {}),
-      ...(Number.isFinite(barSpaceValue) ? { barSpace: barSpaceValue } : {})
-    };
-  } catch {
-    // If this KLineChart version does not expose a viewport getter, continue without a snapshot.
-  }
-}
-
-async function restoreChartViewport(snapshot: ChartViewportSnapshot) {
-  await nextTick();
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-  if (!chart.value || !chartRef.value || chartRef.value.clientWidth <= 0) return;
-  const currentChart = chart.value as any;
-  try {
-    if (snapshot.barSpace !== undefined) currentChart.setBarSpace?.(snapshot.barSpace);
-    // getVisibleRange() returns chart range coordinates, not a candle timestamp.
-    // Do not pass visibleRange.to to scrollToTimestamp(): that interprets it as a timestamp
-    // and can push the viewport far to the right.
-    if (snapshot.visibleRange && typeof currentChart.setVisibleRange === 'function') {
-      currentChart.setVisibleRange(snapshot.visibleRange);
-    }
-    currentChart.resize();
-  } catch {
-    // A version-specific viewport API must not prevent the chart from rendering.
-  }
-}
 
 function renderChart() {
   if (!chart.value) return;
@@ -1933,22 +1883,10 @@ async function waitForPositionClosed(positionSymbol: string) {
   }
 }
 let clock: ReturnType<typeof setInterval> | undefined;
-onDeactivated(() => {
-  // Save the current viewport before the cached route is hidden.
-  captureChartViewport();
-});
-
 onActivated(() => {
-  // Restore only after the cached route's container has become visible and measurable.
-  void nextTick(async () => {
+  // On route-tab return, only resize. Do not reset data, scroll, or synthesize viewport offsets.
+  void nextTick(() => {
     resizeChartWithRightGap();
-    if (
-      chartViewportSnapshot &&
-      chartViewportSnapshot.symbol === symbol.value &&
-      chartViewportSnapshot.interval === interval.value
-    ) {
-      await restoreChartViewport(chartViewportSnapshot);
-    }
   });
 });
 
