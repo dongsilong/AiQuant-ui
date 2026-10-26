@@ -203,7 +203,7 @@
               </el-table-column>
               <el-table-column label="操作" width="110" align="center">
                 <template #default="scope">
-                  <el-button link type="danger" @click="close(scope.row)">平仓</el-button>
+                  <el-button v-hasPermi="['quant:terminal:close']" link type="danger" @click="close(scope.row)">平仓</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -347,174 +347,76 @@
 </template>
 
 <script lang="ts" setup>
+import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, shallowRef, toRefs } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { nextTick, onActivated } from 'vue';
-import { type Chart, dispose, init, type KLineData } from 'klinecharts';
-import type {
-  AccountSnapshot,
-  DailyAccountBaseline,
-  CancelOrderForm,
-  ClosePositionForm,
-  CredentialVO,
-  KlineSnapshot,
-  OrderSnapshot,
-  PositionSnapshot,
-  ProtectionOrderSnapshot,
-  PriceSnapshot,
-  SymbolVO,
-  StrategyInstanceVO,
-  StrategyPositionStateVO,
-  StrategySymbolBinding,
-  StrategyVO,
-  TradeRecord
-} from '@/api/quant/types';
-import {
-  listCredential,
-  listStrategies,
-  getAccountSnapshot,
-  getDailyAccountBaseline,
-  listPositions,
-  listOrders,
-  listProtectionOrders,
-  listTrades,
-  listRealtimeKlines,
-  listSymbol,
-  getSymbol,
-  listStrategyInstances,
-  listStrategyPositionStates,
-  listStrategySymbols,
-  startStrategy,
-  stopStrategy,
-  setStrategySymbolRuntimeEnabled,
-  cancelOrder,
-  closePosition
-} from '@/api/quant';
+import { init, dispose, type Chart, type KLineData } from 'klinecharts';
 import { getToken, removeToken } from '@/utils/auth';
 import { useDict } from '@/utils/dict';
-import { parseTime, selectDictLabel } from '@/utils/ruoyi';
+import {parseTime, selectDictLabel} from '@/utils/ruoyi';
 import { cacheQuantSymbolTickSize, ensureQuantSymbolTickSizes, formatQuantPrice, priceScaleFromTickSize } from '../components/price-format';
+
+// Types
+import type {
+  AccountSnapshot, DailyAccountBaseline, CancelOrderForm, ClosePositionForm,
+  CredentialVO, KlineSnapshot, OrderSnapshot, PositionSnapshot, ProtectionOrderSnapshot,
+  PriceSnapshot, SymbolVO, StrategyInstanceVO, StrategyPositionStateVO,
+  StrategySymbolBinding, StrategyVO, TradeRecord
+} from '@/api/quant/types';
+
+// APIs
 import {
-  accountTrade,
-  parseBinanceAccountEvent,
-  liveTradePage,
-  protectionPrices,
-  protectionPriceLines,
-  updateProtectionOrders,
-  mergeAccountPosition,
-  mergePositionSnapshots,
-  mergePositionSymbolSnapshot,
-  positionSnapshotKey,
-  mergeTrades,
-  positionMetrics,
-  positionMaximumReturnRate,
-  terminalMarketSubscriptions,
-  chunkSlopeSubscriptions,
-  updateOrders,
-  exactCloseQuantity,
-  calculateRealtimeSlope,
-  slopeStreamQuery
+  listCredential, listStrategies, getAccountSnapshot, getDailyAccountBaseline,
+  listPositions, listOrders, listProtectionOrders, listTrades, listRealtimeKlines,
+  listSymbol, getSymbol, listStrategyInstances, listStrategyPositionStates,
+  listStrategySymbols, startStrategy, stopStrategy, setStrategySymbolRuntimeEnabled,
+  cancelOrder, closePosition
+} from '@/api/quant';
+
+// Utils
+import {
+  accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
+  updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
+  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate,
+  terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
+  calculateRealtimeSlope, slopeStreamQuery
 } from './terminal-data';
-const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(useDict('quant_kline_period', 'quant_indicator', 'quant_position_direction'));
-const symbol = ref('BTCUSDT'),
-  interval = ref('15m'),
-  strategyId = ref<string | number>(),
-  credentialId = ref<string | number>(),
-  indicators = ref<string[]>(['MA']),
-  activeTab = ref('positions'),
-  loading = ref(false),
-  streamStatus = ref('CONNECTING'),
-  accountSnapshotAvailable = ref(false),
-  now = ref(Date.now());
-const dailyBaselineDay = ref('');
-const currentInterval = interval;
-const credentials = ref<CredentialVO[]>([]),
-  strategies = ref<StrategyVO[]>([]),
-  account = ref<AccountSnapshot>(),
-  dailyAccountBaseline = ref<DailyAccountBaseline | null>(),
-  positions = ref<PositionSnapshot[]>([]),
-  orders = ref<OrderSnapshot[]>([]),
-  trades = ref<TradeRecord[]>([]),
-  instances = ref<StrategyInstanceVO[]>([]),
-  positionHistories = ref<StrategyPositionStateVO[]>([]),
-  positionMarketMarks = ref(new Map<string, { price: string; receivedAt: number }>()),
-  positionReturnRatePeaks = ref(new Map<string, number>()),
-  klines = ref<KlineSnapshot[]>([]),
-  price = ref<PriceSnapshot>(),
-  symbolInfo = ref<SymbolVO>(),
-  symbolOptions = ref<SymbolVO[]>([]),
-  symbolLoading = ref(false);
-const indicatorOptions = computed(() => quant_indicator.value || []);
-const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
-const dailyReturnRate = computed(() => {
-  const baseline = Number(dailyAccountBaseline.value?.equity);
-  const walletBalance = Number(account.value?.walletBalance);
-  const currentUnrealizedPnl = positionRows.value.reduce((sum, row) => sum + Number(row.unrealizedPnl || 0), 0);
-  const currentEquity = Number.isFinite(walletBalance) ? walletBalance + currentUnrealizedPnl : Number(account.value?.marginBalance);
-  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(currentEquity)) return undefined;
-  return ((currentEquity - baseline) / baseline) * 100;
-});
-let dailyBaselineRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-watch(
-  () => shanghaiDateKey(now.value),
-  day => {
-    if (!dailyBaselineDay.value || day === dailyBaselineDay.value) return;
-    dailyBaselineDay.value = day;
-    dailyAccountBaseline.value = null;
-    if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
-    dailyBaselineRefreshTimer = setTimeout(async () => {
-      const id = credentialId.value;
-      const generation = dataGeneration;
-      if (!id) return;
-      try {
-        const result = await getDailyAccountBaseline(id);
-        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = result.data;
-      } catch {
-        if (generation === dataGeneration && dailyBaselineDay.value === day) dailyAccountBaseline.value = null;
-      }
-    }, 90_000);
-  }
+
+const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(
+  useDict('quant_kline_period', 'quant_indicator', 'quant_position_direction')
 );
-type SlopeRow = {
-  symbol: string;
-  interval: string;
-  status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
-  currentPrice?: number;
-  latestTradePrice?: number;
-  referencePrice?: number;
-  slopePercent?: number;
-  degrees?: number;
-  entryAngleDegrees?: number;
-};
-type SlopeStreamState = {
-  klines: KlineSnapshot[];
-  latestTradePrice?: number;
-  handshakeComplete: boolean;
-};
-const statusMap: Record<string, string> = {
-  CONNECTING: '连接中',
-  CONNECTED: '已连接',
-  DISCONNECTED: '已断开',
-  ERROR: '异常'
-};
-const statusText = (status: string) => statusMap[status] ?? '未知';
-const slopePanelVisible = ref(false);
-const slopeLoading = ref(false);
-const slopeStrategyId = ref<string | number>();
-const slopeRows = ref<SlopeRow[]>([]);
-const slopeLoadError = ref('');
-const slopeSymbolErrors = ref<string[]>([]);
-const strategySymbolToggling = ref(new Set<string>());
-const strategySymbolToggleKey = (item: StrategyInstanceVO) =>
-  `${String(item.strategyId ?? '')}:${String(item.strategySymbolId ?? '')}`;
-type SseConnection = { close: () => void };
-let slopeStreams: SseConnection[] = [];
-const slopeStreamStates = new Map<string, SlopeStreamState>();
-const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
-let slopeRenderFrame: number | undefined;
-let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
-let slopeLoadController: AbortController | undefined;
-let slopeLoadGeneration = 0;
-let symbolSwitchController: AbortController | undefined;
+
+// ==================== 基础状态 ====================
+const symbol = ref('BTCUSDT');
+const interval = ref('15m');
+const currentInterval = interval;
+const strategyId = ref<string | number>();
+const credentialId = ref<string | number>();
+const indicators = ref<string[]>(['MA']);
+const activeTab = ref('positions');
+const loading = ref(false);
+const streamStatus = ref('CONNECTING');
+const accountSnapshotAvailable = ref(false);
+const now = ref(Date.now());
+
+const dailyBaselineDay = ref('');
+let dailyBaselineRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+const credentials = ref<CredentialVO[]>([]);
+const strategies = ref<StrategyVO[]>([]);
+const account = ref<AccountSnapshot>();
+const dailyAccountBaseline = ref<DailyAccountBaseline | null>();
+const positions = ref<PositionSnapshot[]>([]);
+const orders = ref<OrderSnapshot[]>([]);
+const trades = ref<TradeRecord[]>([]);
+const instances = ref<StrategyInstanceVO[]>([]);
+const positionHistories = ref<StrategyPositionStateVO[]>([]);
+const positionMarketMarks = ref(new Map<string, { price: string; receivedAt: number }>());
+const positionReturnRatePeaks = ref(new Map<string, number>());
+const klines = ref<KlineSnapshot[]>([]);
+const price = ref<PriceSnapshot>();
+const symbolInfo = ref<SymbolVO>();
+const symbolOptions = ref<SymbolVO[]>([]);
+const symbolLoading = ref(false);
+
 const protectionOrders = ref<ProtectionOrderSnapshot[]>([]);
 const protectionError = ref('');
 const protectionLoaded = ref(false);
@@ -524,28 +426,142 @@ const tradeTotal = ref(0);
 const tradeLoading = ref(false);
 const tradePending = ref(false);
 const liveTrades = ref<TradeRecord[]>([]);
+
+const ordersError = ref('');
+const tradesError = ref('');
+
+// ==================== 斜率抽屉状态 ====================
+type SlopeRow = { symbol: string; interval: string; status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR'; currentPrice?: number; latestTradePrice?: number; referencePrice?: number; slopePercent?: number; degrees?: number; entryAngleDegrees?: number };
+type SlopeStreamState = { klines: KlineSnapshot[]; latestTradePrice?: number; handshakeComplete: boolean };
+const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
+const statusText = (status: string) => statusMap[status] ?? '未知';
+const slopePanelVisible = ref(false);
+const slopeLoading = ref(false);
+const slopeStrategyId = ref<string | number>();
+const slopeRows = ref<SlopeRow[]>([]);
+const slopeLoadError = ref('');
+const slopeSymbolErrors = ref<string[]>([]);
+const strategySymbolToggling = ref(new Set<string>());
+
+// ==================== SSE 与并发控制 ====================
+type SseConnection = { close: () => void };
+let marketStreams: SseConnection[] = [];
+let accountStream: SseConnection | undefined;
+let marketStreamKey = '';
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let accountRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let dataRequestController: AbortController | undefined;
+let symbolSearchController: AbortController | undefined;
+let symbolSwitchController: AbortController | undefined;
+let slopeStreams: SseConnection[] = [];
+const slopeStreamStates = new Map<string, SlopeStreamState>();
+const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
+let slopeRenderFrame: number | undefined;
+let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
+let slopeLoadController: AbortController | undefined;
+
+let dataGeneration = 0;
+let symbolRequest = 0;
 let tradeRequest = 0;
 let protectionRequest = 0;
+let accountRevision = 0;
+let positionRevision = 0;
 let protectionRevision = 0;
-const protectionChanges = new Map<string, { revision: number; row?: ProtectionOrderSnapshot }>();
+let symbolSearchGeneration = 0;
+let slopeLoadGeneration = 0;
+const positionEventChanges = new Map<string, { revision: number; row?: PositionSnapshot }>();
+const lastAccountEvents = new Map<string, number>();
+const lastOrderEvents = new Map<string, number>();
 const lastProtectionEvents = new Map<string, number>();
+const protectionChanges = new Map<string, { revision: number; row?: ProtectionOrderSnapshot }>();
+
+// ==================== 图表实例 ====================
+const chartRef = ref<HTMLElement>();
+const chart = shallowRef<Chart>();
+let resizeObserver: ResizeObserver | undefined;
+let updateChartBar: ((data: KLineData) => void) | undefined;
+let overlayIds: string[] = [];
+// 控制右侧留白，只在初始化或切换品种/周期时应用一次
+let initialRightGapApplied = false;
+
+// 图表视口快照
+type ViewportSnapshot = { isRightEdge: boolean; visibleRange?: { from: number; to: number }; barSpace?: number };
+let viewportSnapshot: ViewportSnapshot = { isRightEdge: true };
+
+// ==================== 工具函数 ====================
+const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
+const format = (v: any) => {
+  if (v === undefined || v === null || v === '') return '-';
+  const text = String(v);
+  const normal = /e/i.test(text) ? Number(v).toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 }) : text;
+  return normal.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
+};
+const formatFixed = (v: any, digits: number) => {
+  if (v === undefined || v === null || v === '') return '-';
+  const number = Number(v);
+  return Number.isFinite(number) ? number.toFixed(digits) : format(v);
+};
+const idempotency = () => `terminal:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+const toChart = (rows: KlineSnapshot[]): KLineData[] =>
+  rows.map(x => ({ timestamp: new Date(x.openTime).getTime(), open: +x.open, high: +x.high, low: +x.low, close: +x.close, volume: +x.volume }));
+const period = () => {
+  const m = /^(\d+)([smhdwM])$/.exec(interval.value);
+  const map: any = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month' };
+  return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
+};
+const queryError = (error: any, fallback: string) => typeof error === 'string' ? error : error?.msg || error?.message || fallback;
+const strategySymbolToggleKey = (item: StrategyInstanceVO) => `${String(item.strategyId ?? '')}:${String(item.strategySymbolId ?? '')}`;
+
+// ==================== 计算属性 ====================
+const indicatorOptions = computed(() => quant_indicator.value || []);
+const indicatorNames = computed<Record<string, string>>(() => Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label])));
+
+const dailyReturnRate = computed(() => {
+  const baseline = Number(dailyAccountBaseline.value?.equity);
+  const walletBalance = Number(account.value?.walletBalance);
+  const currentUnrealizedPnl = positionRows.value.reduce((sum, row) => sum + Number(row.unrealizedPnl || 0), 0);
+  const currentEquity = Number.isFinite(walletBalance) ? walletBalance + currentUnrealizedPnl : Number(account.value?.marginBalance);
+  if (!Number.isFinite(baseline) || baseline <= 0 || !Number.isFinite(currentEquity)) return undefined;
+  return ((currentEquity - baseline) / baseline) * 100;
+});
+
+const candleCountdown = computed(() => {
+  const match = /^(\d+)([smhdwM])$/.exec(interval.value);
+  if (!match) return '--:--';
+  const unitSeconds: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, M: 2592000 };
+  const total = Number(match[1]) * unitSeconds[match[2]];
+  const remain = Math.max(0, total - (Math.floor(now.value / 1000) % total));
+  return `${String(Math.floor(remain / 60)).padStart(2, '0')}:${String(remain % 60).padStart(2, '0')}`;
+});
+
+const positionRows = computed(() =>
+  positions.value.map(item => {
+    const metrics = positionMetrics(item, (positionMarketMarks.value.get(item.symbol)?.receivedAt || 0) > now.value - 3000
+      ? positionMarketMarks.value.get(item.symbol)?.price
+      : item.symbol === symbol.value && streamStatus.value === 'CONNECTED' ? price.value?.markPrice : undefined
+    );
+    const peakKey = `${credentialId.value}|${item.symbol.toUpperCase()}|${item.side.toUpperCase()}|${item.entryPrice}`;
+    const observedPeak = positionReturnRatePeaks.value.get(peakKey);
+    const returnRatePeak = Math.max(metrics.returnRate ?? Number.NEGATIVE_INFINITY, observedPeak ?? Number.NEGATIVE_INFINITY);
+    return {
+      ...metrics,
+      maximumReturnRate: positionMaximumReturnRate(item, credentialId.value, positionHistories.value, Number.isFinite(returnRatePeak) ? returnRatePeak : undefined)
+    };
+  })
+);
+
+const chartProtectionLines = computed(() => protectionLoaded.value ? protectionPriceLines(positions.value, protectionOrders.value, symbol.value) : []);
+
 const orderRows = computed(() => [
   ...orders.value.map(row => ({ ...row, kind: 'normal', source: '普通订单' })),
   ...protectionOrders.value.map(row => ({
-    symbol: row.symbol,
-    side: row.side,
-    type: row.type,
-    status: row.status,
-    orderId: row.algoId,
-    clientOrderId: row.clientAlgoId,
-    price: row.triggerPrice,
+    symbol: row.symbol, side: row.side, type: row.type, status: row.status,
+    orderId: row.algoId, clientOrderId: row.clientAlgoId, price: row.triggerPrice,
     originalQuantity: row.closePosition ? '全部持仓' : row.quantity,
-    executedQuantity: row.executedQuantity || '0',
-    updateTime: row.updateTime,
-    kind: 'algo',
-    source: '条件单'
+    executedQuantity: row.executedQuantity || '0', updateTime: row.updateTime, kind: 'algo', source: '条件单'
   }))
 ]);
+
 const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   if (protectionError.value) return '查询失败';
   if (!protectionLoaded.value) return '加载中';
@@ -553,54 +569,118 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   const symbol = (row as PositionSnapshot).symbol;
   return prices[kind].map(value => formatQuantPrice(symbol, value)).join('、') || '未挂载';
 };
-const positionRows = computed(() =>
-  positions.value.map(item => {
-    const metrics = positionMetrics(
-      item,
-      (positionMarketMarks.value.get(item.symbol)?.receivedAt || 0) > now.value - 3000
-        ? positionMarketMarks.value.get(item.symbol)?.price
-        : item.symbol === symbol.value && streamStatus.value === 'CONNECTED'
-          ? price.value?.markPrice
-          : undefined
-    );
-    const peakKey = `${credentialId.value}|${item.symbol.toUpperCase()}|${item.side.toUpperCase()}|${item.entryPrice}`;
-    const observedPeak = positionReturnRatePeaks.value.get(peakKey);
-    const returnRatePeak = Math.max(metrics.returnRate ?? Number.NEGATIVE_INFINITY, observedPeak ?? Number.NEGATIVE_INFINITY);
-    return {
-      ...metrics,
-      maximumReturnRate: positionMaximumReturnRate(
-        item,
-        credentialId.value,
-        positionHistories.value,
-        Number.isFinite(returnRatePeak) ? returnRatePeak : undefined
-      )
-    };
-  })
-);
-const chartProtectionLines = computed(() =>
-  protectionLoaded.value
-    ? protectionPriceLines(positions.value, protectionOrders.value, symbol.value)
-    : []
-);
-const ordersError = ref('');
-const tradesError = ref('');
-let dataGeneration = 0;
-let dataRequestController: AbortController | undefined;
-let symbolSearchController: AbortController | undefined;
-let symbolSearchGeneration = 0;
-let symbolRequest = 0;
-let accountRevision = 0;
-let positionRevision = 0;
-const positionEventChanges = new Map<string, { revision: number; row?: PositionSnapshot }>();
-let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
-let positionHistoryRefreshing = false;
-let positionHistoryRefreshPending = false;
-let hydrationRunning = false;
-let hydrationPending = false;
-let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
-const queryError = (error: any, fallback: string) =>
-  typeof error === 'string' ? error : error?.msg || error?.message || fallback;
 
+const directionCode = (item: { side?: string; quantity?: string | number }) => {
+  const short = item.side === 'SHORT' || (item.side === 'BOTH' && Number(item.quantity) < 0);
+  return short ? 'SHORT' : 'LONG';
+};
+const directionLabel = (item: { side?: string; quantity?: string | number }) => selectDictLabel(quant_position_direction.value, directionCode(item)) || '方向未知';
+
+// ==================== 图表核心逻辑 ====================
+function captureChartViewport() {
+  if (!chart.value || !chartRef.value || chartRef.value.clientWidth <= 0) return;
+  try {
+    const c = chart.value as any;
+    const range = c.getVisibleRange?.();
+    const barSpace = c.getBarSpace?.();
+    viewportSnapshot = {
+      isRightEdge: range ? range.to >= klines.value.length - 1 : true,
+      visibleRange: range,
+      barSpace: typeof barSpace === 'number' ? barSpace : barSpace?.bar
+    };
+  } catch {}
+}
+
+function restoreChartViewport() {
+  if (!chart.value || !chartRef.value || chartRef.value.clientWidth <= 0) return;
+  const c = chart.value as any;
+  try {
+    if (viewportSnapshot.barSpace !== undefined && c.setBarSpace) c.setBarSpace(viewportSnapshot.barSpace);
+    if (!viewportSnapshot.isRightEdge && viewportSnapshot.visibleRange) {
+      if (c.setVisibleRange) c.setVisibleRange(viewportSnapshot.visibleRange);
+    } else {
+      if (c.scrollToDataIndex && klines.value.length > 0) c.scrollToDataIndex(klines.value.length - 1);
+      // 👇 补上右侧留白，防止 scrollTo 贴边
+      const rightGap = Math.max(0, chartRef.value.clientWidth / 2);
+      if (c.setOffsetRightDistance) c.setOffsetRightDistance(rightGap);
+    }
+  } catch {}
+}
+
+function resizeChart() {
+  if (!chart.value || !chartRef.value || chartRef.value.clientWidth <= 0) return;
+  chart.value.resize();
+}
+
+function renderChart() {
+  if (!chart.value) return;
+  chart.value.resetData();
+  chart.value.setDataLoader({
+    getBars: ({ type, callback }) => callback(type === 'init' ? toChart(klines.value) : [], false),
+    subscribeBar: ({ callback }) => { updateChartBar = callback; },
+    unsubscribeBar: () => { updateChartBar = undefined; }
+  });
+  const chartPriceScale = priceScaleFromTickSize(symbolInfo.value?.priceTickSize);
+  chart.value.setSymbol({
+    ticker: symbol.value,
+    ...(chartPriceScale === undefined ? {} : { pricePrecision: chartPriceScale }),
+    volumePrecision: symbolInfo.value?.quantityPrecision ?? 8
+  });
+  chart.value.setPeriod(period());
+
+  // 修复左侧无法拖动的问题，给予足够的左侧缓冲
+  chart.value.setMaxOffsetLeftDistance(2000);
+  chart.value.setLeftMinVisibleBarCount(30);
+  chart.value.setLocale('zh-CN');
+
+  renderIndicators();
+
+  // 👇 新增这一行：应用 1/3 的右侧留白
+  applyInitialChartRightGap();
+
+  if (chartRef.value && chartRef.value.clientWidth > 0) chart.value.resize();
+
+  // 延迟恢复，确保图表内部初始布局完成
+  setTimeout(() => { if (chart.value) restoreChartViewport(); }, 50);
+}
+
+function renderIndicators() {
+  if (!chart.value) return;
+  chart.value.removeIndicator();
+  for (const name of indicators.value) {
+    const mainIndicator = ['MA', 'EMA', 'BOLL'].includes(name);
+    chart.value.createIndicator({ name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name }, mainIndicator);
+  }
+}
+
+function renderOverlays() {
+  if (!chart.value) return;
+  for (const id of overlayIds) chart.value.removeOverlay({ id });
+  overlayIds = [];
+  const currentPositions = positionRows.value.filter(item => item.symbol === symbol.value);
+  const currentOrders = orders.value.filter(item => item.symbol === symbol.value && Number(item.price) > 0);
+  const lines = [
+    ...currentPositions.flatMap(item => [
+      { value: Number(item.entryPrice), color: '#409eff' },
+      { value: Number(item.liquidationPrice), color: '#f56c6c' }
+    ]),
+    ...chartProtectionLines.value.map(line => ({ value: line.value, color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c' })),
+    ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
+  ].filter(item => Number.isFinite(item.value) && item.value > 0);
+  for (const line of lines) {
+    const id = chart.value.createOverlay({ name: 'priceLine', points: [{ value: line.value }], styles: { line: { color: line.color } } });
+    if (typeof id === 'string') overlayIds.push(id);
+  }
+}
+
+function toggleIndicator(value: string) {
+  indicators.value = indicators.value.includes(value)
+    ? indicators.value.filter(item => item !== value)
+    : [...indicators.value, value];
+  renderIndicators();
+}
+
+// ==================== 数据加载与处理逻辑 ====================
 async function refreshPositionHistories() {
   const id = credentialId.value;
   if (!id) return;
@@ -623,6 +703,13 @@ async function refreshPositionHistories() {
     }
   }
 }
+
+let positionHistoryRefreshing = false;
+let positionHistoryRefreshPending = false;
+let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
+let hydrationRunning = false;
+let hydrationPending = false;
+let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
 
 function mergePositionHistories(rows: StrategyPositionStateVO[]) {
   const previous = new Map(
@@ -689,8 +776,8 @@ function applyPositionPerformanceEvent(event: any) {
 function closeMarketStream() {
   marketStreams.forEach(connection => connection.close());
   marketStreams = [];
-  if (retry) clearTimeout(retry);
-  retry = undefined;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = undefined;
 }
 
 // Hydrate fields absent from ACCOUNT_UPDATE after a position changes; coalesce bursts without REST polling.
@@ -723,6 +810,7 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
     }
   }, 250);
 }
+
 async function loadTrades() {
   const id = credentialId.value;
   if (!id) return;
@@ -747,6 +835,7 @@ async function loadTrades() {
     if (requestId === tradeRequest) tradeLoading.value = false;
   }
 }
+
 async function loadProtectionOrders() {
   const id = credentialId.value;
   if (!id) return;
@@ -779,6 +868,7 @@ async function loadProtectionOrders() {
     if (requestId === protectionRequest) protectionLoading.value = false;
   }
 }
+
 async function loadOpenOrders() {
   const id = credentialId.value;
   if (!id) return;
@@ -793,6 +883,7 @@ async function loadOpenOrders() {
     if (generation === dataGeneration) ordersError.value = queryError(error, '委托加载失败');
   }
 }
+
 function handleDataTab(tab: string | number) {
   if (tab === 'trades') void loadTrades();
   if (tab === 'orders') {
@@ -800,165 +891,21 @@ function handleDataTab(tab: string | number) {
     void loadProtectionOrders();
   }
 }
-const directionCode = (item: { side?: string; quantity?: string | number }) => {
-  const short = item.side === 'SHORT' || (item.side === 'BOTH' && Number(item.quantity) < 0);
-  return short ? 'SHORT' : 'LONG';
-};
-const directionLabel = (item: { side?: string; quantity?: string | number }) => {
-  const label = selectDictLabel(quant_position_direction.value, directionCode(item));
-  return label || '方向未知';
-};
-const chartRef = ref<HTMLElement>(),
-  chart = shallowRef<Chart>();
-let marketStreams: SseConnection[] = [],
-  retry: ReturnType<typeof setTimeout> | undefined,
-  accountStream: SseConnection | undefined,
-  accountRetry: ReturnType<typeof setTimeout> | undefined,
-  marketStreamKey = '',
-  resize: ResizeObserver | undefined;
-let updateChartBar: ((data: KLineData) => void) | undefined;
-let overlayIds: string[] = [];
-const lastAccountEvents = new Map<string, number>();
-const lastOrderEvents = new Map<string, number>();
-const indicatorNames = computed<Record<string, string>>(() =>
-  Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label]))
-);
-const candleCountdown = computed(() => {
-  const match = /^(\d+)([smhdwM])$/.exec(interval.value);
-  if (!match) return '--:--';
-  const unitSeconds: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400, w: 604800, M: 2592000 };
-  const total = Number(match[1]) * unitSeconds[match[2]];
-  const remain = Math.max(0, total - (Math.floor(now.value / 1000) % total));
-  return `${String(Math.floor(remain / 60)).padStart(2, '0')}:${String(remain % 60).padStart(2, '0')}`;
-});
-const format = (v: any) => {
-  if (v === undefined || v === null || v === '') return '-';
-  const text = String(v);
-  const normal = /e/i.test(text)
-    ? Number(v).toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })
-    : text;
-  return normal.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
-};
-const formatFixed = (v: any, digits: number) => {
-  if (v === undefined || v === null || v === '') return '-';
-  const number = Number(v);
-  return Number.isFinite(number) ? number.toFixed(digits) : format(v);
-};
-const idempotency = () => `terminal:${Date.now()}:${Math.random().toString(36).slice(2)}`;
-const toChart = (rows: KlineSnapshot[]): KLineData[] =>
-  rows.map(x => ({
-    timestamp: new Date(x.openTime).getTime(),
-    open: +x.open,
-    high: +x.high,
-    low: +x.low,
-    close: +x.close,
-    volume: +x.volume
-  }));
-const period = () => {
-  const m = /^(\d+)([smhdwM])$/.exec(interval.value);
-  const map: any = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month' };
-  return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
-};
-// The initial right-side breathing room is applied once. ResizeObserver and route-tab
-// activation only recalculate canvas dimensions and must not overwrite the user's viewport.
-let initialRightGapApplied = false;
 
-function applyInitialChartRightGap() {
-  if (!chart.value || !chartRef.value || initialRightGapApplied) return;
-  const rightGap = Math.max(0, chartRef.value.clientWidth / 3);
-  chart.value.setMaxOffsetRightDistance(rightGap);
-  chart.value.setOffsetRightDistance(rightGap);
-  initialRightGapApplied = true;
-}
-
-function renderChart() {
-  if (!chart.value) return;
-
-  chart.value.resetData();
-  chart.value.setDataLoader({
-    getBars: ({ type, callback }) => callback(type === 'init' ? toChart(klines.value) : [], false),
-    subscribeBar: ({ callback }) => {
-      updateChartBar = callback;
-    },
-    unsubscribeBar: () => {
-      updateChartBar = undefined;
-    }
-  });
-  const chartPriceScale = priceScaleFromTickSize(symbolInfo.value?.priceTickSize);
-  chart.value.setSymbol({
-    ticker: symbol.value,
-    ...(chartPriceScale === undefined ? {} : { pricePrecision: chartPriceScale }),
-    volumePrecision: symbolInfo.value?.quantityPrecision ?? 8
-  });
-  chart.value.setPeriod(period());
-  chart.value.setMaxOffsetLeftDistance(0);
-  chart.value.setLeftMinVisibleBarCount(30);
-  chart.value.setLocale('zh-CN');
-  renderIndicators();
-  applyInitialChartRightGap();
-  resizeChartWithRightGap();
-}
-function renderOverlays() {
-  if (!chart.value) return;
-  for (const id of overlayIds) chart.value.removeOverlay({ id });
-  overlayIds = [];
-  const currentPositions = positionRows.value.filter(item => item.symbol === symbol.value);
-  const currentOrders = orders.value.filter(item => item.symbol === symbol.value && Number(item.price) > 0);
-  const lines = [
-    ...currentPositions.flatMap(item => [
-      { value: Number(item.entryPrice), color: '#409eff' },
-      { value: Number(item.liquidationPrice), color: '#f56c6c' }
-    ]),
-    ...chartProtectionLines.value.map(line => ({
-      value: line.value,
-      color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c'
-    })),
-    ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
-  ].filter(item => Number.isFinite(item.value) && item.value > 0);
-  for (const line of lines) {
-    const id = chart.value.createOverlay({
-      name: 'priceLine',
-      points: [{ value: line.value }],
-      styles: { line: { color: line.color } }
-    });
-    if (typeof id === 'string') overlayIds.push(id);
-  }
-}
-function resizeChartWithRightGap() {
-  if (!chart.value || !chartRef.value) return;
-
-  // ResizeObserver and route-tab activation only recalculate layout. Never change
-  // offsetRightDistance here, because doing so overwrites the user's current viewport.
-  chart.value.resize();
-}
-function renderIndicators() {
-  if (!chart.value) return;
-  chart.value.removeIndicator();
-  for (const name of indicators.value) {
-    const mainIndicator = ['MA', 'EMA', 'BOLL'].includes(name);
-    chart.value.createIndicator(
-      {
-        name,
-        ...(mainIndicator ? { paneId: 'candle_pane' } : {}),
-        shortName: indicatorNames.value[name] || name
-      },
-      mainIndicator
-    );
-  }
-}
-function toggleIndicator(value: string) {
-  indicators.value = indicators.value.includes(value)
-    ? indicators.value.filter(item => item !== value)
-    : [...indicators.value, value];
-  renderIndicators();
-}
 async function loadKline(value: string) {
   interval.value = value;
+  viewportSnapshot = { isRightEdge: true };
+  initialRightGapApplied = false;
   await refresh();
 }
+
+async function handleSymbolChange() {
+  viewportSnapshot = { isRightEdge: true };
+  initialRightGapApplied = false;
+  await refresh();
+}
+
 async function searchSymbols(keyword: string) {
-  // Remote select can invoke this for every keystroke. Cancel the previous query and
-  // prevent a slower response for an older keyword from replacing the latest results.
   symbolSearchController?.abort();
   const controller = new AbortController();
   symbolSearchController = controller;
@@ -984,14 +931,20 @@ async function searchSymbols(keyword: string) {
     if (generation === symbolSearchGeneration) symbolLoading.value = false;
   }
 }
-async function handleSymbolChange() {
-  await refresh();
+
+function applyInitialChartRightGap() {
+  if (!chart.value || !chartRef.value || initialRightGapApplied) return;
+  // 留出 1/3 容器宽度的空白
+  const rightGap = Math.max(0, chartRef.value.clientWidth / 2);
+  (chart.value as any).setMaxOffsetRightDistance(rightGap);
+  (chart.value as any).setOffsetRightDistance(rightGap);
+  initialRightGapApplied = true;
 }
+
+// ==================== 实时行情处理 ====================
 function applyEvent(e: any) {
   const eventSymbol = String(e.symbol || '').toUpperCase();
   if (e.type === 'MARK' && e.price && !e.replay && eventSymbol) {
-    // Only position symbols need the per-position mark cache. The selected chart symbol's
-    // price is updated below, so unrelated market ticks should not clone reactive Maps.
     const matchingPositions = positions.value.filter(position => position.symbol.toUpperCase() === eventSymbol);
     if (matchingPositions.length) {
       const next = new Map(positionMarketMarks.value);
@@ -1022,8 +975,6 @@ function applyEvent(e: any) {
   else if (e.type === 'TRADE' && e.price)
     price.value = { ...(price.value as PriceSnapshot), lastTradePrice: e.price, observedAt: e.eventTime };
   else if (e.type === 'MARK' && e.price) {
-    // Mark ticks update live price/PnL only. Price-line overlays depend on positions and orders,
-    // not each tick; rebuilding all chart overlays here creates avoidable main-thread work.
     price.value = { ...(price.value as PriceSnapshot), markPrice: e.price, observedAt: e.eventTime };
   } else if (e.type === 'KLINE' && e.kline) {
     const i = klines.value.findIndex(x => x.openTime === e.kline.openTime);
@@ -1043,6 +994,7 @@ function clearPositionReturnRatePeak(symbol: string, side: string) {
   positionReturnRatePeaks.value = next;
 }
 
+// ==================== SSE 连接 ====================
 function openSse(
   url: string,
   eventName: string,
@@ -1082,13 +1034,9 @@ function openSse(
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() || '';
         for (const line of lines) {
-          if (!line) {
-            dispatch();
-          } else if (line.startsWith('event:')) {
-            event = line.slice(6).trim();
-          } else if (line.startsWith('data:')) {
-            data += `${line.slice(5).trim()}\n`;
-          }
+          if (!line) dispatch();
+          else if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += `${line.slice(5).trim()}\n`;
         }
       }
       if (!controller.signal.aborted) onError(new Error('SSE 连接已关闭'));
@@ -1104,18 +1052,19 @@ function handleSseUnauthorized() {
   accountSnapshotAvailable.value = false;
   dailyAccountBaseline.value = null;
   removeToken();
-  if (retry) clearTimeout(retry);
-  if (accountRetry) clearTimeout(accountRetry);
+  if (retryTimer) clearTimeout(retryTimer);
+  if (accountRetryTimer) clearTimeout(accountRetryTimer);
   if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
   ElMessage.error('登录状态已失效，请重新登录');
 }
 
+function selectedMarketRunMode() {
+  return credentials.value.find(item => String(item.id) === String(credentialId.value))?.runMode || 'LIVE';
+}
+
 function connect() {
   const runMode = selectedMarketRunMode();
-  const subscriptions = terminalMarketSubscriptions(
-    { symbol: symbol.value, interval: interval.value },
-    positions.value
-  );
+  const subscriptions = terminalMarketSubscriptions({ symbol: symbol.value, interval: interval.value }, positions.value);
   const key = `${runMode}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
   if (marketStreamKey === key && marketStreams.length) return;
   closeMarketStream();
@@ -1125,7 +1074,7 @@ function connect() {
   const reconnect = () => {
     if (generation !== dataGeneration) return;
     closeMarketStream();
-    retry = setTimeout(connect, 3000);
+    retryTimer = setTimeout(connect, 3000);
   };
   for (let start = 0; start < subscriptions.length; start += 50) {
     const query = new URLSearchParams({ runMode });
@@ -1156,17 +1105,10 @@ function connect() {
   }
 }
 
-function selectedMarketRunMode() {
-  return credentials.value.find(item => String(item.id) === String(credentialId.value))?.runMode || 'LIVE';
-}
-
 watch(
   () => {
     const credential = credentials.value.find(item => String(item.id) === String(credentialId.value));
-    const subscriptions = terminalMarketSubscriptions(
-      { symbol: symbol.value, interval: interval.value },
-      positions.value
-    );
+    const subscriptions = terminalMarketSubscriptions({ symbol: symbol.value, interval: interval.value }, positions.value);
     return `${credential?.runMode || 'LIVE'}|${subscriptions.map(item => `${item.symbol}:${item.interval}`).join(',')}`;
   },
   () => connect(),
@@ -1188,7 +1130,6 @@ function applyRawAccountEvent(rawJson: string | undefined) {
       accountRevision++;
       const eventPositionRevision = ++positionRevision;
       const usdt = (raw.a.B || []).find((item: any) => item.a === 'USDT');
-      // cw is cross wallet balance, not available balance.
       if (usdt && account.value && usdt.wb !== undefined) account.value.walletBalance = String(usdt.wb);
       let positionChanged = false;
       for (const item of Array.isArray(raw.a.P) ? raw.a.P : []) {
@@ -1222,9 +1163,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
         if (trade) {
           scheduleAccountHydration();
           const isNew =
-            !liveTrades.value.some(
-              row => row.symbol === trade.symbol && row.exchangeTradeId === trade.exchangeTradeId
-            ) &&
+            !liveTrades.value.some(row => row.symbol === trade.symbol && row.exchangeTradeId === trade.exchangeTradeId) &&
             !trades.value.some(row => row.symbol === trade.symbol && row.exchangeTradeId === trade.exchangeTradeId);
           liveTrades.value = mergeTrades(liveTrades.value, [trade]);
           trades.value = liveTradePage(trades.value, trade, tradeQuery.pageNum, tradeQuery.pageSize);
@@ -1249,15 +1188,13 @@ function applyRawAccountEvent(rawJson: string | undefined) {
 
 function connectAccountStream() {
   accountStream?.close();
-  if (accountRetry) clearTimeout(accountRetry);
+  if (accountRetryTimer) clearTimeout(accountRetryTimer);
   if (!credentialId.value) return;
   lastAccountEvents.clear();
   const generation = dataGeneration;
   const snapshotRevision = accountRevision;
   const snapshotPositionRevision = positionRevision;
-  const q = new URLSearchParams({
-    credentialId: String(credentialId.value)
-  });
+  const q = new URLSearchParams({ credentialId: String(credentialId.value) });
   accountStream = openSse(
     `${import.meta.env.VITE_APP_BASE_API}/quant/account/stream?${q}`,
     'quant.account',
@@ -1266,21 +1203,13 @@ function connectAccountStream() {
         const event = JSON.parse(data);
         if (generation !== dataGeneration) return;
         if (event.type === 'POSITION_MAX_RETURN') {
-          if (String(event.credentialId) === String(credentialId.value))
-            applyPositionPerformanceEvent(event.performance);
+          if (String(event.credentialId) === String(credentialId.value)) applyPositionPerformanceEvent(event.performance);
           return;
         }
-        if (
-          event.type === 'ACCOUNT_UPDATE' ||
-          event.type === 'ORDER_TRADE_UPDATE' ||
-          event.type === 'ALGO_UPDATE' ||
-          event.type === 'CONNECTED' ||
-          event.type === 'SNAPSHOT' ||
-          event.type === 'DISCONNECTED'
-        ) {
+        if (['ACCOUNT_UPDATE', 'ORDER_TRADE_UPDATE', 'ALGO_UPDATE', 'CONNECTED', 'SNAPSHOT', 'DISCONNECTED'].includes(event.type)) {
           if (String(event.credentialId) !== String(credentialId.value)) return;
           const eventAt = Date.parse(event.eventTime || '');
-          if (event.type !== 'SNAPSHOT' && event.type !== 'ORDER_TRADE_UPDATE' && event.type !== 'ALGO_UPDATE') {
+          if (!['SNAPSHOT', 'ORDER_TRADE_UPDATE', 'ALGO_UPDATE'].includes(event.type)) {
             if (Number.isFinite(eventAt) && eventAt < (lastAccountEvents.get(event.type) || 0)) return;
             if (Number.isFinite(eventAt)) lastAccountEvents.set(event.type, eventAt);
           }
@@ -1293,8 +1222,7 @@ function connectAccountStream() {
             accountSnapshotAvailable.value = true;
             const changed = snapshotRevision !== accountRevision;
             if (event.account && !changed) account.value = event.account;
-            if (Array.isArray(event.positions))
-              positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
+            if (Array.isArray(event.positions)) positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
             if (Array.isArray(event.orders) && !changed) {
               orders.value = event.orders;
               ordersError.value = '';
@@ -1311,8 +1239,8 @@ function connectAccountStream() {
             protectionLoaded.value = false;
             protectionError.value = '账户连接已断开';
             if (event.type !== 'DISCONNECTED') {
-              if (accountRetry) clearTimeout(accountRetry);
-              accountRetry = setTimeout(connectAccountStream, 10000);
+              if (accountRetryTimer) clearTimeout(accountRetryTimer);
+              accountRetryTimer = setTimeout(connectAccountStream, 10000);
             }
           }
           renderOverlays();
@@ -1333,12 +1261,13 @@ function connectAccountStream() {
       orders.value = [];
       renderOverlays();
       accountStream?.close();
-      accountRetry = setTimeout(connectAccountStream, 3000);
+      accountRetryTimer = setTimeout(connectAccountStream, 3000);
     },
     handleSseUnauthorized
   );
 }
 
+// ==================== 斜率抽屉逻辑 ====================
 function closeSlopeStream() {
   slopeStreams.forEach(connection => connection.close());
   slopeStreams = [];
@@ -1421,8 +1350,6 @@ function connectSlopeStream() {
       }
       if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
         clearSlopeRowValues(row, state, event.type);
-        // MarketStreamHub reconnects the upstream symbol itself; keep this SSE
-        // open so the row can recover when the server publishes CONNECTED again.
         return;
       }
       if (event.type === 'TRADE' && Number(event.price) > 0) {
@@ -1456,13 +1383,7 @@ function connectSlopeStream() {
   for (const batch of chunkSlopeSubscriptions(slopeRows.value)) {
     const query = slopeStreamQuery(batch, selectedMarketRunMode());
     slopeStreams.push(
-      openSse(
-        `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
-        'quant.market',
-        onMessage,
-        onError,
-        handleSseUnauthorized
-      )
+      openSse(`${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`, 'quant.market', onMessage, onError, handleSseUnauthorized)
     );
   }
 }
@@ -1473,9 +1394,7 @@ function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
     const params = { ...JSON.parse(strategy?.paramsJson || '{}'), ...JSON.parse(binding.paramsJson || '{}') };
     const raw = params.entryAngleDegrees;
     const threshold = raw === undefined ? 60 : Number(raw);
-    return raw !== null && raw !== '' && Number.isFinite(threshold) && threshold > 0 && threshold < 90
-      ? threshold
-      : undefined;
+    return raw !== null && raw !== '' && Number.isFinite(threshold) && threshold > 0 && threshold < 90 ? threshold : undefined;
   } catch {
     return undefined;
   }
@@ -1489,15 +1408,12 @@ function slopeRowClassName({ row }: { row: SlopeRow }): string {
 }
 
 async function openSlopePanel() {
-  // A strategy change or a repeated open supersedes any earlier binding/detail lookup.
   slopeLoadController?.abort();
   const controller = new AbortController();
   slopeLoadController = controller;
   const generation = ++slopeLoadGeneration;
 
   slopePanelVisible.value = true;
-  // Preserve the drawer's explicit strategy selection; @change invokes this function.
-  // Resetting to the terminal strategy here silently subscribes the wrong SSE key.
   slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
@@ -1520,7 +1436,6 @@ async function openSlopePanel() {
           const item = await getSymbol(binding.symbolId, controller.signal);
           return { binding, symbol: item.data?.symbol };
         } catch {
-          // An aborted detail lookup is expected when the drawer closes or the strategy changes.
           return { binding, symbol: undefined };
         }
       })
@@ -1558,6 +1473,7 @@ function closeSlopePanel() {
   closeSlopeStream();
 }
 
+// ==================== 数据加载主流程 ====================
 async function handleStrategyChange() {
   const selected = strategies.value.find(item => String(item.id) === String(strategyId.value));
   if (selected) {
@@ -1567,11 +1483,10 @@ async function handleStrategyChange() {
   }
   await refresh();
 }
+
 async function loadData() {
   symbolSwitchController?.abort();
   symbolSwitchController = undefined;
-  // Cancel stale REST reads from the previous refresh/account/symbol selection.
-  // Generation checks below remain the final guard against out-of-order responses.
   dataRequestController?.abort();
   const controller = new AbortController();
   dataRequestController = controller;
@@ -1595,8 +1510,8 @@ async function loadData() {
   accountStream?.close();
   closeMarketStream();
   marketStreamKey = '';
-  if (accountRetry) clearTimeout(accountRetry);
-  if (retry) clearTimeout(retry);
+  if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  if (retryTimer) clearTimeout(retryTimer);
   if (hydrationTimer) clearTimeout(hydrationTimer);
   hydrationTimer = undefined;
   hydrationPending = false;
@@ -1610,7 +1525,7 @@ async function loadData() {
   const id = credentialId.value;
   const baselineDay = shanghaiDateKey(now.value);
   dailyBaselineDay.value = baselineDay;
-  // 切换交易对时先清理旧快照，避免新请求失败时继续显示上一个交易对的数据。
+
   klines.value = [];
   symbolInfo.value = undefined;
   price.value = undefined;
@@ -1621,89 +1536,72 @@ async function loadData() {
   orders.value = [];
   trades.value = [];
   renderOverlays();
-  // Keep chart initialization independent from slower account/history endpoints.
-  // A pending position/account request must not hold the chart's loading mask or delay market streams.
+
   const [k, s] = await Promise.allSettled([
-    // Market data is mode-specific. Until a credential is known, render the chart shell but
-    // do not silently subscribe to LIVE when the user's first credential may be TESTNET.
-    id
-      ? listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal)
-      : Promise.resolve({ data: [] as KlineSnapshot[] }),
+    id ? listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal) : Promise.resolve({ data: [] as KlineSnapshot[] }),
     listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal)
   ]);
   if (generation !== dataGeneration) return;
-  if (k.status === 'fulfilled') {
-    klines.value = k.value.data || [];
-  } else {
-    ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
-  }
+
+  if (k.status === 'fulfilled') klines.value = k.value.data || [];
+  else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
+
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
   cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
   if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
     symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
   }
   void ensureQuantSymbolTickSizes().catch(() => undefined);
+
   renderChart();
   renderOverlays();
-  // Do not create mode-specific streams until the selected credential establishes LIVE/TESTNET.
+
   if (!id) return;
   connect();
   connectAccountStream();
 
-  if (id) {
-    // Capture stream revisions before each snapshot request so a slow REST response cannot
-    // overwrite newer account/position events received after the request began.
-    const positionSnapshotRevision = positionRevision;
-    const accountSnapshotRevision = accountRevision;
-    void Promise.allSettled([
-      listPositions(id, undefined, signal),
-      listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-      listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
-    ]).then(([p, i, h]) => {
-      if (generation !== dataGeneration || signal.aborted) return;
-      if (p.status === 'fulfilled') {
-        positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
-        accountSnapshotAvailable.value = true;
-      } else {
-        // A failed snapshot is not proof of an empty account. Preserve any event-derived positions.
-        accountSnapshotAvailable.value = false;
-      }
-      if (i.status === 'fulfilled') {
-        instances.value = (i.value.data?.rows || []).filter(
-          item => !strategyId.value || String(item.strategyId) === String(strategyId.value)
-        );
-      }
-      if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
-      renderOverlays();
-      // Rebuild market subscriptions only when the confirmed open-position set arrives.
-      connect();
-      void loadProtectionOrders();
-    });
+  const positionSnapshotRevision = positionRevision;
+  const accountSnapshotRevision = accountRevision;
 
-    void Promise.allSettled([
-      getAccountSnapshot(id, signal),
-      listOrders(id, undefined, signal),
-      listTrades(id, undefined, { ...tradeQuery }, signal),
-      getDailyAccountBaseline(id, signal)
-    ]).then(([a, o, t, baseline]) => {
-      if (generation !== dataGeneration || signal.aborted) return;
-      ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
-      tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
-      if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
-      if (baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay) {
-        dailyAccountBaseline.value = baseline.value.data;
-      }
-      if (o.status === 'fulfilled' && accountSnapshotRevision === accountRevision) {
-        orders.value = o.value.data || [];
-      }
-      if (t.status === 'fulfilled') {
-        trades.value = mergeTrades(t.value.data?.rows || [], liveTrades.value);
-        tradeTotal.value = t.value.data?.total || 0;
-      }
-      renderOverlays();
-    });
-  }
+  void Promise.allSettled([
+    listPositions(id, undefined, signal),
+    listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
+    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
+  ]).then(([p, i, h]) => {
+    if (generation !== dataGeneration || signal.aborted) return;
+    if (p.status === 'fulfilled') {
+      positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
+      accountSnapshotAvailable.value = true;
+    } else accountSnapshotAvailable.value = false;
+    if (i.status === 'fulfilled') {
+      instances.value = (i.value.data?.rows || []).filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value));
+    }
+    if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
+    renderOverlays();
+    connect();
+    void loadProtectionOrders();
+  });
+
+  void Promise.allSettled([
+    getAccountSnapshot(id, signal),
+    listOrders(id, undefined, signal),
+    listTrades(id, undefined, { ...tradeQuery }, signal),
+    getDailyAccountBaseline(id, signal)
+  ]).then(([a, o, t, baseline]) => {
+    if (generation !== dataGeneration || signal.aborted) return;
+    ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
+    tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
+    if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
+    if (baseline.status === 'fulfilled' && dailyBaselineDay.value === baselineDay) dailyAccountBaseline.value = baseline.value.data;
+    if (o.status === 'fulfilled' && accountSnapshotRevision === accountRevision) orders.value = o.value.data || [];
+    if (t.status === 'fulfilled') {
+      trades.value = mergeTrades(t.value.data?.rows || [], liveTrades.value);
+      tradeTotal.value = t.value.data?.total || 0;
+    }
+    renderOverlays();
+  });
 }
+
 async function refresh() {
   loading.value = true;
   try {
@@ -1716,6 +1614,8 @@ async function refresh() {
     loading.value = false;
   }
 }
+
+// ==================== 交易操作 ====================
 async function confirmAction(title: string, message: string, action: () => Promise<any>) {
   await ElMessageBox.confirm(message, title, {
     type: 'warning',
@@ -1726,6 +1626,7 @@ async function confirmAction(title: string, message: string, action: () => Promi
   ElMessage.success('操作已提交');
   await refresh();
 }
+
 async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) {
   if (item.strategyId === undefined || item.strategySymbolId === undefined) {
     ElMessage.error('缺少策略或策略交易对标识，无法切换运行状态');
@@ -1757,6 +1658,7 @@ async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) 
     strategySymbolToggling.value.delete(key);
   }
 }
+
 function toggleStrategy(item: StrategyInstanceVO) {
   if (item.id === undefined) return;
   confirmAction(
@@ -1768,10 +1670,9 @@ function toggleStrategy(item: StrategyInstanceVO) {
         : startStrategy(item.strategyId || item.id)
   );
 }
+
 async function selectRowSymbol(row: { symbol?: string }) {
   if (!row?.symbol) return;
-  // Cancel the previous switch immediately; request IDs alone only guard state writes,
-  // they do not release network requests that are still pending.
   symbolSwitchController?.abort();
   symbolSwitchController = undefined;
   const requestId = ++symbolRequest;
@@ -1806,6 +1707,7 @@ async function selectRowSymbol(row: { symbol?: string }) {
       symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
     }
     price.value = undefined;
+    viewportSnapshot = { isRightEdge: true };
     renderChart();
     renderOverlays();
     connect();
@@ -1813,6 +1715,7 @@ async function selectRowSymbol(row: { symbol?: string }) {
     if (symbolSwitchController === controller) symbolSwitchController = undefined;
   }
 }
+
 function cancel(row: unknown) {
   const order = row as OrderSnapshot;
   if (!credentialId.value) return;
@@ -1827,6 +1730,7 @@ function cancel(row: unknown) {
     cancelOrder(data)
   );
 }
+
 function close(row: unknown) {
   const position = row as PositionSnapshot;
   if (!credentialId.value) return;
@@ -1875,24 +1779,18 @@ async function waitForPositionClosed(positionSymbol: string) {
     }
   }
 }
+
+// ==================== 生命周期钩子 ====================
 let clock: ReturnType<typeof setInterval> | undefined;
-onActivated(() => {
-  // On route-tab return, only resize. Do not reset data, scroll, or synthesize viewport offsets.
-  void nextTick(() => {
-    resizeChartWithRightGap();
-  });
-});
 
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
-    resize = new ResizeObserver(resizeChartWithRightGap);
-    resize.observe(chartRef.value);
+    resizeObserver = new ResizeObserver(resizeChart);
+    resizeObserver.observe(chartRef.value);
   }
 
-  // Start the chart immediately instead of waiting for credential/strategy/search endpoints.
-  // Each auxiliary result hydrates its own panel when ready; refresh() cancels stale snapshots.
   void refresh();
   void listCredential({ pageNum: 1, pageSize: 100 })
     .then(response => {
@@ -1910,6 +1808,24 @@ onMounted(() => {
     .catch(() => undefined);
   void searchSymbols('').catch(() => undefined);
 });
+
+onDeactivated(() => {
+  // 切走时仅记录视口，不再销毁实例，避免闪烁与事件丢失
+  captureChartViewport();
+});
+
+onActivated(() => {
+  // 切回时，等待 DOM 排版稳定后执行 resize 与视口恢复
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resizeChart();
+        restoreChartViewport();
+      });
+    });
+  });
+});
+
 onBeforeUnmount(() => {
   dataGeneration++;
   slopeLoadGeneration++;
@@ -1929,9 +1845,9 @@ onBeforeUnmount(() => {
   accountStream?.close();
   closeSlopeStream();
   updateChartBar = undefined;
-  if (retry) clearTimeout(retry);
-  if (accountRetry) clearTimeout(accountRetry);
-  resize?.disconnect();
+  if (retryTimer) clearTimeout(retryTimer);
+  if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  resizeObserver?.disconnect();
   if (clock) clearInterval(clock);
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   if (chart.value) {

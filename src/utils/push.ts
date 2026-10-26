@@ -120,7 +120,8 @@ const initWsPush = (url: string) => {
     },
     heartbeat: {
       message: 'ping',
-      interval: 10000,
+      responseMessage: 'pong',
+      scheduler: callback => useIntervalFn(callback, 10000, { immediate: false }),
       pongTimeout: 2000
     },
     onMessage: (_, e) => {
