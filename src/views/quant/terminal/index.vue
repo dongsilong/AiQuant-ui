@@ -348,7 +348,7 @@
 
 <script lang="ts" setup>
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { nextTick, onActivated } from 'vue';
+import { nextTick, onActivated, onDeactivated } from 'vue';
 import { type Chart, dispose, init, type KLineData } from 'klinecharts';
 import type {
   AccountSnapshot,
@@ -1932,13 +1932,21 @@ async function waitForPositionClosed(positionSymbol: string) {
   }
 }
 let clock: ReturnType<typeof setInterval> | undefined;
+onDeactivated(() => {
+  // Save the current viewport before the cached route is hidden.
+  captureChartViewport();
+});
+
 onActivated(() => {
-  // The route tab may have been hidden while cached by keep-alive. Recompute layout only;
-  // do not refresh account/K-line data or overwrite the user's viewport on activation.
-  void nextTick(() => {
+  // Restore only after the cached route's container has become visible and measurable.
+  void nextTick(async () => {
     resizeChartWithRightGap();
-    if (chartViewportSnapshot && chartViewportSnapshot.symbol === symbol.value && chartViewportSnapshot.interval === interval.value) {
-      void restoreChartViewport(chartViewportSnapshot);
+    if (
+      chartViewportSnapshot &&
+      chartViewportSnapshot.symbol === symbol.value &&
+      chartViewportSnapshot.interval === interval.value
+    ) {
+      await restoreChartViewport(chartViewportSnapshot);
     }
   });
 });
