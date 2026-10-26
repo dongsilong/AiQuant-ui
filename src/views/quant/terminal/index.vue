@@ -348,6 +348,7 @@
 
 <script lang="ts" setup>
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { nextTick, onActivated } from 'vue';
 import { type Chart, dispose, init, type KLineData } from 'klinecharts';
 import type {
   AccountSnapshot,
@@ -858,8 +859,69 @@ const period = () => {
   const map: any = { s: 'second', m: 'minute', h: 'hour', d: 'day', w: 'week', M: 'month' };
   return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
 };
+type ChartViewportSnapshot = {
+  symbol: string;
+  interval: string;
+  visibleRange?: { from: number; to: number };
+  barSpace?: number;
+};
+let chartViewportSnapshot: ChartViewportSnapshot | undefined;
+let renderedChartKey = '';
+
+function captureChartViewport() {
+  if (!chart.value) return;
+  const currentChart = chart.value as any;
+  const currentKey = `${symbol.value}|${interval.value}`;
+  if (renderedChartKey && renderedChartKey !== currentKey) {
+    chartViewportSnapshot = undefined;
+    return;
+  }
+  try {
+    const visibleRange = currentChart.getVisibleRange?.();
+    const barSpace = currentChart.getBarSpace?.();
+    const barSpaceValue = typeof barSpace === 'number' ? barSpace : barSpace?.bar;
+    chartViewportSnapshot = {
+      symbol: symbol.value,
+      interval: interval.value,
+      ...(visibleRange && Number.isFinite(visibleRange.from) && Number.isFinite(visibleRange.to)
+        ? { visibleRange: { from: visibleRange.from, to: visibleRange.to } }
+        : {}),
+      ...(Number.isFinite(barSpaceValue) ? { barSpace: barSpaceValue } : {})
+    };
+  } catch {
+    // If this KLineChart version does not expose a viewport getter, continue without a snapshot.
+  }
+}
+
+async function restoreChartViewport(snapshot: ChartViewportSnapshot) {
+  await nextTick();
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  if (!chart.value || !chartRef.value || chartRef.value.clientWidth <= 0) return;
+  const currentChart = chart.value as any;
+  try {
+    if (snapshot.barSpace !== undefined) currentChart.setBarSpace?.(snapshot.barSpace);
+    if (snapshot.visibleRange && currentChart.setVisibleRange) {
+      currentChart.setVisibleRange(snapshot.visibleRange);
+    } else if (snapshot.visibleRange && currentChart.scrollToTimestamp) {
+      currentChart.scrollToTimestamp(snapshot.visibleRange.to, 0);
+    }
+    currentChart.resize();
+  } catch {
+    // A version-specific viewport API must not prevent the chart from rendering.
+  }
+}
+
 function renderChart() {
   if (!chart.value) return;
+
+  const currentKey = `${symbol.value}|${interval.value}`;
+  const canRestore =
+    renderedChartKey === currentKey &&
+    chartViewportSnapshot?.symbol === symbol.value &&
+    chartViewportSnapshot?.interval === interval.value;
+  if (renderedChartKey && renderedChartKey !== currentKey) chartViewportSnapshot = undefined;
+  if (canRestore) captureChartViewport();
+
   chart.value.resetData();
   chart.value.setDataLoader({
     getBars: ({ type, callback }) => callback(type === 'init' ? toChart(klines.value) : [], false),
@@ -878,10 +940,18 @@ function renderChart() {
   });
   chart.value.setPeriod(period());
   chart.value.setMaxOffsetLeftDistance(0);
-  resizeChartWithRightGap();
   chart.value.setLeftMinVisibleBarCount(30);
   chart.value.setLocale('zh-CN');
   renderIndicators();
+  resizeChartWithRightGap();
+  renderedChartKey = currentKey;
+
+  // Data reset may move the viewport to the latest candle. Restore the saved view only
+  // when the symbol and interval are unchanged; a deliberate symbol/period switch starts fresh.
+  if (canRestore && chartViewportSnapshot) {
+    const snapshot = { ...chartViewportSnapshot };
+    void restoreChartViewport(snapshot);
+  }
 }
 function renderOverlays() {
   if (!chart.value) return;
@@ -1862,6 +1932,17 @@ async function waitForPositionClosed(positionSymbol: string) {
   }
 }
 let clock: ReturnType<typeof setInterval> | undefined;
+onActivated(() => {
+  // The route tab may have been hidden while cached by keep-alive. Recompute layout only;
+  // do not refresh account/K-line data or overwrite the user's viewport on activation.
+  void nextTick(() => {
+    resizeChartWithRightGap();
+    if (chartViewportSnapshot && chartViewportSnapshot.symbol === symbol.value && chartViewportSnapshot.interval === interval.value) {
+      void restoreChartViewport(chartViewportSnapshot);
+    }
+  });
+});
+
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   if (chartRef.value) {
