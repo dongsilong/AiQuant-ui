@@ -900,10 +900,11 @@ async function restoreChartViewport(snapshot: ChartViewportSnapshot) {
   const currentChart = chart.value as any;
   try {
     if (snapshot.barSpace !== undefined) currentChart.setBarSpace?.(snapshot.barSpace);
-    if (snapshot.visibleRange && currentChart.setVisibleRange) {
+    // getVisibleRange() returns chart range coordinates, not a candle timestamp.
+    // Do not pass visibleRange.to to scrollToTimestamp(): that interprets it as a timestamp
+    // and can push the viewport far to the right.
+    if (snapshot.visibleRange && typeof currentChart.setVisibleRange === 'function') {
       currentChart.setVisibleRange(snapshot.visibleRange);
-    } else if (snapshot.visibleRange && currentChart.scrollToTimestamp) {
-      currentChart.scrollToTimestamp(snapshot.visibleRange.to, 0);
     }
     currentChart.resize();
   } catch {
