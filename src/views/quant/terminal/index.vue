@@ -203,7 +203,7 @@
               </el-table-column>
               <el-table-column label="操作" width="110" align="center">
                 <template #default="scope">
-                  <el-button v-hasPermi="['quant:terminal:close']" link type="danger" @click="close(scope.row)">平仓</el-button>
+                  <el-button v-hasPermi="['quant:position:close']" link type="danger" @click="close(scope.row)">平仓</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -238,7 +238,7 @@
               <el-table-column prop="status" label="状态" />
               <el-table-column label="操作" width="110">
                 <template #default="scope">
-                  <el-button v-if="scope.row.kind === 'normal'" link type="danger" @click="cancel(scope.row)">
+                  <el-button v-if="scope.row.kind === 'normal'" v-hasPermi="['quant:order:cancel']" link type="danger" @click="cancel(scope.row)">
                     撤单
                   </el-button>
                   <span v-else>条件单只读</span>
