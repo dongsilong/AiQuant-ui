@@ -50,7 +50,7 @@
             <p>同步 Binance USDⓈ-M 交易所过滤器和交易状态。</p>
           </div>
           <div class="toolbar-actions">
-            <el-button :loading="syncing" icon="Refresh" plain type="success" @click="sync">同步 Binance</el-button>
+            <el-button v-hasPermi="['quant:symbol:sync']" :loading="syncing" icon="Refresh" plain type="success" @click="sync">同步 Binance</el-button>
             <right-toolbar :search="false" @query-table="load" />
           </div>
         </div>
