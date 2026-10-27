@@ -28,7 +28,7 @@
           <el-input v-model="auditQuery.symbol" placeholder="BTCUSDT" clearable />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="auditLoading" @click="loadFillAudit">核对成交归属</el-button>
+          <el-button v-hasPermi="['quant:allocation:view']" type="primary" :loading="auditLoading" @click="loadFillAudit">核对成交归属</el-button>
         </el-form-item>
       </el-form>
       <el-alert v-if="fillAudit" type="info" show-icon :closable="false"
