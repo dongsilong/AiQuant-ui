@@ -372,6 +372,8 @@ export interface StrategyFillAuditSummary {
   soldQty: string;
   boughtNotional: string;
   soldNotional: string;
-  totalFees: string;
+  totalFees: string | null;
+  feeAsset: string | null;
+  feeBreakdown: Array<{ asset: string; amount: string }>;
   realizedPnl: string;
 }

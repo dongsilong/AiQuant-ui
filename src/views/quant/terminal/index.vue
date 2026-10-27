@@ -65,10 +65,10 @@
               <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
                 交易所止损
               </span>
-            </div>
-            <div class="chart-countdown">
-              剩余
-              <strong>{{ candleCountdown }}</strong>
+              <span class="chart-countdown">
+                剩余
+                <strong>{{ candleCountdown }}</strong>
+              </span>
             </div>
           </div>
           <div class="kline-chart-wrap">
@@ -2012,7 +2012,8 @@ onBeforeUnmount(() => {
   color: var(--el-color-danger);
 }
 .protection-legend {
-  display: contents;
+  //display: contents;
+  margin-left: auto;
   color: var(--el-text-color-secondary);
   font-size: 12px;
   white-space: nowrap;

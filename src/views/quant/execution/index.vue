@@ -10,13 +10,19 @@
       </template>
       <el-form :model="auditQuery" inline>
         <el-form-item label="账户 ID">
-          <el-input v-model="auditQuery.credentialId" placeholder="完整账户 ID" clearable />
+          <el-select v-model="auditQuery.credentialId" placeholder="请选择账户" clearable filterable :loading="auditOptionsLoading">
+            <el-option v-for="item in auditCredentialOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="策略 ID">
-          <el-input v-model="auditQuery.strategyId" placeholder="完整策略 ID" clearable />
+          <el-select v-model="auditQuery.strategyId" placeholder="请选择策略" clearable filterable :loading="instanceOptionsLoading" :disabled="!auditQuery.credentialId || instanceOptionsLoading">
+            <el-option v-for="item in auditStrategyOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="实例 ID">
-          <el-input v-model="auditQuery.instanceId" placeholder="完整实例 ID" clearable />
+          <el-select v-model="auditQuery.instanceId" placeholder="请选择实例" clearable filterable :loading="instanceOptionsLoading" :disabled="!auditQuery.strategyId">
+            <el-option v-for="item in auditInstanceOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="交易对">
           <el-input v-model="auditQuery.symbol" placeholder="BTCUSDT" clearable />
@@ -33,7 +39,12 @@
         <el-descriptions-item label="已归属成交笔数">{{ fillAudit.fillCount }}</el-descriptions-item>
         <el-descriptions-item label="累计买入数量">{{ fillAudit.boughtQty }}</el-descriptions-item>
         <el-descriptions-item label="累计卖出数量">{{ fillAudit.soldQty }}</el-descriptions-item>
-        <el-descriptions-item label="累计手续费">{{ fillAudit.totalFees }}</el-descriptions-item>
+        <el-descriptions-item label="累计手续费（按币种）">
+          <div v-if="fillAudit.feeBreakdown?.length">
+            <div v-for="fee in fillAudit.feeBreakdown" :key="fee.asset">{{ fee.asset === 'UNKNOWN' ? '未知币种' : fee.asset }}：{{ fee.amount }}</div>
+          </div>
+          <span v-else>—</span>
+        </el-descriptions-item>
         <el-descriptions-item label="累计买入成交金额">{{ fillAudit.boughtNotional }}</el-descriptions-item>
         <el-descriptions-item label="累计卖出成交金额">{{ fillAudit.soldNotional }}</el-descriptions-item>
         <el-descriptions-item label="累计已实现盈亏">{{ fillAudit.realizedPnl }}</el-descriptions-item>
@@ -42,8 +53,8 @@
   </div>
 </template>
 <script lang="ts" setup>
-import { getStrategyFillAuditSummary, listExecution } from '@/api/quant';
-import type { StrategyFillAuditSummary } from '@/api/quant/types';
+import { getStrategyFillAuditSummary, listCredential, listExecution, listStrategyInstances } from '@/api/quant';
+import type { CredentialVO, StrategyFillAuditSummary, StrategyInstanceVO } from '@/api/quant/types';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage } from 'element-plus';
 import AdminLedgerTable from '../components/AdminLedgerTable.vue';
@@ -62,13 +73,85 @@ const userStore = useUserStore();
 const canViewFillAudit = computed(() =>
   userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:allocation:view'));
 const auditLoading = ref(false);
+const auditOptionsLoading = ref(false);
+const instanceOptionsLoading = ref(false);
 const fillAudit = ref<StrategyFillAuditSummary | null>(null);
 const auditQuery = reactive({ credentialId: '', strategyId: '', instanceId: '', symbol: '' });
+const auditCredentials = ref<CredentialVO[]>([]);
+const auditInstances = ref<StrategyInstanceVO[]>([]);
+const auditCredentialOptions = computed(() => auditCredentials.value.map(item => ({
+  label: `${item.accountName}（${item.userName || item.userId}） · ${item.id}`,
+  value: String(item.id)
+})));
+const auditStrategyOptions = computed(() => {
+  const strategies = new Map<string, string>();
+  auditInstances.value.forEach(item => {
+    if (item.strategyId != null) strategies.set(String(item.strategyId), item.strategyName || '未知策略');
+  });
+  return [...strategies].map(([id, name]) => ({ label: `${name} · ${id}`, value: id }));
+});
+const auditInstanceOptions = computed(() => auditInstances.value
+  .filter(item => String(item.strategyId) === auditQuery.strategyId)
+  .map(item => ({
+    label: `${item.symbol || '未知交易对'} · ${item.status || '未知状态'} · ${item.id}`,
+    value: String(item.id)
+  })));
+
+const loadAllPages = async <T,>(fetchPage: (pageNum: number) => Promise<{ data?: { rows?: T[]; total?: number } }>) => {
+  const rows: T[] = [];
+  let pageNum = 1;
+  let total = 0;
+  do {
+    const result = await fetchPage(pageNum++);
+    const pageRows = result.data?.rows || [];
+    rows.push(...pageRows);
+    total = result.data?.total || 0;
+    if (!pageRows.length) break;
+  } while (rows.length < total);
+  return rows;
+};
+
+const loadAuditOptions = async () => {
+  auditOptionsLoading.value = true;
+  try {
+    auditCredentials.value = await loadAllPages(pageNum => listCredential({ pageNum, pageSize: 100 }));
+  } catch {
+    ElMessage.error('账户或策略选项加载失败，请检查当前用户的数据权限');
+  } finally {
+    auditOptionsLoading.value = false;
+  }
+};
+
+const loadAuditInstances = async () => {
+  auditInstances.value = [];
+  auditQuery.instanceId = '';
+  if (!auditQuery.credentialId) return;
+  instanceOptionsLoading.value = true;
+  try {
+    auditInstances.value = await loadAllPages(pageNum =>
+      listStrategyInstances({ credentialId: auditQuery.credentialId, pageNum, pageSize: 100 })
+    );
+  } catch {
+    ElMessage.error('策略实例选项加载失败，请检查策略查询权限');
+  } finally {
+    instanceOptionsLoading.value = false;
+  }
+};
+
+watch(() => auditQuery.credentialId, () => {
+  auditQuery.strategyId = '';
+  auditQuery.instanceId = '';
+  void loadAuditInstances();
+});
+watch(() => auditQuery.strategyId, () => {
+  auditQuery.instanceId = '';
+});
+onMounted(loadAuditOptions);
 
 const loadFillAudit = async () => {
   fillAudit.value = null;
   const ids = [auditQuery.credentialId, auditQuery.strategyId, auditQuery.instanceId];
-  if (!ids.every(id => /^[1-9][0-9]*$/.test(id.trim()))
+  if (!ids.every(id => /^[1-9][0-9]*$/.test(id))
     || !/^[A-Za-z0-9]{2,32}$/.test(auditQuery.symbol.trim())) {
     ElMessage.warning('请输入完整的账户、策略、实例数字 ID 和有效交易对；不可用 JS Number 转换大整数');
     return;
@@ -76,9 +159,9 @@ const loadFillAudit = async () => {
   auditLoading.value = true;
   try {
     const result = await getStrategyFillAuditSummary({
-      credentialId: auditQuery.credentialId.trim(),
-      strategyId: auditQuery.strategyId.trim(),
-      instanceId: auditQuery.instanceId.trim(),
+      credentialId: auditQuery.credentialId,
+      strategyId: auditQuery.strategyId,
+      instanceId: auditQuery.instanceId,
       symbol: auditQuery.symbol.trim().toUpperCase()
     });
     fillAudit.value = result.data;
