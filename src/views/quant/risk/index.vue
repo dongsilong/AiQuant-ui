@@ -124,7 +124,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button v-hasPermi="[isEdit ? 'quant:risk:edit' : 'quant:risk:add']" type="primary" @click="submit">保存</el-button>
+        <el-button v-hasPermi="[form.id ? 'quant:risk:edit' : 'quant:risk:add']" type="primary" @click="submit">保存</el-button>
       </template>
     </el-dialog>
   </div>
