@@ -224,7 +224,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button v-hasPermi="['quant:strategy:edit']" type="primary" @click="submit">保存</el-button>
+        <el-button v-hasPermi="[form.id ? 'quant:strategy:edit' : 'quant:strategy:add']" type="primary" @click="submit">保存</el-button>
       </template>
     </el-dialog>
     <el-drawer v-model="paramsVisible" title="策略参数配置" size="480px">
