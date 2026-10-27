@@ -54,8 +54,8 @@
         </el-table-column>
         <el-table-column label="操作" width="160" align="center">
           <template #default="scope">
-            <el-button link type="primary" @click="openEdit(scope.row as RiskVO)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete((scope.row as RiskVO).id)">删除</el-button>
+            <el-button v-hasPermi="['quant:risk:edit']" link type="primary" @click="openEdit(scope.row as RiskVO)">编辑</el-button>
+            <el-button v-hasPermi="['quant:risk:remove']" link type="danger" @click="handleDelete((scope.row as RiskVO).id)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -124,7 +124,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submit">保存</el-button>
+        <el-button v-hasPermi="[isEdit ? 'quant:risk:edit' : 'quant:risk:add']" type="primary" @click="submit">保存</el-button>
       </template>
     </el-dialog>
   </div>
