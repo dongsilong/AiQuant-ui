@@ -78,6 +78,7 @@
         <el-table-column align="center" label="收藏" width="70">
           <template #default="scope">
             <el-button
+              v-hasPermi="['quant:symbol:edit']"
               :type="scope.row.favorite ? 'warning' : 'info'"
               link
               @click="toggleFavorite(scope.row as SymbolVO)"
