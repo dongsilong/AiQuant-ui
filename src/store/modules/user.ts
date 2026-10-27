@@ -29,9 +29,6 @@ export const useUserStore = defineStore('user', () => {
       if (!data?.access_token) {
         return Promise.reject(err);
       }
-      // 新会话建立时先清除旧会话的授权快照，避免账号切换期间沿用旧权限。
-      roles.value = [];
-      permissions.value = [];
       setToken(data.access_token);
       token.value = data.access_token;
       return Promise.resolve();
@@ -50,9 +47,13 @@ export const useUserStore = defineStore('user', () => {
       const user = data.user;
       const profile = user.avatarUrl == '' || user.avatarUrl == null ? defAva : user.avatarUrl;
 
-      // 每次都覆盖两类授权快照；空值按无权限处理，绝不保留上一次请求的数据。
-      roles.value = Array.isArray(data.roles) && data.roles.length > 0 ? data.roles : ['ROLE_DEFAULT'];
-      permissions.value = Array.isArray(data.permissions) ? data.permissions : [];
+      if (data.roles && data.roles.length > 0) {
+        // 验证返回的roles是否是一个非空数组
+        roles.value = data.roles;
+        permissions.value = data.permissions;
+      } else {
+        roles.value = ['ROLE_DEFAULT'];
+      }
       name.value = user.userName;
       nickname.value = user.nickName;
       avatar.value = profile;
@@ -64,18 +65,11 @@ export const useUserStore = defineStore('user', () => {
 
   // 注销
   const logout = async (): Promise<void> => {
-    try {
-      await logoutApi();
-    } finally {
-      token.value = '';
-      roles.value = [];
-      permissions.value = [];
-      name.value = '';
-      nickname.value = '';
-      userId.value = '';
-      avatar.value = '';
-      removeToken();
-    }
+    await logoutApi();
+    token.value = '';
+    roles.value = [];
+    permissions.value = [];
+    removeToken();
   };
 
   const setAvatar = (value: string) => {
