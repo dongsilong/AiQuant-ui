@@ -224,7 +224,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button v-hasPermi="['quant:strategy:edit']" type="primary" @click="submit">保存</el-button>
+        <el-button v-hasPermi="[form.id ? 'quant:strategy:edit' : 'quant:strategy:add']" type="primary" @click="submit">保存</el-button>
       </template>
     </el-dialog>
     <el-drawer v-model="paramsVisible" title="策略参数配置" size="480px">
@@ -236,7 +236,7 @@
       <el-input v-model="parameterJsonPreview" :rows="8" type="textarea" readonly />
       <template #footer>
         <el-button @click="paramsVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveParams">确定</el-button>
+        <el-button v-hasPermi="['quant:strategy:edit']" type="primary" @click="saveParams">确定</el-button>
       </template>
     </el-drawer>
     <el-dialog v-model="preflightVisible" title="启动前配置预检" width="760px">
@@ -267,7 +267,7 @@
       </el-table>
       <template #footer>
         <el-button @click="preflightVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!preflightResult?.valid" @click="confirmStart">确认启动</el-button>
+        <el-button v-hasPermi="['quant:strategy:edit']" type="primary" :disabled="!preflightResult?.valid" @click="confirmStart">确认启动</el-button>
       </template>
     </el-dialog>
   </div>

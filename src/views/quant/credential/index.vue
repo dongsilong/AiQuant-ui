@@ -177,7 +177,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submit">保存</el-button>
+        <el-button v-hasPermi="[form.id ? 'quant:credential:edit' : 'quant:credential:add']" type="primary" @click="submit">保存</el-button>
       </template>
     </el-dialog>
   </div>

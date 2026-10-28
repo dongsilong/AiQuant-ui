@@ -140,7 +140,7 @@
         <el-table-column label="同步时间" prop="syncedAt" min-width="160" align="center" />
         <el-table-column align="center" label="收藏" width="80">
           <template #default="scope">
-            <el-button :type="scope.row.favorite ? 'warning' : 'info'" link @click="favorite(scope.row as SymbolVO)">
+            <el-button v-hasPermi="['quant:symbol:edit']" :type="scope.row.favorite ? 'warning' : 'info'" link @click="favorite(scope.row as SymbolVO)">
               {{ scope.row.favorite ? '★' : '☆' }}
             </el-button>
           </template>
