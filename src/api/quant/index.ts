@@ -18,7 +18,6 @@ import type {
   PriceSnapshot,
   SymbolQuery,
   SymbolVO,
-  TradeSnapshot,
   TradeRecord,
   StrategyPluginVO,
   StrategyQuery,
