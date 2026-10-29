@@ -13,9 +13,17 @@
       :closable="false"
       :title="`${incompleteCount} 个账户与交易对的成交链不完整或来源不明确，已排除，避免展示错误开平仓记录。`"
     />
+    <el-alert
+      v-if="inferredCount"
+      class="history-note"
+      type="warning"
+      :closable="false"
+      :title="`${inferredCount} 条记录由旧成交推断重建：按最早一笔成交时为空仓假设，结果可能与更早的实际持仓不一致。`"
+    />
     <AdminLedgerTable title="开平仓记录" :columns="columns" :filters="filters" :load-page="loadPage">
       <template #column-direction="scope">
         <dict-tag :options="quant_position_direction" :value="scope.row.direction" />
+        <el-tag v-if="scope.row.reconstructionSource === 'INFERRED'" class="inferred-tag" size="small" type="warning">推断</el-tag>
       </template>
     </AdminLedgerTable>
   </div>
@@ -30,6 +38,7 @@ import { useDict } from '@/utils/dict';
 const { credentialFilter } = useCredentialOptions();
 const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
 const incompleteCount = ref(0);
+const inferredCount = ref(0);
 const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
   timeZone: 'Asia/Shanghai',
   year: 'numeric',
@@ -85,9 +94,11 @@ const loadPage = async (query: PageQuery & Record<string, string | number | unde
   try {
     const result = await listTradeHistory({ ...query });
     incompleteCount.value = result.data?.incompleteCount || 0;
+    inferredCount.value = result.data?.inferredCount || 0;
     return result;
   } catch (error) {
     incompleteCount.value = 0;
+    inferredCount.value = 0;
     // 请求封装已显示后端错误，不保留上一次筛选的行。
     return { data: { rows: [], total: 0 } };
   }
@@ -96,5 +107,8 @@ const loadPage = async (query: PageQuery & Record<string, string | number | unde
 <style scoped>
 .history-note {
   margin: 8px;
+}
+.inferred-tag {
+  margin-left: 6px;
 }
 </style>

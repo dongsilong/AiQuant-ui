@@ -58,12 +58,14 @@
                 {{ tool.label }}
               </el-button>
             </div>
-            <div v-if="chartProtectionLines.length" class="protection-legend">
-              <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
-                交易所止盈
-              </span>
-              <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
-                交易所止损
+            <div class="protection-legend">
+              <span v-if="chartProtectionLines.length">
+                <span v-if="chartProtectionLines.some(line => line.kind === 'takeProfit')" class="take-profit">
+                  交易所止盈
+                </span>
+                <span v-if="chartProtectionLines.some(line => line.kind === 'stopLoss')" class="stop-loss">
+                  交易所止损
+                </span>
               </span>
               <span class="chart-countdown">
                 剩余
