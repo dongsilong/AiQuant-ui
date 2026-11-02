@@ -89,7 +89,7 @@
                 <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
                 <dd>{{ formatFixed(account.unrealizedPnl, 2) }}</dd>
-                <dt>当天总收益率</dt>
+                <dt>当天账户权益变化率</dt>
                 <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
               </dl>
             </div>
