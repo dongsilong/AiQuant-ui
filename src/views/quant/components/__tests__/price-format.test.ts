@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cacheQuantSymbolTickSize, formatPriceByTickSize, formatQuantPrice } from '../price-format';
+import { cacheQuantSymbolQuantityPrecision, cacheQuantSymbolTickSize, formatPriceByTickSize, formatQuantPrice, formatQuantQuantity } from '../price-format';
 
 describe('formatPriceByTickSize', () => {
   it('rounds prices to the decimal precision implied by tickSize and keeps fixed zeros', () => {
