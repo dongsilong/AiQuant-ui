@@ -46,7 +46,9 @@
           <el-table-column label="交易用户" min-width="120" show-overflow-tooltip>
             <template #default="scope">{{ scope.row.customerName || '-' }}</template>
           </el-table-column>
-          <el-table-column label="成交时间" prop="tradeTime" min-width="160" />
+          <el-table-column label="成交时间" min-width="160">
+            <template #default="scope">{{ formatTime(scope.row.tradeTime) }}</template>
+          </el-table-column>
           <el-table-column label="交易对" prop="symbol" min-width="160" />
           <el-table-column label="方向" prop="side" min-width="100" />
           <el-table-column label="价格" min-width="150">
@@ -88,6 +90,24 @@ const total = ref(0);
 const credentialId = ref<number | string>('ALL');
 const symbol = ref('');
 const query = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23'
+});
+const formatTime = (value?: string) => {
+  if (!value) return '-';
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}+08:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
+};
 const formatDecimal = (value: string | number | undefined) => {
   if (value === undefined || value === null || value === '') return '-';
   const text = String(value);
