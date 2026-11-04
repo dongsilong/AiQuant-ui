@@ -97,7 +97,9 @@
             <el-table-column label="持仓数量" min-width="100" prop="originalQuantity" />
             <el-table-column label="开仓均价" min-width="100">-</el-table-column>
             <el-table-column label="委托价格" min-width="100" prop="price"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template></el-table-column>
-            <el-table-column align="center" label="委托时间" prop="updateTime" width="220" />
+            <el-table-column align="center" label="委托时间" width="220">
+              <template #default="scope">{{ formatBeijingTime(scope.row.updateTime) }}</template>
+            </el-table-column>
             <el-table-column fixed="right" label="操作" width="100">
               <template #default="scope">
                 <el-button link type="danger" @click="submitCancel(scope.row as OrderSnapshot)">取消委托</el-button>
@@ -136,7 +138,9 @@
             </el-table-column>
             <el-table-column label="手续费" min-width="100" prop="commission" />
             <el-table-column label="已实现盈亏" min-width="100" prop="realizedPnl" />
-            <el-table-column label="成交时间" min-width="180" prop="tradeTime" />
+            <el-table-column label="成交时间" min-width="180">
+              <template #default="scope">{{ formatBeijingTime(scope.row.tradeTime) }}</template>
+            </el-table-column>
           </el-table>
           <pagination
             v-show="tradesTotal > 0"
@@ -214,6 +218,25 @@ const syncLoading = ref(false);
 const closeDialogVisible = ref(false);
 const closeLoading = ref(false);
 const closeForm = reactive({ symbol: '', positionSide: '', direction: '', side: '', quantity: 0, maxQuantity: 0 });
+
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23'
+});
+const formatBeijingTime = (value?: string) => {
+  if (!value) return '-';
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}+08:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
+};
 
 const formatDecimal = (value: string | number | undefined) => {
   if (value === undefined || value === null || value === '') return '-';
