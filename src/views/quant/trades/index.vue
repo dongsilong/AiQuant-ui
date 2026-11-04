@@ -53,7 +53,7 @@
             <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
           </el-table-column>
           <el-table-column label="数量" min-width="150">
-            <template #default="scope">{{ formatDecimal(scope.row.quantity) }}</template>
+            <template #default="scope">{{ formatQuantQuantity(scope.row.symbol, scope.row.quantity) }}</template>
           </el-table-column>
           <el-table-column label="手续费" min-width="150">
             <template #default="scope">{{ formatDecimal(scope.row.commission) }}</template>
@@ -78,7 +78,8 @@
 <script lang="ts" setup>
 import type { CredentialVO, TradeRecord } from '@/api/quant/types';
 import { listAccessibleTrades, listCredential, syncTrades } from '@/api/quant';
-import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
+import { displayDecimal } from '../components/ledger-display';
+import { ensureQuantSymbolTickSizes, formatQuantPrice, formatQuantQuantity } from '../components/price-format';
 import modal from '@/plugins/modal';
 
 const loading = ref(false);
@@ -88,13 +89,7 @@ const total = ref(0);
 const credentialId = ref<number | string>('ALL');
 const symbol = ref('');
 const query = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
-const formatDecimal = (value: string | number | undefined) => {
-  if (value === undefined || value === null || value === '') return '-';
-  const text = String(value);
-  return text.includes('e') || text.includes('E')
-    ? Number(text).toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })
-    : text.replace(/\.0+$/, '').replace(/(\.[0-9]*?)0+$/, '$1');
-};
+const formatDecimal = displayDecimal;
 const loadCredentials = async () => {
   credentials.value = (await listCredential({ pageNum: 1, pageSize: 100 })).data?.rows || [];
 };

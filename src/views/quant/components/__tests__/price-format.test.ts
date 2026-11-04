@@ -23,4 +23,10 @@ describe('formatPriceByTickSize', () => {
     expect(formatQuantPrice('TESTUSDT', '12.3456')).toBe('12.346');
     expect(formatQuantPrice('UNKNOWNUSDT', '12.3456')).toBe('12.3456');
   });
+  it('formats quantities with the symbol precision without floating-point conversion', () => {
+    cacheQuantSymbolQuantityPrecision('TESTUSDT', 4);
+    expect(formatQuantQuantity('TESTUSDT', '23.0546822307066408')).toBe('23.0547');
+    expect(formatQuantQuantity('UNKNOWNUSDT', '23.0546822307066408')).toBe('23.05468223');
+  });
+
 });
