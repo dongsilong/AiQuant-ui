@@ -95,7 +95,7 @@
           </template>
         </el-table-column>
         <el-table-column label="时间" min-width="190" align="center">
-          <template #default="{ row }">{{ row.tradeTime || row.eventTime }}</template>
+          <template #default="{ row }">{{ formatTime(row.tradeTime || row.eventTime) }}</template>
         </el-table-column>
         <el-table-column label="详情" fixed="right" width="80" align="center">
           <template #default="{ row }">
@@ -162,6 +162,24 @@ const query = reactive<TradeDecisionQuery>({ pageNum: 1, pageSize: 20 });
 // 未选择时间时后端按当前时刻查询最近 24 小时，手动刷新可以看到新日志。
 const range = ref<[string, string] | null>(null);
 const rows = ref<TradeDecisionLog[]>([]);
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23'
+});
+const formatTime = (value: unknown) => {
+  if (typeof value !== 'string' || !value) return '—';
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}+08:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
+};
 const total = ref(0);
 const loading = ref(false);
 const error = ref('');
@@ -221,6 +239,7 @@ const showDetail = async (id: string) => {
 };
 const detailValue = (key: keyof TradeDecisionLog) => {
   if (key === 'status' && detail.value) return statusLabel(detail.value);
+  if (['eventTime', 'lastTime', 'tradeTime', 'klineTime'].includes(key)) return formatTime(detail.value?.[key]);
   if (key === 'price' && detail.value) return formatQuantPrice(detail.value.symbol, detail.value.price);
   if (['amount', 'price', 'quantity', 'margin', 'angle', 'threshold'].includes(key))
     return displayDecimal(detail.value?.[key]);
