@@ -193,7 +193,7 @@ const columns = [
     label: '交易所订单状态',
     formatter: (row: Record<string, unknown>) => displayLabel(protectionStatuses, row.exchangeOrderStatus)
   },
-  { prop: 'createdAt', label: '创建时间' }
+  { prop: 'createdAt', label: '创建时间', formatter: (row: Record<string, unknown>) => formatTime(row.createdAt) }
 ];
 const filters = computed(() => [
   credentialFilter.value,
@@ -202,5 +202,23 @@ const filters = computed(() => [
   { key: 'exchangeOrderStatus', label: '订单状态', type: 'select' as const, options: labelOptions(protectionStatuses) },
   { key: 'timeRange', label: '时间范围', type: 'daterange' as const }
 ]);
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23'
+});
+const formatTime = (value: unknown) => {
+  if (typeof value !== 'string' || !value) return '—';
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}+08:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
+};
 const loadPage = (query: PageQuery) => listExecution(query);
 </script>
