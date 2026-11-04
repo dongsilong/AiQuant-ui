@@ -117,7 +117,9 @@
 
     <el-dialog v-model="fillsVisible" :title="selectedOrder ? `订单 ${selectedOrder.orderId} · 成交记录` : '关联成交记录'" width="1000px" append-to-body>
       <el-table v-loading="fillsLoading" :data="fillRows" border>
-        <el-table-column label="成交时间" min-width="165" prop="tradeTime" />
+        <el-table-column label="成交时间" min-width="165">
+          <template #default="scope">{{ formatTradeTime(scope.row.tradeTime) }}</template>
+        </el-table-column>
         <el-table-column label="交易对" min-width="110" prop="symbol" />
         <el-table-column label="方向" width="85" prop="side" />
         <el-table-column label="成交价格" min-width="130">
@@ -174,7 +176,15 @@ const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
 });
 const formatTime = (value?: string) => {
   if (!value) return '—';
-  const normalized = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
+};
+const formatTradeTime = (value?: string) => {
+  if (!value) return '—';
+  const normalized = value.endsWith('Z') || /[+-]\\d{2}:?\\d{2}$/.test(value)
+    ? value
+    : `${value.replace(' ', 'T')}+08:00`;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
 };
