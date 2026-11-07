@@ -190,6 +190,13 @@ export interface ClosePositionForm {
   idempotencyKey: string;
 }
 
+export interface PriceSnapshot {
+  symbol: string;
+  lastTradePrice: string;
+  markPrice: string;
+  observedAt: string;
+}
+
 export interface KlineSnapshot {
   openTime: string;
   closeTime: string;
