@@ -190,13 +190,6 @@ export interface ClosePositionForm {
   idempotencyKey: string;
 }
 
-export interface PriceSnapshot {
-  symbol: string;
-  lastTradePrice: string;
-  markPrice: string;
-  observedAt: string;
-}
-
 export interface KlineSnapshot {
   openTime: string;
   closeTime: string;
@@ -327,15 +320,6 @@ export interface StrategyPositionStateVO {
   recoveryRequiredLabel?: string;
   unsafeRecovery?: boolean;
   updatedAt?: string;
-}
-export interface DashboardOverview {
-  credentialCount: number;
-  positionCount: number;
-  orderCount: number;
-  tradeCount: number;
-  runningInstanceCount: number;
-  unknownExecutionCount: number;
-  pendingNotificationCount: number;
 }
 export interface ExecutionRecordVO {
   id: number | string;
