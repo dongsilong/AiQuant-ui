@@ -90,6 +90,18 @@
         </el-table-column>
         <el-table-column prop="clientOrderId" label="客户端订单号" min-width="220" show-overflow-tooltip />
         <el-table-column prop="dispatchKey" label="调度幂等键" min-width="220" show-overflow-tooltip />
+        <el-table-column label="操作" width="155" fixed="right" align="center">
+          <template #default="scope">
+            <el-button
+              v-hasPermi="['quant:dispatch:recover']"
+              type="primary"
+              link
+              :loading="dispatchRecheckingKey === dispatchRowKey(scope.row)"
+              :disabled="!canRecheckDispatch(scope.row) || Boolean(dispatchRecheckingKey)"
+              @click="recheckDispatch(scope.row)"
+            >核查并尝试恢复</el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
         <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
       </el-table>
@@ -152,7 +164,7 @@
 </template>
 <script lang="ts" setup>
 import type { SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch } from '@/api/quant/types';
-import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches } from '@/api/quant';
+import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches, recheckUnresolvedLiveDispatch } from '@/api/quant';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
@@ -164,6 +176,42 @@ const canViewTransport = computed(() => userStore.permissions.includes('*:*:*') 
 const canViewDispatch = computed(() => userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:dispatch:view'));
 const dispatchLoading = ref(false);
 const unresolvedDispatches = ref<UnresolvedLiveDispatch[]>([]);
+const dispatchRecheckingKey = ref('');
+const dispatchRowKey = (row: UnresolvedLiveDispatch) =>
+  `${row.credentialId}:${row.symbol}:${row.dispatchKey}`;
+const canRecheckDispatch = (row: UnresolvedLiveDispatch) =>
+  ['PROTECT_CREATE', 'PROTECT_CANCEL'].includes(row.operation || '')
+  && Boolean(row.credentialId && row.symbol && row.dispatchKey && row.clientOrderId);
+const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
+  if (!canRecheckDispatch(row) || dispatchRecheckingKey.value) return;
+  try {
+    await ElMessageBox.confirm(
+      `将按票据身份核查 Binance 的保护单事实。只有订单身份、状态和成交数量均通过现有后端核验时，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`,
+      '确认核查 LIVE 外发订单',
+      { confirmButtonText: '开始核查', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  const key = dispatchRowKey(row);
+  dispatchRecheckingKey.value = key;
+  try {
+    const result = await recheckUnresolvedLiveDispatch({
+      credentialId: row.credentialId,
+      symbol: row.symbol,
+      dispatchKey: row.dispatchKey,
+      clientOrderId: row.clientOrderId!
+    });
+    if (result.data) {
+      ElMessage.success('Binance 订单事实核验通过，派发阻断已按原恢复流程处理');
+    } else {
+      ElMessage.warning('本次未能完成核验，派发阻断保持不变；请检查订单事实和后端日志');
+    }
+    await loadDispatch();
+  } finally {
+    dispatchRecheckingKey.value = '';
+  }
+};
 const loadDispatch = async () => {
   if (!canViewDispatch.value) return;
   dispatchLoading.value = true;
