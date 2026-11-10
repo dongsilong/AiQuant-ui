@@ -181,6 +181,14 @@ export const getStrategyFillAuditSummary = (params: {
 export const listUnresolvedLiveDispatches = (): AxiosPromise<UnresolvedLiveDispatch[]> =>
   request({ url: '/quant/infrastructure/dispatch/unresolved', method: 'get' });
 
+export const recheckUnresolvedLiveDispatch = (data: {
+  credentialId: string;
+  symbol: string;
+  dispatchKey: string;
+  clientOrderId: string;
+}): AxiosPromise<boolean> =>
+  request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data });
+
 
 export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>
   request({ url: '/quant/infrastructure/websocket/transport', method: 'get' });
