@@ -15,8 +15,10 @@ export interface TradeHistoryRecord {
   openingBalanceAt: string | null;
   openedAt: string;
   closePrice: string | null;
-  closingBalance: string | null;
-  closingBalanceAt: string | null;
+  closingEquity: string | null;
+  walletBalance: string | null;
+  unrealizedPnl: string | null;
+  closingEquityAt: string | null;
   realizedPnl: string | null;
   commission: string | null;
   closedAt: string | null;
