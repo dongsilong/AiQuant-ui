@@ -19,6 +19,10 @@ export interface TradeHistoryRecord {
   walletBalance: string | null;
   unrealizedPnl: string | null;
   closingEquityAt: string | null;
+  closingEquityCapturedAt: string | null;
+  closingEquityCaptureSource: string | null;
+  closeEventTime: string | null;
+  accountUpdateTransactionTime: string | null;
   realizedPnl: string | null;
   commission: string | null;
   closedAt: string | null;
