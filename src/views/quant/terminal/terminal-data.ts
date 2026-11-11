@@ -187,6 +187,59 @@ export function positionMaximumReturnRate(
   return rates.length ? Math.max(0, ...rates) : undefined;
 }
 
+/**
+ * Return the contract-price peak and confirmed ladder steps used by kline_slope_rate.
+ * Unlike maximumReturnRate, this metric is reconstructed from the persisted TRADE-price extremum.
+ */
+export function positionLadderMetrics(
+  position: PositionSnapshot,
+  credentialId: string | number | undefined,
+  histories: readonly StrategyPositionStateVO[]
+): { maximumReturnRate?: number; highestStep?: number; confirmedProtectionStep?: number } {
+  const quantity = numeric(position.quantity);
+  const positionEntry = numeric(position.entryPrice);
+  const direction =
+    position.side === 'LONG' || position.side === 'SHORT'
+      ? position.side
+      : quantity !== undefined && quantity < 0
+        ? 'SHORT'
+        : 'LONG';
+  const entryTolerance = positionEntry === undefined ? undefined : Math.max(positionEntry * 0.000001, 0.00000001);
+  const matching = histories.filter(
+    item =>
+      credentialId !== undefined &&
+      String(item.credentialId) === String(credentialId) &&
+      item.symbol?.toUpperCase() === position.symbol.toUpperCase() &&
+      item.direction?.toUpperCase() === direction &&
+      item.status?.toUpperCase() !== 'CLOSED' &&
+      numeric(item.positionQty) !== undefined &&
+      numeric(item.positionQty)! > 0 &&
+      entryTolerance !== undefined &&
+      numeric(item.entryPrice) !== undefined &&
+      Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
+  );
+  const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
+  if (!state) return {};
+
+  const entry = numeric(state.entryPrice);
+  const leverage = numeric(state.frozenLeverage);
+  const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
+  const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
+    ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
+    : undefined;
+  const maximumReturnRate =
+    priceReturn !== undefined && leverage !== undefined && leverage > 0
+      ? Math.max(0, priceReturn * leverage * 100)
+      : undefined;
+  const highestStep = numeric(state.highestStep);
+  const confirmedProtectionStep = numeric(state.confirmedProtectionStep);
+  return {
+    ...(maximumReturnRate === undefined ? {} : { maximumReturnRate }),
+    ...(highestStep === undefined ? {} : { highestStep }),
+    ...(confirmedProtectionStep === undefined ? {} : { confirmedProtectionStep })
+  };
+}
+
 export function mergeAccountPosition(previous: PositionSnapshot | undefined, raw: RawFields): PositionSnapshot {
   const row: PositionSnapshot = previous
     ? { ...previous }
