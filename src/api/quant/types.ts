@@ -307,6 +307,7 @@ export interface StrategyPositionStateVO {
   positionId?: number | string;
   positionCycleKey?: string;
   instanceName?: string;
+  pluginCode?: string;
   credentialId?: number | string;
   status?: string;
   statusLabel?: string;
