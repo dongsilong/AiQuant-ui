@@ -317,10 +317,12 @@ export interface StrategyPositionStateVO {
   positionQty?: string | number;
   initialPositionQty?: string | number;
   initialMargin?: string | number;
+  frozenLeverage?: number;
   maximumReturnRate?: string | number;
   highestPriceSinceEntry?: string | number;
   lowestPriceSinceEntry?: string | number;
   highestStep?: number;
+  confirmedProtectionStep?: number;
   firstTakeProfitTriggered?: boolean;
   pendingAction?: string;
   recoveryRequired?: boolean;
