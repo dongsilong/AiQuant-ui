@@ -196,11 +196,33 @@
                   {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
                 </template>
               </el-table-column>
-              <el-table-column label="最大回报率" min-width="110">
+              <el-table-column label="标记价最大回报率" min-width="130">
                 <template #default="scope">
                   {{
                     scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
                   }}
+                </template>
+              </el-table-column>
+              <el-table-column label="阶梯最高回报率" min-width="130">
+                <template #default="scope">
+                  {{
+                    scope.row.ladderMaximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.ladderMaximumReturnRate, 2)}%`
+                  }}
+                </template>
+              </el-table-column>
+              <el-table-column label="当前阶梯" min-width="90" align="center">
+                <template #default="scope">
+                  {{ scope.row.highestStep === undefined ? '-' : scope.row.highestStep > 0 ? `${scope.row.highestStep}阶` : '未达到' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="已确认阶梯" min-width="100" align="center">
+                <template #default="scope">
+                  {{ scope.row.confirmedProtectionStep === undefined ? '-' : scope.row.confirmedProtectionStep > 0 ? `${scope.row.confirmedProtectionStep}阶` : '未确认' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="阶梯保护触发价" min-width="130">
+                <template #default="scope">
+                  {{ stepProtectionDisplay(scope.row) }}
                 </template>
               </el-table-column>
               <el-table-column label="强平价" min-width="100">
@@ -386,7 +408,7 @@ import {
 import {
   accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
-  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, aggregateLivePositionPnl,
+  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl,
   terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
   calculateRealtimeSlope, slopeStreamQuery
 } from './terminal-data';
@@ -614,9 +636,13 @@ const positionRows = computed(() =>
     const peakKey = `${credentialId.value}|${item.symbol.toUpperCase()}|${item.side.toUpperCase()}|${item.entryPrice}`;
     const observedPeak = positionReturnRatePeaks.value.get(peakKey);
     const returnRatePeak = Math.max(metrics.returnRate ?? Number.NEGATIVE_INFINITY, observedPeak ?? Number.NEGATIVE_INFINITY);
+    const ladder = positionLadderMetrics(item, credentialId.value, positionHistories.value);
     return {
       ...metrics,
-      maximumReturnRate: positionMaximumReturnRate(item, credentialId.value, positionHistories.value, Number.isFinite(returnRatePeak) ? returnRatePeak : undefined)
+      maximumReturnRate: positionMaximumReturnRate(item, credentialId.value, positionHistories.value, Number.isFinite(returnRatePeak) ? returnRatePeak : undefined),
+      ladderMaximumReturnRate: ladder.maximumReturnRate,
+      highestStep: ladder.highestStep,
+      confirmedProtectionStep: ladder.confirmedProtectionStep
     };
   })
 );
@@ -639,6 +665,20 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
   const prices = protectionPrices(row as PositionSnapshot, protectionOrders.value);
   const symbol = (row as PositionSnapshot).symbol;
   return prices[kind].map(value => formatQuantPrice(symbol, value)).join('、') || '未挂载';
+};
+
+const stepProtectionDisplay = (row: PositionSnapshot) => {
+  if (protectionError.value) return '查询失败';
+  if (!protectionLoaded.value) return '加载中';
+  const prices = protectionOrders.value
+    .filter(order =>
+      order.symbol.toUpperCase() === row.symbol.toUpperCase() &&
+      order.clientAlgoId.startsWith('QSTEP_') &&
+      !['CANCELED', 'EXPIRED', 'REJECTED', 'FINISHED', 'FILLED'].includes(String(order.status).toUpperCase()) &&
+      Number(order.triggerPrice) > 0
+    )
+    .map(order => order.triggerPrice);
+  return prices.map(value => formatQuantPrice(row.symbol, value)).join('、') || '未挂载';
 };
 
 const directionCode = (item: { side?: string; quantity?: string | number }) => {
@@ -798,6 +838,10 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
     const newPeak = Number(item[field]);
     const oldReturnPeak = Number(old.maximumReturnRate);
     const newReturnPeak = Number(item.maximumReturnRate);
+    const oldHighestStep = Number(old.highestStep);
+    const newHighestStep = Number(item.highestStep);
+    const oldConfirmedStep = Number(old.confirmedProtectionStep);
+    const newConfirmedStep = Number(item.confirmedProtectionStep);
     return {
       ...item,
       [field]: Number.isFinite(oldPeak) && Number.isFinite(newPeak)
@@ -805,7 +849,14 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
         : Number.isFinite(oldPeak) ? old[field] : item[field],
       maximumReturnRate: Number.isFinite(oldReturnPeak) && Number.isFinite(newReturnPeak)
         ? Math.max(oldReturnPeak, newReturnPeak)
-        : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate
+        : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate,
+      highestStep: Number.isFinite(oldHighestStep) && Number.isFinite(newHighestStep)
+        ? Math.max(oldHighestStep, newHighestStep)
+        : Number.isFinite(oldHighestStep) ? old.highestStep : item.highestStep,
+      confirmedProtectionStep: Number.isFinite(oldConfirmedStep) && Number.isFinite(newConfirmedStep)
+        ? Math.max(oldConfirmedStep, newConfirmedStep)
+        : Number.isFinite(oldConfirmedStep) ? old.confirmedProtectionStep : item.confirmedProtectionStep,
+      frozenLeverage: item.frozenLeverage ?? old.frozenLeverage
     };
   });
 }
@@ -840,6 +891,16 @@ function applyPositionPerformanceEvent(event: any) {
       ? Math.max(oldMaximumReturnRate, eventMaximumReturnRate)
       : Number.isFinite(eventMaximumReturnRate) ? eventMaximumReturnRate : oldMaximumReturnRate;
   }
+  for (const field of ['highestStep', 'confirmedProtectionStep'] as const) {
+    const oldStep = Number(old?.[field]);
+    const incomingStep = Number(event[field]);
+    if (Number.isFinite(oldStep) || Number.isFinite(incomingStep)) {
+      row[field] = Number.isFinite(oldStep) && Number.isFinite(incomingStep)
+        ? Math.max(oldStep, incomingStep)
+        : Number.isFinite(incomingStep) ? incomingStep : oldStep;
+    }
+  }
+  row.frozenLeverage = event.frozenLeverage ?? old?.frozenLeverage;
   if (index >= 0) positionHistories.value.splice(index, 1, row);
   else positionHistories.value = [...positionHistories.value, row];
 }
