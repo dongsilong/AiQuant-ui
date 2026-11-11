@@ -203,7 +203,7 @@
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯最高回报率" min-width="130">
+              <el-table-column label="阶梯最高回报率（合约价）" min-width="150">
                 <template #default="scope">
                   {{
                     scope.row.ladderMaximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.ladderMaximumReturnRate, 2)}%`
