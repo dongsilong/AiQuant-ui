@@ -4,7 +4,7 @@
       class="history-note"
       type="info"
       :closable="false"
-      title="一行代表一个持仓周期；开仓名义金额按实际成交数量 × 加权开仓价计算，不等同于实际保证金。手续费按资产分别汇总，不跨资产相加。旧记录缺少事实时显示待核实；时间为北京时间。"
+      title="一行代表一个持仓周期；开仓名义金额按实际成交数量 × 加权开仓价计算，不等同于实际保证金。手续费按资产分别汇总，不跨资产相加。旧记录缺少事实时显示待核实；时间为北京时间。账户权益和钱包余额是平仓事件触发后读取的 Binance REST 当前账户总览，代表采集时状态，不是该笔平仓成交时刻的精确历史权益；括号内为 REST 采集时间，平仓时间单独展示。"
     />
     <el-alert
       v-if="incompleteCount"
@@ -65,9 +65,10 @@ const fixedAmount = (value: unknown) => {
   return formatted.includes('.') ? formatted.padEnd(formatted.indexOf('.') + 3, '0') : `${formatted}.00`;
 };
 const time = (value: unknown) => (value ? timeFormatter.format(new Date(String(value))) : '—');
-const balance = (value: unknown, checkedAt: unknown) => {
+const balance = (value: unknown, checkedAt: unknown, captureSource: unknown) => {
   if (value == null) return '—';
-  const checked = checkedAt ? `（${time(checkedAt)}）` : '';
+  const source = String(captureSource || '').includes('REST') ? 'REST采集' : '采集';
+  const checked = checkedAt ? `（${source}：${time(checkedAt)}）` : `（${source}时间未知）`;
   return `${fixedAmount(value)}${checked}`;
 };
 const centered = { align: 'center' as const, headerAlign: 'center' as const };
@@ -89,8 +90,8 @@ const columns = [
   { prop: 'closePrice', label: '平仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.closePrice) },
   { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
   { prop: 'commission', label: '手续费', ...centered, width: 180, formatter: (row: Record<string, unknown>) => displayCommission(row.commission) },
-  { prop: 'closingEquity', label: '账户权益', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingEquity, row.closingEquityAt) },
-  { prop: 'walletBalance', label: '钱包余额', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.walletBalance) },
+  { prop: 'closingEquity', label: '平仓后采样账户权益(U)', ...centered, width: 250, formatter: (row: Record<string, unknown>) => balance(row.closingEquity, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource) },
+  { prop: 'walletBalance', label: '采样钱包余额(U)', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.walletBalance, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource) },
   /*{ prop: 'unrealizedPnl', label: '未实现盈亏', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.unrealizedPnl) },*/
   /*{ prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },*/
   { prop: 'closedAt', label: '平仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closedAt) }
