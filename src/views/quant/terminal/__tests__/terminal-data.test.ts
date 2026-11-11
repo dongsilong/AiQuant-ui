@@ -13,6 +13,7 @@ import {
   positionMetrics,
   aggregateLivePositionPnl,
   positionMaximumReturnRate,
+  positionLadderMetrics,
   protectionPrices,
   protectionPriceLines,
   slopeStreamQuery,
@@ -96,6 +97,56 @@ describe('position maximum return calculation', () => {
 
   it('does not attach a previous position peak to a new entry at a different price', () => {
     expect(positionMaximumReturnRate({ ...position, entryPrice: '2.5' }, 'account-1', [history], 4)).toBe(4);
+  });
+});
+
+describe('kline slope ladder metrics', () => {
+  const ladderHistory = {
+    id: 'state-1',
+    instanceId: 'instance-1',
+    positionId: 'position-1',
+    positionCycleKey: 'cycle-1',
+    credentialId: 'account-1',
+    pluginCode: 'kline_slope_rate',
+    status: 'OPEN',
+    symbol: 'PUMPUSDT',
+    direction: 'LONG',
+    entryPrice: '2',
+    positionQty: '50',
+    frozenLeverage: 10,
+    highestPriceSinceEntry: '2.2',
+    lowestPriceSinceEntry: '1.9',
+    highestStep: 2,
+    confirmedProtectionStep: 1,
+    updatedAt: '2026-11-11 12:00:00'
+  };
+
+  it('calculates the contract-price peak ROI with frozen leverage and returns both step states', () => {
+    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+      maximumReturnRate: 100,
+      highestStep: 2,
+      confirmedProtectionStep: 1
+    });
+  });
+
+  it('uses the favorable low for a short position', () => {
+    const short = { ...position, side: 'SHORT', quantity: '-50' };
+    expect(positionLadderMetrics(short, 'account-1', [{ ...ladderHistory, direction: 'SHORT' }])).toEqual({
+      maximumReturnRate: 50,
+      highestStep: 2,
+      confirmedProtectionStep: 1
+    });
+  });
+
+  it('does not mix another plugin, account, symbol, direction or closed position into ladder metrics', () => {
+    const unrelated = [
+      { ...ladderHistory, pluginCode: 'ema_cross_rate', highestPriceSinceEntry: '3' },
+      { ...ladderHistory, credentialId: 'other-account', highestStep: 9 },
+      { ...ladderHistory, symbol: 'BTCUSDT', highestStep: 9 },
+      { ...ladderHistory, direction: 'SHORT', highestStep: 9 },
+      { ...ladderHistory, status: 'CLOSED', highestStep: 9 }
+    ];
+    expect(positionLadderMetrics(position, 'account-1', unrelated)).toEqual({});
   });
 });
 
