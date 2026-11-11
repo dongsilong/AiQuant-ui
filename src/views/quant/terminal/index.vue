@@ -670,9 +670,11 @@ const protectionDisplay = (row: unknown, kind: 'takeProfit' | 'stopLoss') => {
 const stepProtectionDisplay = (row: PositionSnapshot) => {
   if (protectionError.value) return '查询失败';
   if (!protectionLoaded.value) return '加载中';
+  const positionSide = String(row.side).toUpperCase();
   const prices = protectionOrders.value
     .filter(order =>
       order.symbol.toUpperCase() === row.symbol.toUpperCase() &&
+      String(order.positionSide).toUpperCase() === positionSide &&
       order.clientAlgoId.startsWith('QSTEP_') &&
       !['CANCELED', 'EXPIRED', 'REJECTED', 'FINISHED', 'FILLED'].includes(String(order.status).toUpperCase()) &&
       Number(order.triggerPrice) > 0
