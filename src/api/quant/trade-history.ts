@@ -20,6 +20,7 @@ export interface TradeHistoryRecord {
   unrealizedPnl: string | null;
   closingEquityAt: string | null;
   closingEquityCapturedAt: string | null;
+  closingEquityResponseReceivedAt: string | null;
   closingEquityCaptureSource: string | null;
   closeEventTime: string | null;
   accountUpdateTransactionTime: string | null;
