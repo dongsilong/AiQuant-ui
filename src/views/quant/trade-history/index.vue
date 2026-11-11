@@ -94,7 +94,7 @@ const columns = [
   { prop: 'walletBalance', label: '采样钱包余额(U)', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.walletBalance, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource) },
   /*{ prop: 'unrealizedPnl', label: '未实现盈亏', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.unrealizedPnl) },*/
   /*{ prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },*/
-  { prop: 'closedAt', label: '平仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closedAt) }
+  { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
 ];
 const filters = computed(() => [
   { ...credentialFilter.value, label: '客户名称', placeholder: '全部客户' },
