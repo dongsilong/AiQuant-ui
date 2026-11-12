@@ -31,7 +31,6 @@ import type {
   WebSocketTransportInfo,
   UnresolvedLiveDispatch,
   StrategyFillAuditSummary,
-  TradingSyncTask
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -73,7 +72,7 @@ export const listAccessibleOrders = (
   query: PageQuery & { side?: string; status?: string }
 ): AxiosPromise<PageResult<OrderLedgerRow>> =>
   request({ url: '/quant/order/ledger/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncOrders = (credentialId: string | number, symbol?: string): AxiosPromise<TradingSyncTask> =>
+export const syncOrders = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
   request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
 export const listProtectionOrders = (
   credentialId: string | number,
