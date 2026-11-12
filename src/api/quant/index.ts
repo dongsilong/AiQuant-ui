@@ -30,7 +30,8 @@ import type {
   StrategyUserBinding,
   WebSocketTransportInfo,
   UnresolvedLiveDispatch,
-  StrategyFillAuditSummary
+  StrategyFillAuditSummary,
+  TradingSyncTask
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -72,7 +73,7 @@ export const listAccessibleOrders = (
   query: PageQuery & { side?: string; status?: string }
 ): AxiosPromise<PageResult<OrderLedgerRow>> =>
   request({ url: '/quant/order/ledger/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncOrders = (credentialId: string | number, symbol?: string) =>
+export const syncOrders = (credentialId: string | number, symbol?: string): AxiosPromise<TradingSyncTask> =>
   request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
 export const listProtectionOrders = (
   credentialId: string | number,
@@ -93,8 +94,11 @@ export const listAccessibleTrades = (
   query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncTrades = (credentialId: string | number, symbol?: string) =>
+export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<TradingSyncTask> =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+
+export const getTradingSyncTask = (taskId: string | number): AxiosPromise<TradingSyncTask> =>
+  request({ url: `/quant/sync-task/${taskId}`, method: 'get' });
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>
