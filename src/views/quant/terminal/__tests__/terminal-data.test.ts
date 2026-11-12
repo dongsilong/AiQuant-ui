@@ -121,18 +121,16 @@ describe('kline slope ladder metrics', () => {
     updatedAt: '2026-11-11 12:00:00'
   };
 
-  it('calculates the contract-price peak ROI with frozen leverage and returns both step states', () => {
-    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+  it('uses the backend-computed contract-price peak ROI and returns both step states', () => {
+    expect(positionLadderMetrics(position, 'account-1', [{ ...ladderHistory, ladderMaximumReturnRate: '100' }])).toEqual({
       maximumReturnRate: 100,
       highestStep: 2,
       confirmedProtectionStep: 1
     });
   });
 
-  it('uses the favorable low for a short position', () => {
-    const short = { ...position, side: 'SHORT', quantity: '-50' };
-    expect(positionLadderMetrics(short, 'account-1', [{ ...ladderHistory, direction: 'SHORT' }])).toEqual({
-      maximumReturnRate: 50,
+  it('does not reconstruct ladder ROI on the client when the backend value is absent', () => {
+    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
       highestStep: 2,
       confirmedProtectionStep: 1
     });
