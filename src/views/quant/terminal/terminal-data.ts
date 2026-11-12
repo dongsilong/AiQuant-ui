@@ -213,8 +213,8 @@ export function positionLadderMetrics(
       item.direction?.toUpperCase() === direction &&
       item.pluginCode?.toLowerCase() === 'kline_slope_rate' &&
       item.status?.toUpperCase() !== 'CLOSED' &&
-      numeric(item.positionQty) !== undefined &&
-      numeric(item.positionQty)! > 0 &&
+      numeric(item.positionQty ?? item.initialPositionQty) !== undefined &&
+      numeric(item.positionQty ?? item.initialPositionQty)! > 0 &&
       entryTolerance !== undefined &&
       numeric(item.entryPrice) !== undefined &&
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
