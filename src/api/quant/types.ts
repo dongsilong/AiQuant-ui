@@ -320,6 +320,7 @@ export interface StrategyPositionStateVO {
   initialMargin?: string | number;
   frozenLeverage?: number;
   maximumReturnRate?: string | number;
+  ladderMaximumReturnRate?: string | number;
   highestPriceSinceEntry?: string | number;
   lowestPriceSinceEntry?: string | number;
   highestStep?: number;
