@@ -98,9 +98,9 @@
               v-hasPermi="['quant:dispatch:recover']"
               type="primary"
               link
-              :loading="dispatchRecheckingKey === dispatchRowKey(scope.row)"
-              :disabled="!canRecheckDispatch(scope.row) || Boolean(dispatchRecheckingKey)"
-              @click="recheckDispatch(scope.row)"
+              :loading="dispatchRecheckingKey === dispatchRowKey(scope.row as UnresolvedLiveDispatch)"
+              :disabled="!canRecheckDispatch(scope.row as UnresolvedLiveDispatch) || Boolean(dispatchRecheckingKey)"
+              @click="recheckDispatch(scope.row as UnresolvedLiveDispatch)"
             >核查并尝试恢复</el-button>
           </template>
         </el-table-column>
