@@ -398,3 +398,20 @@ export interface StrategyFillAuditSummary {
   feeBreakdown: Array<{ asset: string; amount: string }>;
   realizedPnl: string;
 }
+
+/** 手动订单与成交历史异步同步任务。 */
+export interface TradingSyncTask {
+  taskId: string | number;
+  credentialId: string | number;
+  requestedSymbol?: string | null;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  totalSymbolCount: number;
+  completedSymbolCount: number;
+  orderCount: number;
+  tradeCount: number;
+  currentSymbol?: string | null;
+  errorMessage?: string | null;
+  createdAt?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
