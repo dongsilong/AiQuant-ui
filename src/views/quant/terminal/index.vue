@@ -177,9 +177,9 @@
               <el-table-column label="方向" width="100" align="center">
                 <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
               </el-table-column>
-              <el-table-column label="数量 / 名义价值" min-width="150">
+              <el-table-column label="数量 / 名义价值 U" min-width="150">
                 <template #default="scope">
-                  {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }} U
+                  {{ format(scope.row.quantity) }} / {{ formatFixed(scope.row.notional, 2) }}
                 </template>
               </el-table-column>
               <el-table-column label="开仓均价" min-width="100">

@@ -90,6 +90,8 @@
         </el-table-column>
         <el-table-column prop="clientOrderId" label="客户端订单号" min-width="220" show-overflow-tooltip />
         <el-table-column prop="dispatchKey" label="调度幂等键" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
+        <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
         <el-table-column label="操作" width="155" fixed="right" align="center">
           <template #default="scope">
             <el-button
@@ -102,8 +104,6 @@
             >核查并尝试恢复</el-button>
           </template>
         </el-table-column>
-        <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
-        <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
       </el-table>
     </el-card>
     <el-card class="table-panel" shadow="hover">
