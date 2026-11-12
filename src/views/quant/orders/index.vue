@@ -51,14 +51,6 @@
       </el-card>
     </div>
 
-    <el-alert
-      v-if="syncTask && ['PENDING', 'RUNNING'].includes(syncTask.status)"
-      :title="syncProgressText"
-      :closable="false"
-      show-icon
-      type="info"
-      class="mb-2"
-    />
     <el-card class="table-panel" shadow="hover">
       <template #header>
         <div class="toolbar-shell">
@@ -150,8 +142,8 @@
   </div>
 </template>
 <script lang="ts" setup>
-import type { CredentialVO, OrderLedgerRow, TradeRecord, TradingSyncTask } from '@/api/quant/types';
-import { cancelOrder, getTradingSyncTask, listAccessibleOrders, listAccessibleTrades, listCredential, syncOrders } from '@/api/quant';
+import type { CredentialVO, OrderLedgerRow, TradeRecord } from '@/api/quant/types';
+import { cancelOrder, listAccessibleOrders, listAccessibleTrades, listCredential, syncOrders } from '@/api/quant';
 import { ensureQuantSymbolTickSizes, formatQuantTablePrice } from '../components/price-format';
 import modal from '@/plugins/modal';
 import { useUserStore } from '@/store/modules/user';
@@ -161,17 +153,6 @@ const canSyncTradingData = computed(() => userStore.permissions.includes('*:*:*'
   || userStore.permissions.includes('quant:order:sync') && userStore.permissions.includes('quant:trade:sync'));
 const loading = ref(false);
 const syncing = ref(false);
-const syncTask = ref<TradingSyncTask>();
-let syncPollTimer: number | undefined;
-let activeSyncTaskId: string | undefined;
-const syncProgressText = computed(() => {
-  const task = syncTask.value;
-  if (!task) return '';
-  if (task.status === 'PENDING') return `同步任务 ${task.taskId} 排队中，后台即将开始处理。`;
-  if (task.totalSymbolCount <= 0) return `同步任务 ${task.taskId} 正在查询 Binance 最近 90 天的历史订单。`;
-  const current = task.currentSymbol ? `当前交易对：${task.currentSymbol}` : '正在整理同步结果';
-  return `后台同步进度：${task.completedSymbolCount}/${task.totalSymbolCount} 个交易对；已处理 ${task.orderCount} 笔订单、${task.tradeCount} 笔完整成交。${current}`;
-});
 const credentials = ref<CredentialVO[]>([]);
 const rows = ref<OrderLedgerRow[]>([]);
 const total = ref(0);
@@ -232,58 +213,17 @@ const handleQuery = () => {
   query.pageNum = 1;
   load();
 };
-const stopSyncPolling = () => {
-  if (syncPollTimer !== undefined) window.clearTimeout(syncPollTimer);
-  syncPollTimer = undefined;
-  activeSyncTaskId = undefined;
-  syncing.value = false;
-};
-const pollSyncTask = async (taskId: string) => {
-  if (activeSyncTaskId !== taskId) return;
-  try {
-    const response = await getTradingSyncTask(taskId);
-    syncTask.value = response.data;
-    if (response.data.status === 'SUCCESS') {
-      stopSyncPolling();
-      if (String(credentialId.value) === String(response.data.credentialId)) await load();
-      modal.msgSuccess(`订单与成交同步完成：${response.data.orderCount} 笔订单，${response.data.tradeCount} 笔完整成交`);
-      return;
-    }
-    if (response.data.status === 'FAILED') {
-      stopSyncPolling();
-      if (String(credentialId.value) === String(response.data.credentialId)) await load();
-      modal.msgWarning(response.data.errorMessage || '订单与成交同步失败，请检查系统消息');
-      return;
-    }
-  } catch {
-    // 状态查询短暂失败时继续轮询，不影响后台任务。
-  }
-  if (activeSyncTaskId === taskId) {
-    syncPollTimer = window.setTimeout(() => void pollSyncTask(taskId), 2000);
-  }
-};
 const sync = async () => {
   if (credentialId.value === 'ALL') return modal.msgWarning('请先选择具体交易账户');
   if (syncing.value) return;
   syncing.value = true;
-  syncTask.value = undefined;
   try {
-    const response = await syncOrders(credentialId.value, symbol.value.trim() || undefined);
-    const task = response.data;
-    if (!task?.taskId) throw new Error('后台未返回有效的同步任务编号');
-    activeSyncTaskId = String(task.taskId);
-    syncTask.value = task;
-    modal.msgSuccess('同步任务已提交，后台执行中；可以继续使用页面');
-    void pollSyncTask(activeSyncTaskId);
-  } catch (error) {
-    stopSyncPolling();
-    throw error;
+    await syncOrders(credentialId.value, symbol.value.trim() || undefined);
+    modal.msgSuccess('同步任务已提交，完成后将通过右上角系统消息通知；查看最新数据时请手动刷新表格');
+  } finally {
+    syncing.value = false;
   }
 };
-onBeforeUnmount(() => {
-  if (syncPollTimer !== undefined) window.clearTimeout(syncPollTimer);
-  activeSyncTaskId = undefined;
-});
 const cancel = async (row: OrderLedgerRow) => {
   const orderId = row.orderId;
   if (!orderId) return;
