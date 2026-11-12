@@ -83,14 +83,14 @@ export const listProtectionOrders = (
 export const listTrades = (
   credentialId: string | number,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string },
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string },
   signal?: AbortSignal
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query }, signal });
 export const listAccessibleTrades = (
   credentialId: string | number | undefined,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string }
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
 export const syncTrades = (credentialId: string | number, symbol?: string) =>
