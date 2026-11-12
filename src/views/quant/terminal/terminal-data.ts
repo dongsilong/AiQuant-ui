@@ -222,18 +222,7 @@ export function positionLadderMetrics(
   const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
   if (!state) return {};
 
-  const entry = numeric(state.entryPrice);
-  const leverage = numeric(state.frozenLeverage);
-  const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
-  const pushedReturnRate = numeric(state.ladderMaximumReturnRate);
-  const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
-    ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
-    : undefined;
-  const maximumReturnRate = pushedReturnRate !== undefined
-    ? pushedReturnRate
-    : priceReturn !== undefined && leverage !== undefined && leverage > 0
-      ? Math.max(0, priceReturn * leverage * 100)
-      : undefined;
+  const maximumReturnRate = numeric(state.ladderMaximumReturnRate);
   const highestStep = numeric(state.highestStep);
   const confirmedProtectionStep = numeric(state.confirmedProtectionStep);
   return {
