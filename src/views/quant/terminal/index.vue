@@ -222,7 +222,7 @@
               </el-table-column>
               <el-table-column label="阶梯保护触发价" min-width="130">
                 <template #default="scope">
-                  {{ stepProtectionDisplay(scope.row) }}
+                  {{ stepProtectionDisplay(scope.row as PositionSnapshot) }}
                 </template>
               </el-table-column>
               <el-table-column label="强平价" min-width="100">
