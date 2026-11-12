@@ -93,7 +93,7 @@ export const listAccessibleTrades = (
   query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<TradingSyncTask> =>
+export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
 
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
