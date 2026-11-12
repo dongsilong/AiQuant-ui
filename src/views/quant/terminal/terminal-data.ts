@@ -219,7 +219,7 @@ export function positionLadderMetrics(
       numeric(item.entryPrice) !== undefined &&
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
   );
-  const state = matching.sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
+  const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
   if (!state) return {};
 
   const entry = numeric(state.entryPrice);
