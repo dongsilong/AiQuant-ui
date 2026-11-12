@@ -875,6 +875,7 @@ function applyPositionPerformanceEvent(event: any) {
       String(item.positionCycleKey || '') === String(event.positionCycleKey || '')
   );
   const old = index >= 0 ? positionHistories.value[index] : undefined;
+  if (old?.updatedAt && event.updatedAt && String(old.updatedAt) > String(event.updatedAt)) return;
   const short = String(event.direction || old?.direction).toUpperCase() === 'SHORT';
   const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
   const oldPeak = Number(old?.[field]);
