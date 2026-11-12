@@ -225,11 +225,13 @@ export function positionLadderMetrics(
   const entry = numeric(state.entryPrice);
   const leverage = numeric(state.frozenLeverage);
   const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
+  const pushedReturnRate = numeric(state.ladderMaximumReturnRate);
   const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
     ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
     : undefined;
-  const maximumReturnRate =
-    priceReturn !== undefined && leverage !== undefined && leverage > 0
+  const maximumReturnRate = pushedReturnRate !== undefined
+    ? pushedReturnRate
+    : priceReturn !== undefined && leverage !== undefined && leverage > 0
       ? Math.max(0, priceReturn * leverage * 100)
       : undefined;
   const highestStep = numeric(state.highestStep);
