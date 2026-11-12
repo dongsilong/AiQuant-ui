@@ -97,8 +97,6 @@ export const listAccessibleTrades = (
 export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<TradingSyncTask> =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
 
-export const getTradingSyncTask = (taskId: string | number): AxiosPromise<TradingSyncTask> =>
-  request({ url: `/quant/sync-task/${taskId}`, method: 'get' });
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>
