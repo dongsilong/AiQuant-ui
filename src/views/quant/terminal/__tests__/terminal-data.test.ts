@@ -138,6 +138,20 @@ describe('kline slope ladder metrics', () => {
     });
   });
 
+  it('prefers the backend-pushed contract-price return rate and accepts event-only initial quantity', () => {
+    const event = {
+      ...ladderHistory,
+      positionQty: undefined,
+      initialPositionQty: '50',
+      ladderMaximumReturnRate: '123.456789'
+    };
+    expect(positionLadderMetrics(position, 'account-1', [event])).toEqual({
+      maximumReturnRate: 123.456789,
+      highestStep: 2,
+      confirmedProtectionStep: 1
+    });
+  });
+
   it('does not mix another plugin, account, symbol, direction or closed position into ladder metrics', () => {
     const unrelated = [
       { ...ladderHistory, pluginCode: 'ema_cross_rate', highestPriceSinceEntry: '3' },
