@@ -2271,7 +2271,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 .kline-chart {
-  height: 560px;
+  height: 620px;
 }
 .source-bar {
   padding: 10px 0;
@@ -2305,12 +2305,17 @@ onBeforeUnmount(() => {
 .account-card {
   overflow: hidden;
   height: 260px;
+
+  :deep(.el-card__body){
+    height: 200px;
+    overflow-y: hidden;
+  }
 }
 .strategy-side-card {
   //flex: 1;
   min-height: 0;
   overflow: hidden;
-  height: 400px;
+  //height: 390px;
 }
 .strategy-side-card :deep(.el-card__body) {
   min-height: 0;
