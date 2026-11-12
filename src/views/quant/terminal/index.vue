@@ -2271,7 +2271,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 .kline-chart {
-  height: 620px;
+  height: 590px;
 }
 .source-bar {
   padding: 10px 0;
@@ -2315,7 +2315,7 @@ onBeforeUnmount(() => {
   //flex: 1;
   min-height: 0;
   overflow: hidden;
-  //height: 390px;
+  height: 390px;
 }
 .strategy-side-card :deep(.el-card__body) {
   min-height: 0;
