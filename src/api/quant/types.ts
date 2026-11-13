@@ -320,6 +320,7 @@ export interface StrategyPositionStateVO {
   initialMargin?: string | number;
   frozenLeverage?: number;
   maximumReturnRate?: string | number;
+  ladderMaximumReturnRate?: string | number;
   highestPriceSinceEntry?: string | number;
   lowestPriceSinceEntry?: string | number;
   highestStep?: number;
@@ -398,3 +399,4 @@ export interface StrategyFillAuditSummary {
   feeBreakdown: Array<{ asset: string; amount: string }>;
   realizedPnl: string;
 }
+

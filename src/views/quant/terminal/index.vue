@@ -170,11 +170,11 @@
               border
               @row-dblclick="selectRowSymbol"
             >
-              <el-table-column type="index" label="序号" align="center" width="80">
+              <el-table-column type="index" label="序号" align="center" width="60">
                 <template #default="scope">{{ scope.$index + 1 }}</template>
               </el-table-column>
               <el-table-column prop="symbol" label="交易对" min-width="100" />
-              <el-table-column label="方向" width="100" align="center">
+              <el-table-column label="方向" width="80" align="center">
                 <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
               </el-table-column>
               <el-table-column label="数量 / 名义价值 U" min-width="150">
@@ -191,38 +191,38 @@
               <el-table-column label="未实现盈亏" min-width="100">
                 <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
               </el-table-column>
-              <el-table-column label="回报率" min-width="100">
+              <el-table-column label="回报率" min-width="80" align="center">
                 <template #default="scope">
                   {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
                 </template>
               </el-table-column>
-              <el-table-column label="标记价最大回报率" min-width="130">
+              <el-table-column label="标记价最大回报率" min-width="120">
                 <template #default="scope">
                   {{
                     scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯最高回报率（合约价）" min-width="150">
+              <el-table-column label="阶梯最高回报率（合约价）" min-width="170">
                 <template #default="scope">
                   {{
                     scope.row.ladderMaximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.ladderMaximumReturnRate, 2)}%`
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="当前阶梯" min-width="90" align="center">
+              <el-table-column label="当前阶梯" min-width="80" align="center">
                 <template #default="scope">
                   {{ scope.row.highestStep === undefined ? '-' : scope.row.highestStep > 0 ? `${scope.row.highestStep}阶` : '未达到' }}
                 </template>
               </el-table-column>
-              <el-table-column label="已确认阶梯" min-width="100" align="center">
+              <el-table-column label="已确认阶梯" min-width="90" align="center">
                 <template #default="scope">
                   {{ scope.row.confirmedProtectionStep === undefined ? '-' : scope.row.confirmedProtectionStep > 0 ? `${scope.row.confirmedProtectionStep}阶` : '未确认' }}
                 </template>
               </el-table-column>
               <el-table-column label="阶梯保护触发价" min-width="130">
                 <template #default="scope">
-                  {{ stepProtectionDisplay(scope.row) }}
+                  {{ stepProtectionDisplay(scope.row as PositionSnapshot) }}
                 </template>
               </el-table-column>
               <el-table-column label="强平价" min-width="100">
@@ -233,7 +233,7 @@
                   {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="110" align="center">
+              <el-table-column label="操作" width="80" align="center">
                 <template #default="scope">
                   <el-button v-hasPermi="['quant:position:close']" link type="danger" @click="close(scope.row)">平仓</el-button>
                 </template>
@@ -875,6 +875,7 @@ function applyPositionPerformanceEvent(event: any) {
       String(item.positionCycleKey || '') === String(event.positionCycleKey || '')
   );
   const old = index >= 0 ? positionHistories.value[index] : undefined;
+  if (old?.updatedAt && event.updatedAt && String(old.updatedAt) > String(event.updatedAt)) return;
   const short = String(event.direction || old?.direction).toUpperCase() === 'SHORT';
   const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
   const oldPeak = Number(old?.[field]);
@@ -2271,7 +2272,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 .kline-chart {
-  height: 560px;
+  height: 590px;
 }
 .source-bar {
   padding: 10px 0;
@@ -2305,12 +2306,17 @@ onBeforeUnmount(() => {
 .account-card {
   overflow: hidden;
   height: 260px;
+
+  :deep(.el-card__body){
+    height: 200px;
+    overflow-y: hidden;
+  }
 }
 .strategy-side-card {
   //flex: 1;
   min-height: 0;
   overflow: hidden;
-  height: 400px;
+  height: 390px;
 }
 .strategy-side-card :deep(.el-card__body) {
   min-height: 0;

@@ -79,13 +79,13 @@
         </el-table-column>
         <el-table-column label="类型" width="105" prop="type" />
         <el-table-column label="价格" min-width="120">
-          <template #default="scope">{{ formatOrderPrice(scope.row) }}</template>
+          <template #default="scope">{{ formatOrderPrice(scope.row as OrderLedgerRow) }}</template>
         </el-table-column>
         <el-table-column label="委托数量" min-width="110" prop="originalQuantity" />
         <el-table-column label="已成交数量" min-width="120" prop="executedQuantity" />
         <el-table-column label="关联成交" width="100" align="center">
           <template #default="scope">
-            <el-button link type="primary" :disabled="!scope.row.tradeCount" @click="openFills(scope.row)">
+            <el-button link type="primary" :disabled="!scope.row.tradeCount" @click="openFills(scope.row as OrderLedgerRow)">
               {{ scope.row.tradeCount || 0 }} 笔
             </el-button>
           </template>
@@ -215,11 +215,11 @@ const handleQuery = () => {
 };
 const sync = async () => {
   if (credentialId.value === 'ALL') return modal.msgWarning('请先选择具体交易账户');
+  if (syncing.value) return;
   syncing.value = true;
   try {
     await syncOrders(credentialId.value, symbol.value.trim() || undefined);
-    await load();
-    modal.msgSuccess('订单与成交同步完成');
+    modal.msgSuccess('同步任务已提交，完成后将通过右上角系统消息通知；查看最新数据时请手动刷新表格');
   } finally {
     syncing.value = false;
   }

@@ -54,7 +54,7 @@
           <el-button :loading="loading" icon="Refresh" plain type="primary" @click="load">刷新</el-button>
         </div>
       </template>
-      <el-table v-loading="loading" class="data-table" :data="rows" border>
+      <el-table v-loading="loading" class="data-table" :data="rows" border @sort-change="handleSortChange">
         <el-table-column type="index" label="序号" width="80" align="center">
           <template #default="scope">{{ (query.pageNum - 1) * query.pageSize + scope.$index + 1 }}</template>
         </el-table-column>
@@ -66,6 +66,8 @@
           :header-align="column.headerAlign"
           :min-width="column.width || 140"
           :prop="column.prop"
+          :sortable="column.sortable"
+          :sort-orders="['ascending', 'descending']"
           show-overflow-tooltip
         >
           <template #default="scope">
@@ -97,7 +99,7 @@
 import type { PageResult } from '@/api/types';
 
 type LedgerRow = Record<string, unknown> & { id?: string | number };
-type LedgerColumn = { prop: string; label: string; width?: number; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
+type LedgerColumn = { prop: string; label: string; width?: number; sortable?: boolean | 'custom'; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
 type LedgerFilter = {
   key: string;
   label: string;
@@ -138,6 +140,17 @@ const load = async () => {
   } finally {
     loading.value = false;
   }
+};
+const handleSortChange = ({ prop, order }: { prop: string | null; order: 'ascending' | 'descending' | null }) => {
+  if (order) {
+    query.sortField = prop || undefined;
+    query.sortOrder = order === 'ascending' ? 'ASC' : 'DESC';
+  } else {
+    delete query.sortField;
+    delete query.sortOrder;
+  }
+  query.pageNum = 1;
+  load();
 };
 const handleQuery = () => {
   query.pageNum = 1;

@@ -47,9 +47,6 @@
           <el-table-column label="交易用户" min-width="120" show-overflow-tooltip>
             <template #default="scope">{{ scope.row.customerName || '-' }}</template>
           </el-table-column>
-          <el-table-column label="成交时间" prop="tradeTime" min-width="160">
-            <template #default="scope">{{ formatTime(scope.row.tradeTime) }}</template>
-          </el-table-column>
           <el-table-column label="交易对" prop="symbol" min-width="160" />
           <el-table-column label="方向" prop="side" min-width="100" />
           <el-table-column label="价格" min-width="150">
@@ -66,6 +63,9 @@
           </el-table-column>
           <el-table-column label="Trade ID" prop="exchangeTradeId" min-width="120" />
           <el-table-column label="Order ID" prop="exchangeOrderId" min-width="120" />
+          <el-table-column label="成交时间" prop="tradeTime" min-width="160">
+            <template #default="scope">{{ formatTime(scope.row.tradeTime) }}</template>
+          </el-table-column>
         </el-table>
         <pagination
           v-show="total > 0"
@@ -138,11 +138,11 @@ const handleCredentialChange = () => {
 };
 const sync = async () => {
   if (!credentialId.value || credentialId.value === 'ALL') return modal.msgWarning('请先选择具体交易账户');
+  if (syncing.value) return;
   syncing.value = true;
   try {
     await syncTrades(credentialId.value, symbol.value.trim() || undefined);
-    await load();
-    modal.msgSuccess('订单与成交同步完成');
+    modal.msgSuccess('同步任务已提交，完成后将通过右上角系统消息通知；查看最新数据时请手动刷新表格');
   } finally {
     syncing.value = false;
   }

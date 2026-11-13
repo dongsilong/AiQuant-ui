@@ -30,7 +30,7 @@ import type {
   StrategyUserBinding,
   WebSocketTransportInfo,
   UnresolvedLiveDispatch,
-  StrategyFillAuditSummary
+  StrategyFillAuditSummary,
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -72,7 +72,7 @@ export const listAccessibleOrders = (
   query: PageQuery & { side?: string; status?: string }
 ): AxiosPromise<PageResult<OrderLedgerRow>> =>
   request({ url: '/quant/order/ledger/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncOrders = (credentialId: string | number, symbol?: string) =>
+export const syncOrders = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
   request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
 export const listProtectionOrders = (
   credentialId: string | number,
@@ -83,18 +83,19 @@ export const listProtectionOrders = (
 export const listTrades = (
   credentialId: string | number,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string },
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string },
   signal?: AbortSignal
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query }, signal });
 export const listAccessibleTrades = (
   credentialId: string | number | undefined,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string }
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncTrades = (credentialId: string | number, symbol?: string) =>
+export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
   request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>

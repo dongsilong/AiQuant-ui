@@ -87,15 +87,15 @@ const columns = [
     formatter: (row: Record<string, unknown>) => (row.leverage == null ? '—' : `${row.leverage}x`)
   },*/
   /*{ prop: 'openingBalance', label: '开仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.openingBalance, row.openingBalanceAt) },*/
-  { prop: 'openedAt', label: '开仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.openedAt) },
+  { prop: 'openedAt', label: '开仓时间', ...centered, width: 160, sortable: 'custom', formatter: (row: Record<string, unknown>) => time(row.openedAt) },
   { prop: 'closePrice', label: '平仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.closePrice) },
-  { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
   { prop: 'commission', label: '手续费', ...centered, width: 180, formatter: (row: Record<string, unknown>) => displayCommission(row.commission) },
+  { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
   { prop: 'closingEquity', label: '账户权益(U)', ...centered, width: 240, formatter: (row: Record<string, unknown>) => balance(row.closingEquity, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource, row.closingEquityResponseReceivedAt) },
   { prop: 'walletBalance', label: '钱包余额(U)', ...centered, width: 150, formatter: (row: Record<string, unknown>) => balance(row.walletBalance, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource, row.closingEquityResponseReceivedAt) },
   /*{ prop: 'unrealizedPnl', label: '未实现盈亏', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.unrealizedPnl) },*/
   /*{ prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },*/
-  { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
+  { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, sortable: 'custom', formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
 ];
 const filters = computed(() => [
   { ...credentialFilter.value, label: '客户名称', placeholder: '全部客户' },

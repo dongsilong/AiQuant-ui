@@ -213,25 +213,16 @@ export function positionLadderMetrics(
       item.direction?.toUpperCase() === direction &&
       item.pluginCode?.toLowerCase() === 'kline_slope_rate' &&
       item.status?.toUpperCase() !== 'CLOSED' &&
-      numeric(item.positionQty) !== undefined &&
-      numeric(item.positionQty)! > 0 &&
+      numeric(item.positionQty ?? item.initialPositionQty) !== undefined &&
+      numeric(item.positionQty ?? item.initialPositionQty)! > 0 &&
       entryTolerance !== undefined &&
       numeric(item.entryPrice) !== undefined &&
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
   );
-  const state = matching.sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
+  const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
   if (!state) return {};
 
-  const entry = numeric(state.entryPrice);
-  const leverage = numeric(state.frozenLeverage);
-  const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
-  const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
-    ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
-    : undefined;
-  const maximumReturnRate =
-    priceReturn !== undefined && leverage !== undefined && leverage > 0
-      ? Math.max(0, priceReturn * leverage * 100)
-      : undefined;
+  const maximumReturnRate = numeric(state.ladderMaximumReturnRate);
   const highestStep = numeric(state.highestStep);
   const confirmedProtectionStep = numeric(state.confirmedProtectionStep);
   return {
