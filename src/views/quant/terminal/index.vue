@@ -1043,8 +1043,9 @@ async function loadOpenOrders(force = false, retryOnRevision = true) {
   } finally {
     if (generation === dataGeneration && requestId === ordersRequest) {
       ordersLoading = false;
-      if (retryOnRevision && revision !== accountRevision && activeTab.value === 'orders') {
-        void loadOpenOrders(true, false);
+      if (revision !== ordersRevision && activeTab.value === 'orders') {
+        if (retryOnRevision) void loadOpenOrders(true, false);
+        else ordersError.value = '委托更新期间发生变化，请重新加载';
       }
     }
   }
@@ -1088,7 +1089,6 @@ async function switchChartContext(nextSymbol: string, nextInterval: string) {
         symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
       }
     }
-    price.value = undefined;
     viewportSnapshot = { isRightEdge: true };
     initialRightGapApplied = false;
     renderChart();
