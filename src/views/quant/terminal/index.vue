@@ -1414,8 +1414,12 @@ function connectAccountStream() {
           void refreshPositionHistories();
           // The initial CONNECTED is followed by the controller's initial SNAPSHOT.
           // A later CONNECTED means the exchange private stream itself was rebuilt.
-          if (hasReceivedSnapshot) void refreshPositionsAfterAccountReconnect();
+          if (hasReceivedSnapshot) {
+            positionReconcileRequest++;
+            void refreshPositionsAfterAccountReconnect();
+          }
         } else if (event.type === 'DISCONNECTED') {
+          positionReconcileRequest++;
           positionSnapshotRequest++;
           accountSnapshotAvailable.value = false;
           account.value = undefined;
@@ -1435,6 +1439,7 @@ function connectAccountStream() {
     },
     () => {
       if (generation !== dataGeneration) return;
+      positionReconcileRequest++;
       positionSnapshotRequest++;
       ordersError.value = '账户连接已断开';
       protectionOrders.value = [];
@@ -1977,9 +1982,32 @@ async function waitForPositionClosed(positionSymbol: string) {
 
 // ==================== 生命周期钩子 ====================
 let clock: ReturnType<typeof setInterval> | undefined;
+let positionReconcileTimer: ReturnType<typeof setInterval> | undefined;
+let positionReconcileRequest = 0;
+let positionReconcileRunning = false;
+
+async function reconcilePositionsFromExchange() {
+  const id = credentialId.value;
+  if (!id || !accountSnapshotAvailable.value || positionReconcileRunning) return;
+  const generation = dataGeneration;
+  const request = ++positionReconcileRequest;
+  const snapshotRevision = positionRevision;
+  positionReconcileRunning = true;
+  try {
+    const response = await listPositions(id);
+    if (generation !== dataGeneration || request !== positionReconcileRequest || !accountSnapshotAvailable.value) return;
+    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, snapshotRevision);
+    renderOverlays();
+  } catch {
+    // 校准失败不清空已确认持仓，等待下一轮或私有流事件恢复。
+  } finally {
+    positionReconcileRunning = false;
+  }
+}
 
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
+  positionReconcileTimer = setInterval(() => void reconcilePositionsFromExchange(), 5000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
     resizeObserver = new ResizeObserver(resizeChart);
@@ -2044,6 +2072,8 @@ onBeforeUnmount(() => {
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
   resizeObserver?.disconnect();
   if (clock) clearInterval(clock);
+  if (positionReconcileTimer) clearInterval(positionReconcileTimer);
+  positionReconcileRequest++;
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   if (chart.value) {
     chart.value.removeOverlay();
