@@ -74,7 +74,7 @@
             </div>
           </div>
           <div class="kline-chart-wrap">
-            <div ref="chartRef" v-loading="loading" class="kline-chart" />
+            <div ref="chartRef" v-loading="chartLoading" class="kline-chart" />
           </div>
         </el-card>
         <div class="chart-side">
@@ -425,6 +425,7 @@ const credentialId = ref<string | number>();
 const indicators = ref<string[]>(['MA']);
 const activeTab = ref('positions');
 const loading = ref(false);
+const chartLoading = ref(false);
 const streamStatus = ref('CONNECTING');
 const accountSnapshotAvailable = ref(false);
 const now = ref(Date.now());
@@ -958,7 +959,7 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
 
 async function loadTrades() {
   const id = credentialId.value;
-  if (!id) return;
+  if (!id || tradeLoading.value) return;
   const generation = dataGeneration;
   const requestId = ++tradeRequest;
   const query = { ...tradeQuery };
@@ -1066,6 +1067,7 @@ async function switchChartContext(nextSymbol: string, nextInterval: string) {
   const generation = dataGeneration;
   const runMode = selectedMarketRunMode();
   const symbolChanged = nextSymbol !== chartDataSymbol;
+  chartLoading.value = true;
   try {
     const [k, symbolResult] = await Promise.allSettled([
       listRealtimeKlines(nextSymbol, nextInterval, 1000, runMode, controller.signal),
@@ -1100,6 +1102,7 @@ async function switchChartContext(nextSymbol: string, nextInterval: string) {
     }
   } finally {
     if (symbolSwitchController === controller) symbolSwitchController = undefined;
+    if (requestId === symbolRequest) chartLoading.value = false;
   }
 }
 
@@ -1752,6 +1755,7 @@ async function loadData() {
   dataRequestController = controller;
   const signal = controller.signal;
   const generation = ++dataGeneration;
+  chartLoading.value = true;
   positionSnapshotRequest++;
   ++symbolRequest;
   ++tradeRequest;
@@ -1825,6 +1829,7 @@ async function loadData() {
 
   renderChart();
   renderOverlays();
+  chartLoading.value = false;
 
   chartDataSymbol = symbol.value;
   chartDataInterval = interval.value;
@@ -1840,41 +1845,33 @@ async function loadData() {
 
   const positionSnapshotRevision = positionRevision;
   const accountSnapshotRevision = accountRevision;
-
-  void Promise.allSettled([
+  const [p, i, h, a, baseline] = await Promise.allSettled([
     listPositions(id, undefined, signal),
     listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
-  ]).then(([p, i, h]) => {
-    if (generation !== dataGeneration || signal.aborted) return;
-    if (p.status === 'fulfilled') {
-      positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
-      accountSnapshotAvailable.value = true;
-    } else accountSnapshotAvailable.value = false;
-    if (i.status === 'fulfilled') {
-      instances.value = i.value.data?.rows || [];
-    }
-    if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
-    renderOverlays();
-    connect();
-    void loadProtectionOrders();
-  });
-
-  void Promise.allSettled([
+    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
     getAccountSnapshot(id, signal),
     getDailyAccountBaseline(id, signal)
-  ]).then(([a, baseline]) => {
-    if (generation !== dataGeneration || signal.aborted) return;
-    if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
-    if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
-      if (baseline.status === 'fulfilled') {
-        dailyAccountBaseline.value = baseline.value.data;
-        if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
-      } else {
-        scheduleDailyBaselineRetry(id, baselineDay, generation);
-      }
+  ]);
+  if (generation !== dataGeneration || signal.aborted) return;
+  if (p.status === 'fulfilled') {
+    positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
+    accountSnapshotAvailable.value = true;
+  } else accountSnapshotAvailable.value = false;
+  if (i.status === 'fulfilled') instances.value = i.value.data?.rows || [];
+  if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
+  if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
+  if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
+    if (baseline.status === 'fulfilled') {
+      dailyAccountBaseline.value = baseline.value.data;
+      if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
+    } else {
+      scheduleDailyBaselineRetry(id, baselineDay, generation);
     }
-  });
+  }
+  renderOverlays();
+  connect();
+  void loadProtectionOrders();
+
 
 }
 
