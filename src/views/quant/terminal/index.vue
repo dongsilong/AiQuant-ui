@@ -1416,6 +1416,7 @@ function connectAccountStream() {
           // A later CONNECTED means the exchange private stream itself was rebuilt.
           if (hasReceivedSnapshot) {
             positionReconcileRequest++;
+            accountSnapshotAvailable.value = false;
             void refreshPositionsAfterAccountReconnect();
           }
         } else if (event.type === 'DISCONNECTED') {
