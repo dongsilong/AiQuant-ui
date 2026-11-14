@@ -959,7 +959,7 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
 
 async function loadTrades() {
   const id = credentialId.value;
-  if (!id || tradeLoading.value) return;
+  if (!id) return;
   const generation = dataGeneration;
   const requestId = ++tradeRequest;
   const query = { ...tradeQuery };
