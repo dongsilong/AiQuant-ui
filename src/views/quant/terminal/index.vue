@@ -496,6 +496,7 @@ let dataGeneration = 0;
 let symbolRequest = 0;
 let tradeRequest = 0;
 let ordersRequest = 0;
+let ordersRevision = 0;
 let protectionRequest = 0;
 let refreshRequest = 0;
 let ordersLoaded = false;
@@ -994,6 +995,7 @@ async function loadProtectionOrders(force = false) {
     const response = await listProtectionOrders(id, undefined, dataRequestController?.signal);
     if (generation !== dataGeneration || requestId !== protectionRequest) return;
     const snapshot = new Map((response.data || []).map(row => [`${row.symbol}:${row.algoId}`, row]));
+    // Replay only updates received during this query, including cancellation tombstones.
     for (const [key, change] of protectionChanges) {
       if (change.revision <= revision) continue;
       if (change.row) snapshot.set(key, change.row);
@@ -1015,18 +1017,17 @@ async function loadProtectionOrders(force = false) {
   }
 }
 
-
 async function loadOpenOrders(force = false, retryOnRevision = true) {
   const id = credentialId.value;
   if (!id || (!force && (ordersLoaded || ordersLoading))) return;
   const generation = dataGeneration;
   const requestId = ++ordersRequest;
-  const revision = accountRevision;
+  const revision = ordersRevision;
   ordersLoading = true;
   try {
     const result = await listOrders(id, undefined, dataRequestController?.signal);
     if (generation !== dataGeneration || requestId !== ordersRequest) return;
-    if (revision === accountRevision) {
+    if (revision === ordersRevision) {
       orders.value = result.data || [];
       ordersLoaded = true;
       ordersError.value = '';
@@ -1071,6 +1072,7 @@ async function switchChartContext(nextSymbol: string, nextInterval: string) {
       symbolChanged ? listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal) : Promise.resolve(undefined)
     ]);
     if (controller.signal.aborted || generation !== dataGeneration || requestId !== symbolRequest || runMode !== selectedMarketRunMode()) return;
+    price.value = undefined;
     if (k.status !== 'fulfilled') throw new Error(queryError(k.reason, nextSymbol + ' K线加载失败'));
     symbol.value = nextSymbol;
     interval.value = nextInterval;
@@ -1108,8 +1110,6 @@ async function loadKline(value: string) {
 async function handleSymbolChange(value: string) {
   await switchChartContext(value, interval.value);
 }
-
-
 
 async function searchSymbols(keyword: string) {
   symbolSearchController?.abort();
@@ -1374,6 +1374,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
       const key = `${raw.o.s}:${raw.o.i}`;
       const time = Number(raw.o.T ?? raw.E);
       if (!Number.isFinite(time) || time >= (lastOrderEvents.get(key) || 0)) {
+        ordersRevision++;
         orders.value = updateOrders(orders.value, raw.o);
         ordersError.value = '';
         if (Number.isFinite(time)) lastOrderEvents.set(key, time);
@@ -1497,6 +1498,8 @@ function connectAccountStream() {
           account.value = undefined;
           orders.value = [];
           ordersLoaded = false;
+          ordersLoading = false;
+          ordersRevision++;
           ordersRequest++;
           ordersError.value = '账户数据暂不可用';
           protectionOrders.value = [];
@@ -1523,6 +1526,8 @@ function connectAccountStream() {
       account.value = undefined;
       orders.value = [];
       ordersLoaded = false;
+      ordersLoading = false;
+      ordersRevision++;
       ordersRequest++;
       renderOverlays();
       accountStream?.close();
@@ -1739,7 +1744,6 @@ function closeSlopePanel() {
 
 // ==================== 数据加载主流程 ====================
 
-
 async function loadData() {
   symbolSwitchController?.abort();
   symbolSwitchController = undefined;
@@ -1752,6 +1756,7 @@ async function loadData() {
   ++symbolRequest;
   ++tradeRequest;
   ++ordersRequest;
+  ordersRevision = 0;
   ++protectionRequest;
   ordersLoaded = false;
   ordersLoading = false;
@@ -1808,11 +1813,8 @@ async function loadData() {
   ]);
   if (generation !== dataGeneration) return;
 
-  if (k.status === 'fulfilled') {
-    klines.value = k.value.data || [];
-    chartDataSymbol = symbol.value;
-    chartDataInterval = interval.value;
-  } else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
+  if (k.status === 'fulfilled') klines.value = k.value.data || [];
+  else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
 
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
   cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
@@ -1874,7 +1876,6 @@ async function loadData() {
     }
   });
 
-
 }
 
 async function refresh() {
@@ -1890,7 +1891,6 @@ async function refresh() {
     if (requestId === refreshRequest) loading.value = false;
   }
 }
-
 
 // ==================== 交易操作 ====================
 async function confirmAction(title: string, message: string, action: () => Promise<any>) {
@@ -1952,7 +1952,6 @@ async function selectRowSymbol(row: { symbol?: string }) {
   if (!row?.symbol) return;
   await switchChartContext(row.symbol, interval.value);
 }
-
 
 function cancel(row: unknown) {
   const order = row as OrderSnapshot;
