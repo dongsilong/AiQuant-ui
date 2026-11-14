@@ -108,12 +108,11 @@
               class="strategy-select"
               clearable
               placeholder="筛选策略"
-              @change="handleStrategyChange"
             >
               <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
             </el-select>
-            <div v-if="instances.length" class="strategy-grid">
-              <div v-for="item in instances" :key="item.id" class="strategy">
+            <div v-if="visibleInstances.length" class="strategy-grid">
+              <div v-for="item in visibleInstances" :key="item.id" class="strategy">
                 <div>
                   <!--<div class="strategy-actions">
                     <el-button
@@ -496,7 +495,14 @@ let slopeLoadController: AbortController | undefined;
 let dataGeneration = 0;
 let symbolRequest = 0;
 let tradeRequest = 0;
+let ordersRequest = 0;
 let protectionRequest = 0;
+let refreshRequest = 0;
+let ordersLoaded = false;
+let ordersLoading = false;
+let tradesLoaded = false;
+let chartDataSymbol = symbol.value;
+let chartDataInterval = interval.value;
 let accountRevision = 0;
 let positionRevision = 0;
 let positionSnapshotRequest = 0;
@@ -617,6 +623,9 @@ const dailyReturnRate = computed(() => {
   if (!Number.isFinite(baseline) || baseline <= 0 || currentAccountEquity.value === undefined) return undefined;
   return ((currentAccountEquity.value - baseline) / baseline) * 100;
 });
+const visibleInstances = computed(() =>
+  instances.value.filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value))
+);
 
 const candleCountdown = computed(() => {
   const match = /^(\d+)([smhdwM])$/.exec(interval.value);
@@ -960,10 +969,12 @@ async function loadTrades() {
     trades.value = query.pageNum === 1 ? mergeTrades(rows, liveTrades.value).slice(0, query.pageSize) : rows;
     tradeTotal.value = result.data?.total || 0;
     tradePending.value = false;
+    tradesLoaded = true;
     tradesError.value = '';
   } catch (error) {
     if (generation === dataGeneration && requestId === tradeRequest) {
       trades.value = [];
+      tradesLoaded = false;
       tradesError.value = queryError(error, '成交记录加载失败');
     }
   } finally {
@@ -971,7 +982,8 @@ async function loadTrades() {
   }
 }
 
-async function loadProtectionOrders() {
+async function loadProtectionOrders(force = false) {
+  if (!force && (protectionLoaded.value || protectionLoading.value)) return;
   const id = credentialId.value;
   if (!id) return;
   const generation = dataGeneration;
@@ -982,7 +994,6 @@ async function loadProtectionOrders() {
     const response = await listProtectionOrders(id, undefined, dataRequestController?.signal);
     if (generation !== dataGeneration || requestId !== protectionRequest) return;
     const snapshot = new Map((response.data || []).map(row => [`${row.symbol}:${row.algoId}`, row]));
-    // Replay only updates received during this query, including cancellation tombstones.
     for (const [key, change] of protectionChanges) {
       if (change.revision <= revision) continue;
       if (change.row) snapshot.set(key, change.row);
@@ -1004,41 +1015,101 @@ async function loadProtectionOrders() {
   }
 }
 
-async function loadOpenOrders() {
+
+async function loadOpenOrders(force = false, retryOnRevision = true) {
   const id = credentialId.value;
-  if (!id) return;
+  if (!id || (!force && (ordersLoaded || ordersLoading))) return;
   const generation = dataGeneration;
+  const requestId = ++ordersRequest;
   const revision = accountRevision;
+  ordersLoading = true;
   try {
-    const result = await listOrders(id);
-    if (generation !== dataGeneration) return;
-    if (revision === accountRevision) orders.value = result.data || [];
-    ordersError.value = '';
+    const result = await listOrders(id, undefined, dataRequestController?.signal);
+    if (generation !== dataGeneration || requestId !== ordersRequest) return;
+    if (revision === accountRevision) {
+      orders.value = result.data || [];
+      ordersLoaded = true;
+      ordersError.value = '';
+    } else {
+      ordersLoaded = false;
+    }
   } catch (error) {
-    if (generation === dataGeneration) ordersError.value = queryError(error, '委托加载失败');
+    if (generation === dataGeneration && requestId === ordersRequest) {
+      ordersLoaded = false;
+      ordersError.value = queryError(error, '委托加载失败');
+    }
+  } finally {
+    if (generation === dataGeneration && requestId === ordersRequest) {
+      ordersLoading = false;
+      if (retryOnRevision && revision !== accountRevision && activeTab.value === 'orders') {
+        void loadOpenOrders(true, false);
+      }
+    }
   }
 }
 
 function handleDataTab(tab: string | number) {
-  if (tab === 'trades') void loadTrades();
+  if (tab === 'trades' && !tradesLoaded) void loadTrades();
   if (tab === 'orders') {
-    void loadOpenOrders();
-    void loadProtectionOrders();
+    if (!ordersLoaded) void loadOpenOrders();
+    if (!protectionLoaded.value) void loadProtectionOrders();
+  }
+}
+
+async function switchChartContext(nextSymbol: string, nextInterval: string) {
+  if (!nextSymbol || (nextSymbol === chartDataSymbol && nextInterval === chartDataInterval)) return;
+  symbolSwitchController?.abort();
+  const controller = new AbortController();
+  symbolSwitchController = controller;
+  const requestId = ++symbolRequest;
+  const generation = dataGeneration;
+  const runMode = selectedMarketRunMode();
+  const symbolChanged = nextSymbol !== chartDataSymbol;
+  try {
+    const [k, symbolResult] = await Promise.allSettled([
+      listRealtimeKlines(nextSymbol, nextInterval, 1000, runMode, controller.signal),
+      symbolChanged ? listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal) : Promise.resolve(undefined)
+    ]);
+    if (controller.signal.aborted || generation !== dataGeneration || requestId !== symbolRequest || runMode !== selectedMarketRunMode()) return;
+    if (k.status !== 'fulfilled') throw new Error(queryError(k.reason, nextSymbol + ' K线加载失败'));
+    symbol.value = nextSymbol;
+    interval.value = nextInterval;
+    chartDataSymbol = nextSymbol;
+    chartDataInterval = nextInterval;
+    klines.value = k.value.data || [];
+    if (symbolChanged) {
+      symbolInfo.value = symbolResult.status === 'fulfilled' ? symbolResult.value?.data?.rows?.[0] : undefined;
+      cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
+      if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
+        symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+      }
+    }
+    price.value = undefined;
+    viewportSnapshot = { isRightEdge: true };
+    initialRightGapApplied = false;
+    renderChart();
+    renderOverlays();
+    connect();
+  } catch (error) {
+    if (!controller.signal.aborted && generation === dataGeneration && requestId === symbolRequest) {
+      symbol.value = chartDataSymbol;
+      interval.value = chartDataInterval;
+      ElMessage.error(queryError(error, '图表数据加载失败，已保留原交易对和周期'));
+    }
+  } finally {
+    if (symbolSwitchController === controller) symbolSwitchController = undefined;
   }
 }
 
 async function loadKline(value: string) {
-  interval.value = value;
-  viewportSnapshot = { isRightEdge: true };
-  initialRightGapApplied = false;
-  await refresh();
+  await switchChartContext(symbol.value, value);
 }
 
-async function handleSymbolChange() {
-  viewportSnapshot = { isRightEdge: true };
-  initialRightGapApplied = false;
-  await refresh();
+async function handleSymbolChange(value: string) {
+  await switchChartContext(value, interval.value);
 }
+
+
 
 async function searchSymbols(keyword: string) {
   symbolSearchController?.abort();
@@ -1348,7 +1419,7 @@ async function refreshPositionsAfterAccountReconnect() {
     accountSnapshotAvailable.value = true;
     renderOverlays();
     connect();
-    void loadProtectionOrders();
+    void loadProtectionOrders(true);
   } catch {
     if (generation === dataGeneration && request === positionSnapshotRequest) {
       accountSnapshotAvailable.value = false;
@@ -1425,6 +1496,8 @@ function connectAccountStream() {
           accountSnapshotAvailable.value = false;
           account.value = undefined;
           orders.value = [];
+          ordersLoaded = false;
+          ordersRequest++;
           ordersError.value = '账户数据暂不可用';
           protectionOrders.value = [];
           protectionLoaded.value = false;
@@ -1449,6 +1522,8 @@ function connectAccountStream() {
       accountSnapshotAvailable.value = false;
       account.value = undefined;
       orders.value = [];
+      ordersLoaded = false;
+      ordersRequest++;
       renderOverlays();
       accountStream?.close();
       accountRetryTimer = setTimeout(connectAccountStream, 3000);
@@ -1663,15 +1738,7 @@ function closeSlopePanel() {
 }
 
 // ==================== 数据加载主流程 ====================
-async function handleStrategyChange() {
-  const selected = strategies.value.find(item => String(item.id) === String(strategyId.value));
-  if (selected) {
-    const configured = instances.value.filter(item => String(item.strategyId) === String(selected.id));
-    if (configured[0]?.symbol) symbol.value = configured[0].symbol;
-    if (configured[0]?.credentialId) credentialId.value = configured[0].credentialId;
-  }
-  await refresh();
-}
+
 
 async function loadData() {
   symbolSwitchController?.abort();
@@ -1684,7 +1751,11 @@ async function loadData() {
   positionSnapshotRequest++;
   ++symbolRequest;
   ++tradeRequest;
+  ++ordersRequest;
   ++protectionRequest;
+  ordersLoaded = false;
+  ordersLoading = false;
+  tradesLoaded = false;
   tradeQuery.pageNum = 1;
   tradeTotal.value = 0;
   tradePending.value = false;
@@ -1737,8 +1808,11 @@ async function loadData() {
   ]);
   if (generation !== dataGeneration) return;
 
-  if (k.status === 'fulfilled') klines.value = k.value.data || [];
-  else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
+  if (k.status === 'fulfilled') {
+    klines.value = k.value.data || [];
+    chartDataSymbol = symbol.value;
+    chartDataInterval = interval.value;
+  } else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
 
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
   cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
@@ -1750,9 +1824,17 @@ async function loadData() {
   renderChart();
   renderOverlays();
 
+  chartDataSymbol = symbol.value;
+  chartDataInterval = interval.value;
   if (!id) return;
   connect();
   connectAccountStream();
+  if (activeTab.value === 'orders') {
+    void loadOpenOrders();
+    void loadProtectionOrders();
+  } else if (activeTab.value === 'trades') {
+    void loadTrades();
+  }
 
   const positionSnapshotRevision = positionRevision;
   const accountSnapshotRevision = accountRevision;
@@ -1768,7 +1850,7 @@ async function loadData() {
       accountSnapshotAvailable.value = true;
     } else accountSnapshotAvailable.value = false;
     if (i.status === 'fulfilled') {
-      instances.value = (i.value.data?.rows || []).filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value));
+      instances.value = i.value.data?.rows || [];
     }
     if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
     renderOverlays();
@@ -1778,13 +1860,9 @@ async function loadData() {
 
   void Promise.allSettled([
     getAccountSnapshot(id, signal),
-    listOrders(id, undefined, signal),
-    listTrades(id, undefined, { ...tradeQuery }, signal),
     getDailyAccountBaseline(id, signal)
-  ]).then(([a, o, t, baseline]) => {
+  ]).then(([a, baseline]) => {
     if (generation !== dataGeneration || signal.aborted) return;
-    ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
-    tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
     if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
     if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
       if (baseline.status === 'fulfilled') {
@@ -1794,16 +1872,13 @@ async function loadData() {
         scheduleDailyBaselineRetry(id, baselineDay, generation);
       }
     }
-    if (o.status === 'fulfilled' && accountSnapshotRevision === accountRevision) orders.value = o.value.data || [];
-    if (t.status === 'fulfilled') {
-      trades.value = mergeTrades(t.value.data?.rows || [], liveTrades.value);
-      tradeTotal.value = t.value.data?.total || 0;
-    }
-    renderOverlays();
   });
+
+
 }
 
 async function refresh() {
+  const requestId = ++refreshRequest;
   loading.value = true;
   try {
     if (!credentialId.value && credentials.value.length) credentialId.value = credentials.value[0].id;
@@ -1812,9 +1887,10 @@ async function refresh() {
     streamStatus.value = 'ERROR';
     ElMessage.error(e?.message || '行情或账户数据加载失败');
   } finally {
-    loading.value = false;
+    if (requestId === refreshRequest) loading.value = false;
   }
 }
+
 
 // ==================== 交易操作 ====================
 async function confirmAction(title: string, message: string, action: () => Promise<any>) {
@@ -1874,48 +1950,9 @@ function toggleStrategy(item: StrategyInstanceVO) {
 
 async function selectRowSymbol(row: { symbol?: string }) {
   if (!row?.symbol) return;
-  symbolSwitchController?.abort();
-  symbolSwitchController = undefined;
-  const requestId = ++symbolRequest;
-  if (row.symbol === symbol.value) return;
-  const controller = new AbortController();
-  symbolSwitchController = controller;
-  const nextSymbol = row.symbol;
-  const generation = dataGeneration;
-  const requestedInterval = interval.value;
-  const runMode = selectedMarketRunMode();
-  try {
-    const [k, s] = await Promise.allSettled([
-      listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode, controller.signal),
-      listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal)
-    ]);
-    if (
-      controller.signal.aborted ||
-      generation !== dataGeneration ||
-      requestId !== symbolRequest ||
-      requestedInterval !== interval.value ||
-      runMode !== selectedMarketRunMode()
-    ) return;
-    if (k.status !== 'fulfilled') {
-      ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
-      return;
-    }
-    symbol.value = nextSymbol;
-    klines.value = k.value.data || [];
-    symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
-    cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
-    if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
-      symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
-    }
-    price.value = undefined;
-    viewportSnapshot = { isRightEdge: true };
-    renderChart();
-    renderOverlays();
-    connect();
-  } finally {
-    if (symbolSwitchController === controller) symbolSwitchController = undefined;
-  }
+  await switchChartContext(row.symbol, interval.value);
 }
+
 
 function cancel(row: unknown) {
   const order = row as OrderSnapshot;
