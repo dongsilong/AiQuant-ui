@@ -500,6 +500,7 @@ let ordersRequest = 0;
 let ordersRevision = 0;
 let protectionRequest = 0;
 let refreshRequest = 0;
+let accountDataRequest = 0;
 let ordersLoaded = false;
 let ordersLoading = false;
 let tradesLoaded = false;
@@ -1686,7 +1687,6 @@ async function openSlopePanel() {
   const generation = ++slopeLoadGeneration;
 
   slopePanelVisible.value = true;
-  slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
   slopeLoadError.value = '';
@@ -1745,6 +1745,86 @@ function closeSlopePanel() {
   closeSlopeStream();
 }
 
+// ==================== 账户与行情数据刷新 ====================
+async function loadMarketData(id: string | number | undefined, generation: number, signal: AbortSignal) {
+  const requestId = ++symbolRequest;
+  const marketSymbol = symbol.value;
+  const marketInterval = interval.value;
+  const [k, s] = await Promise.allSettled([
+    id ? listRealtimeKlines(marketSymbol, marketInterval, 1000, selectedMarketRunMode(), signal) : Promise.resolve({ data: [] as KlineSnapshot[] }),
+    listSymbol({ pageNum: 1, pageSize: 1, symbol: marketSymbol }, signal)
+  ]);
+  if (generation !== dataGeneration || signal.aborted || requestId !== symbolRequest) return false;
+
+  if (k.status === 'fulfilled') klines.value = k.value.data || [];
+  else ElMessage.error(`${marketSymbol} K线加载失败，已清理旧图表数据`);
+
+  symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
+  if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
+    symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+  }
+  void ensureQuantSymbolTickSizes().catch(() => undefined);
+
+  renderChart();
+  renderOverlays();
+  chartLoading.value = false;
+  chartDataSymbol = marketSymbol;
+  chartDataInterval = marketInterval;
+  return true;
+}
+
+async function loadAccountData(id: string | number, generation: number, signal: AbortSignal, forceProtection = false) {
+  const requestId = ++accountDataRequest;
+  const positionSnapshotRevision = positionRevision;
+  const accountSnapshotRevision = accountRevision;
+  const baselineDay = dailyBaselineDay.value || shanghaiDateKey(now.value);
+  const [p, i, h, a, baseline] = await Promise.allSettled([
+    listPositions(id, undefined, signal),
+    listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
+    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
+    getAccountSnapshot(id, signal),
+    getDailyAccountBaseline(id, signal)
+  ]);
+  if (
+    generation !== dataGeneration ||
+    requestId !== accountDataRequest ||
+    signal.aborted ||
+    String(credentialId.value) !== String(id)
+  ) return false;
+
+  if (p.status === 'fulfilled') {
+    positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
+    accountSnapshotAvailable.value = true;
+  } else accountSnapshotAvailable.value = false;
+  if (i.status === 'fulfilled') instances.value = i.value.data?.rows || [];
+  if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
+  if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
+  if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
+    if (baseline.status === 'fulfilled') {
+      dailyAccountBaseline.value = baseline.value.data;
+      if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
+    } else {
+      scheduleDailyBaselineRetry(id, baselineDay, generation);
+    }
+  }
+  renderOverlays();
+  connect();
+  void loadProtectionOrders(forceProtection);
+  return true;
+}
+
+async function refreshAccountData() {
+  const id = credentialId.value;
+  const signal = dataRequestController?.signal;
+  if (!id || !signal || signal.aborted) return;
+  const generation = dataGeneration;
+  const refreshed = await loadAccountData(id, generation, signal, true);
+  if (!refreshed) return;
+  if (activeTab.value === 'orders') void loadOpenOrders(true);
+  else if (activeTab.value === 'trades') void loadTrades();
+}
+
 // ==================== 数据加载主流程 ====================
 
 async function loadData() {
@@ -1799,6 +1879,7 @@ async function loadData() {
   dailyBaselineRequest++;
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
 
+  captureChartViewport();
   klines.value = [];
   symbolInfo.value = undefined;
   price.value = undefined;
@@ -1811,30 +1892,10 @@ async function loadData() {
   trades.value = [];
   renderOverlays();
 
-  const [k, s] = await Promise.allSettled([
-    id ? listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal) : Promise.resolve({ data: [] as KlineSnapshot[] }),
-    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal)
-  ]);
-  if (generation !== dataGeneration) return;
-
-  if (k.status === 'fulfilled') klines.value = k.value.data || [];
-  else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
-
-  symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
-  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
-  if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
-    symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
-  }
-  void ensureQuantSymbolTickSizes().catch(() => undefined);
-
-  renderChart();
-  renderOverlays();
-  chartLoading.value = false;
-
-  chartDataSymbol = symbol.value;
-  chartDataInterval = interval.value;
+  const marketLoaded = await loadMarketData(id, generation, signal);
+  if (generation !== dataGeneration || signal.aborted) return;
   if (!id) return;
-  connect();
+  if (marketLoaded) connect();
   connectAccountStream();
   if (activeTab.value === 'orders') {
     void loadOpenOrders();
@@ -1843,38 +1904,8 @@ async function loadData() {
     void loadTrades();
   }
 
-  const positionSnapshotRevision = positionRevision;
-  const accountSnapshotRevision = accountRevision;
-  const [p, i, h, a, baseline] = await Promise.allSettled([
-    listPositions(id, undefined, signal),
-    listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    getAccountSnapshot(id, signal),
-    getDailyAccountBaseline(id, signal)
-  ]);
-  if (generation !== dataGeneration || signal.aborted) return;
-  if (p.status === 'fulfilled') {
-    positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
-    accountSnapshotAvailable.value = true;
-  } else accountSnapshotAvailable.value = false;
-  if (i.status === 'fulfilled') instances.value = i.value.data?.rows || [];
-  if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
-  if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
-  if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
-    if (baseline.status === 'fulfilled') {
-      dailyAccountBaseline.value = baseline.value.data;
-      if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
-    } else {
-      scheduleDailyBaselineRetry(id, baselineDay, generation);
-    }
-  }
-  renderOverlays();
-  connect();
-  void loadProtectionOrders();
-
-
+  await loadAccountData(id, generation, signal);
 }
-
 async function refresh() {
   const requestId = ++refreshRequest;
   loading.value = true;
@@ -1898,7 +1929,7 @@ async function confirmAction(title: string, message: string, action: () => Promi
   });
   await action();
   ElMessage.success('操作已提交');
-  await refresh();
+  await refreshAccountData();
 }
 
 async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) {
@@ -1922,7 +1953,7 @@ async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) 
     });
     await setStrategySymbolRuntimeEnabled(item.strategyId, item.strategySymbolId, enabled);
     ElMessage.success(enabled ? '已恢复该交易对的开仓评估' : '已暂停该交易对的新开仓');
-    await refresh();
+    await refreshAccountData();
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error(queryError(error, '交易对运行状态切换失败'));
