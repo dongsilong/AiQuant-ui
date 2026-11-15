@@ -1,5 +1,7 @@
 <template>
   <div class="p-2 app-container quant-terminal-page">
+    <div class="terminal-workspace" :class="{ 'is-slope-open': slopePanelVisible }">
+      <div class="terminal-main">
     <el-card shadow="never" class="terminal-card">
       <div class="terminal-overview">
         <div class="account-control">
@@ -309,71 +311,74 @@
         </el-tabs>
       </el-card>
     </el-card>
-
-    <el-button v-hasPermi="['quant:terminal:slope']" class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
+      </div>
+      <aside class="slope-panel" aria-label="实时斜率面板">
+        <div class="slope-panel-header">
+          <b>实时斜率</b>
+          <el-button link type="primary" @click="hideSlopePanel">收起</el-button>
+        </div>
+        <el-select
+          v-model="slopeStrategyId"
+          class="slope-strategy-select"
+          placeholder="选择策略"
+          @change="openSlopePanel"
+        >
+          <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
+        </el-select>
+        <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
+          <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
+          <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
+        </div>
+        <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
+        <el-table
+          v-else-if="slopeRows.length"
+          :data="slopeRows"
+          :row-class-name="slopeRowClassName"
+          border
+          stripe
+          class="slope-table"
+        >
+          <el-table-column type="index" label="序号" align="center" width="60" />
+          <el-table-column label="交易对" width="120">
+            <template #default="scope">
+              <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
+                {{ scope.row.symbol }}
+              </el-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="interval" label="周期" width="72" />
+          <!--<el-table-column label="参考开盘价" min-width="110">
+            <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
+          </el-table-column>-->
+          <el-table-column label="当前价" min-width="110">
+            <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
+          </el-table-column>
+          <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
+          <el-table-column label="角度" min-width="82">
+            <template #default="scope">
+              {{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="82">
+            <template #default="scope">
+              {{ statusText(scope.row.status) }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
+      </aside>
+    </div>
+    <el-button
+      v-hasPermi="['quant:terminal:slope']"
+      v-if="!slopePanelVisible"
+      class="slope-floating-button"
+      type="primary"
+      circle
+      @click="toggleSlopePanel"
+      aria-label="打开实时斜率"
+    >
       斜率
     </el-button>
-    <el-drawer
-      v-model="slopePanelVisible"
-      title="实时斜率"
-      direction="rtl"
-      size="620px"
-      :modal="false"
-      :modal-penetrable="true"
-      :resizable="true"
-      :lock-scroll="false"
-      @closed="closeSlopePanel"
-    >
-      <el-select
-        v-model="slopeStrategyId"
-        class="slope-strategy-select"
-        placeholder="选择策略"
-        @change="openSlopePanel"
-      >
-        <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
-      </el-select>
-      <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
-        <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
-        <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
-      </div>
-      <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
-      <el-table
-        v-else-if="slopeRows.length"
-        :data="slopeRows"
-        :row-class-name="slopeRowClassName"
-        border
-        stripe
-        class="slope-table"
-      >
-        <el-table-column type="index" label="序号" align="center" width="60" />
-        <el-table-column label="交易对" width="120">
-          <template #default="scope">
-            <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
-              {{ scope.row.symbol }}
-            </el-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="interval" label="周期" width="72" />
-        <!--<el-table-column label="参考开盘价" min-width="110">
-          <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
-        </el-table-column>-->
-        <el-table-column label="当前价" min-width="110">
-          <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
-        </el-table-column>
-        <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
-        <el-table-column label="角度" min-width="82">
-          <template #default="scope">
-            {{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="82">
-          <template #default="scope">
-            {{ statusText(scope.row.status) }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
-    </el-drawer>
   </div>
 </template>
 
@@ -463,7 +468,7 @@ const liveTrades = ref<TradeRecord[]>([]);
 const ordersError = ref('');
 const tradesError = ref('');
 
-// ==================== 斜率抽屉状态 ====================
+// ==================== 实时斜率面板状态 ====================
 type SlopeRow = { symbol: string; interval: string; status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR'; currentPrice?: number; latestTradePrice?: number; referencePrice?: number; slopePercent?: number; degrees?: number; entryAngleDegrees?: number };
 type SlopeStreamState = { klines: KlineSnapshot[]; latestTradePrice?: number; handshakeComplete: boolean };
 const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
@@ -1584,7 +1589,7 @@ function connectAccountStream() {
     handleSseUnauthorized
   );
 }
-// ==================== 斜率抽屉逻辑 ====================
+// ==================== 实时斜率面板逻辑 ====================
 function closeSlopeStream() {
   slopeStreams.forEach(connection => connection.close());
   slopeStreams = [];
@@ -1780,13 +1785,21 @@ async function openSlopePanel() {
   }
 }
 
-function closeSlopePanel() {
+function hideSlopePanel() {
+  // 收起面板只改变布局，不关闭实时行情订阅。
   slopePanelVisible.value = false;
-  ++slopeLoadGeneration;
-  slopeLoadController?.abort();
-  slopeLoadController = undefined;
-  slopeLoading.value = false;
-  closeSlopeStream();
+}
+
+function toggleSlopePanel() {
+  if (slopePanelVisible.value) {
+    hideSlopePanel();
+    return;
+  }
+  if (slopeRows.value.length || slopeLoading.value) {
+    slopePanelVisible.value = true;
+    return;
+  }
+  void openSlopePanel();
 }
 
 // ==================== 账户与行情数据刷新 ====================
@@ -2385,6 +2398,48 @@ onBeforeUnmount(() => {
 .protection-legend .stop-loss {
   color: #e6a23c;
 }
+.terminal-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0fr;
+  gap: 0;
+  align-items: start;
+  transition: grid-template-columns 0.24s ease, gap 0.24s ease;
+}
+.terminal-main {
+  min-width: 0;
+  overflow: hidden;
+}
+.terminal-workspace.is-slope-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 620px);
+  gap: 12px;
+}
+.slope-panel {
+  box-sizing: border-box;
+  width: 620px;
+  max-width: 620px;
+  min-width: 0;
+  max-height: calc(100vh - 32px);
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(12px);
+  transition: opacity 0.2s ease, transform 0.24s ease, visibility 0.24s;
+}
+.terminal-workspace.is-slope-open .slope-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+.slope-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
 .slope-floating-button {
   position: fixed;
   right: 24px;
@@ -2553,6 +2608,29 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .chart-layout {
     grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+@media (max-width: 1280px) {
+  .terminal-workspace,
+  .terminal-workspace.is-slope-open {
+    display: block;
+  }
+  .slope-panel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1100;
+    width: min(620px, calc(100vw - 24px));
+    max-width: none;
+    max-height: none;
+    box-shadow: var(--el-box-shadow-dark);
+    opacity: 1;
+    transform: translateX(calc(100% + 24px));
+  }
+  .terminal-workspace.is-slope-open .slope-panel {
+    visibility: visible;
+    transform: translateX(0);
   }
 }
 @media (max-width: 768px) {
