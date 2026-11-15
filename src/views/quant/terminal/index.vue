@@ -1909,10 +1909,11 @@ async function loadData() {
   trades.value = [];
   renderOverlays();
 
-  const marketLoaded = await loadMarketData(id, generation, signal);
-  if (generation !== dataGeneration || signal.aborted) return;
-  if (!id) return;
-  if (marketLoaded) connect();
+  const marketRequest = loadMarketData(id, generation, signal);
+  if (!id) {
+    await marketRequest;
+    return;
+  }
   connectAccountStream();
   if (activeTab.value === 'orders') {
     void loadOpenOrders();
@@ -1921,7 +1922,7 @@ async function loadData() {
     void loadTrades();
   }
 
-  await loadAccountData(id, generation, signal);
+  await Promise.all([marketRequest, loadAccountData(id, generation, signal)]);
 }
 async function refresh() {
   const requestId = ++refreshRequest;
