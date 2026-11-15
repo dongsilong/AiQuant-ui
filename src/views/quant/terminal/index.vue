@@ -2400,7 +2400,7 @@ onBeforeUnmount(() => {
 }
 .terminal-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 0fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   align-items: start;
   transition: grid-template-columns 0.24s ease, gap 0.24s ease;
@@ -2414,9 +2414,10 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 .slope-panel {
+  display: none;
   box-sizing: border-box;
-  width: auto;
-  max-width: 620px;
+  width: 100%;
+  max-width: none;
   min-width: 0;
   max-height: calc(100vh - 32px);
   padding: 12px;
@@ -2430,6 +2431,7 @@ onBeforeUnmount(() => {
   transition: opacity 0.2s ease, transform 0.24s ease, visibility 0.24s;
 }
 .terminal-workspace.is-slope-open .slope-panel {
+  display: block;
   opacity: 1;
   visibility: visible;
   transform: translateX(0);
@@ -2629,6 +2631,7 @@ onBeforeUnmount(() => {
     transform: translateX(calc(100% + 24px));
   }
   .terminal-workspace.is-slope-open .slope-panel {
+    display: block;
     visibility: visible;
     transform: translateX(0);
   }
