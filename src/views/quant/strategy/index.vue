@@ -122,10 +122,10 @@
         <el-tab-pane label="运行实例" name="instances">
           <el-table :data="instances" border>
             <el-table-column align="center" label="序号" type="index" width="80" />
-            <el-table-column label="策略" prop="strategyName" align="center" min-width="180" show-overflow-tooltip />
-            <el-table-column label="账户" prop="accountName" align="center" min-width="100" show-overflow-tooltip />
-            <el-table-column label="交易对" prop="symbol" align="center" width="120" show-overflow-tooltip />
-            <el-table-column label="状态" prop="status" align="center" width="100" />
+            <el-table-column label="策略" prop="strategyName" align="center" width="320" show-overflow-tooltip />
+            <el-table-column label="账户" prop="accountName" align="center" width="150" />
+            <el-table-column label="交易对" prop="symbol" align="center" width="150" />
+            <el-table-column label="状态" prop="status" align="center" width="120" />
             <el-table-column label="最近错误" prop="lastError" align="center" min-width="220" show-overflow-tooltip />
           </el-table>
         </el-tab-pane>

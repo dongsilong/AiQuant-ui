@@ -338,7 +338,7 @@
           stripe
           class="slope-table"
         >
-          <el-table-column type="index" label="序号" align="center" width="60" />
+          <el-table-column type="index" label="序号" align="center" width="55" />
           <el-table-column label="交易对" width="120">
             <template #default="scope">
               <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
@@ -346,20 +346,20 @@
               </el-link>
             </template>
           </el-table-column>
-          <el-table-column prop="interval" label="周期" width="72" />
+          <el-table-column prop="interval" label="周期" width="60" align="center" />
           <!--<el-table-column label="参考开盘价" min-width="110">
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
-          <el-table-column label="当前价" min-width="110">
+          <el-table-column label="当前价" min-width="80">
             <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
-          <el-table-column label="角度" min-width="82">
+          <el-table-column label="角度" min-width="60" align="center">
             <template #default="scope">
               {{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="82">
+          <el-table-column label="状态" width="70" align="center">
             <template #default="scope">
               {{ statusText(scope.row.status) }}
             </template>
@@ -2233,7 +2233,6 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 @use '@/assets/styles/components/page-shell' as pageShell;
 @include pageShell.table-crud-page;
-.terminal-card,
 .table-card {
   margin-top: 12px;
 }
@@ -2410,7 +2409,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .terminal-workspace.is-slope-open {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 620px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
   gap: 12px;
 }
 .slope-panel {
