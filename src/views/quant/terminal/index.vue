@@ -1062,7 +1062,16 @@ function handleDataTab(tab: string | number) {
 }
 
 async function switchChartContext(nextSymbol: string, nextInterval: string) {
-  if (!nextSymbol || (nextSymbol === chartDataSymbol && nextInterval === chartDataInterval)) return;
+  if (!nextSymbol) return;
+  if (nextSymbol === chartDataSymbol && nextInterval === chartDataInterval) {
+    if (symbolSwitchController) {
+      symbolSwitchController.abort();
+      symbolSwitchController = undefined;
+      ++symbolRequest;
+      chartLoading.value = false;
+    }
+    return;
+  }
   symbolSwitchController?.abort();
   const controller = new AbortController();
   symbolSwitchController = controller;
