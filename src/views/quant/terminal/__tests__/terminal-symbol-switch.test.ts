@@ -4,13 +4,17 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 
-// Execute the actual handler with isolated page dependencies; no account or exchange requests.
-function setup() {
+// Execute actual page handlers with isolated dependencies; no account or exchange requests.
+function executeFunction(name: string, context: Record<string, any>) {
   const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
   const script = parse(source).descriptor.scriptSetup!.content;
   const ast = ts.createSourceFile('terminal.ts', script, ts.ScriptTarget.Latest, true);
-  const handler = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'selectRowSymbol')!;
+  const handler = ast.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === name)!;
   const code = ts.transpile(handler.getText(ast), { target: ts.ScriptTarget.ES2022 });
+  return new Function('context', `with (context) { ${code}; return ${name}; }`)(context);
+}
+
+function setup() {
   const context = {
     symbol: { value: 'BTCUSDT' },
     interval: { value: '15m' },
@@ -29,7 +33,7 @@ function setup() {
     renderOverlays: vi.fn(),
     connect: vi.fn()
   };
-  const select = new Function('context', `with (context) { ${code}; return selectRowSymbol; }`)(context);
+  const select = executeFunction('selectRowSymbol', context);
   return { context, select };
 }
 
@@ -41,7 +45,71 @@ function deferred() {
   return { promise, resolve };
 }
 
+function setupMarketLoad(pending: Promise<any>) {
+  const context = {
+    symbol: { value: 'BTCUSDT' },
+    interval: { value: '15m' },
+    dataGeneration: 1,
+    symbolRequest: 0,
+    selectedMarketRunMode: vi.fn(() => 'TESTNET'),
+    listRealtimeKlines: vi.fn(() => pending),
+    listSymbol: vi.fn(async () => ({ data: { rows: [] } })),
+    chartLoading: { value: true },
+    symbolInfo: { value: undefined as any },
+    symbolOptions: { value: [] as any[] },
+    klines: { value: [] as any[] },
+    cacheQuantSymbolTickSize: vi.fn(),
+    ensureQuantSymbolTickSizes: vi.fn(async () => undefined),
+    renderChart: vi.fn(),
+    renderOverlays: vi.fn(),
+    ElMessage: { error: vi.fn() },
+    chartDataSymbol: 'BTCUSDT',
+    chartDataInterval: '15m'
+  };
+  return { context, load: executeFunction('loadMarketData', context) };
+}
+
+function setupSlopePanel() {
+  const context = {
+    slopeLoadController: undefined as AbortController | undefined,
+    slopeLoadGeneration: 0,
+    slopePanelVisible: { value: false },
+    slopeStrategyId: { value: undefined as string | undefined },
+    strategyId: { value: 'filter-strategy' },
+    strategies: { value: [{ id: 'first-strategy' }] },
+    closeSlopeStream: vi.fn(),
+    slopeRows: { value: [{ symbol: 'OLDUSDT' }] },
+    slopeLoadError: { value: 'old error' },
+    slopeSymbolErrors: { value: ['OLDUSDT'] },
+    slopeLoading: { value: true },
+    listStrategySymbols: vi.fn(async () => ({ data: [] })),
+    connectSlopeStream: vi.fn()
+  };
+  return { context, open: executeFunction('openSlopePanel', context) };
+}
+
 describe('terminal symbol switching', () => {
+  it('does not let an older full-refresh market response overwrite a newer symbol selection', async () => {
+    const first = deferred();
+    const { context, load } = setupMarketLoad(first.promise);
+    const pending = load('account', 1, new AbortController().signal);
+    context.symbolRequest++;
+    context.symbol.value = 'ETHUSDT';
+    first.resolve({ data: [{ openTime: 'stale' }] });
+    await expect(pending).resolves.toBe(false);
+    expect(context.klines.value).toEqual([]);
+    expect(context.renderChart).not.toHaveBeenCalled();
+    expect(context.chartLoading.value).toBe(true);
+  });
+
+  it('does not reuse the strategy filter or first strategy as the explicit slope strategy', async () => {
+    const { context, open } = setupSlopePanel();
+    await open();
+    expect(context.slopePanelVisible.value).toBe(true);
+    expect(context.slopeStrategyId.value).toBeUndefined();
+    expect(context.listStrategySymbols).not.toHaveBeenCalled();
+  });
+
   it('queries the same environment as realtime subscriptions', async () => {
     const { context, select } = setup();
     await select({ symbol: 'BRUSDT' });
