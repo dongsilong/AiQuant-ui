@@ -846,7 +846,7 @@ function scheduleDeferredPositionRetry(error: unknown) {
   const rawRetryAfter = headers?.['retry-after'] ?? headers?.['Retry-After'];
   const retryAfterSeconds = Number(rawRetryAfter);
   const delay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-    ? Math.min(retryAfterSeconds * 1000, 120_000)
+    ? Math.min(retryAfterSeconds * 1000, 2_147_000_000)
     : Math.min(1000 * 2 ** positionDeferredRetryCount, 30_000);
   positionDeferredRetryCount++;
   positionDeferredRetryTimer = setTimeout(() => {
