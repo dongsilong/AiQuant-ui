@@ -836,6 +836,30 @@ let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
 let hydrationRunning = false;
 let hydrationPending = false;
 let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
+let positionDeferredRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let positionDeferredRetryCount = 0;
+
+function scheduleDeferredPositionRetry(error: unknown) {
+  const response = (error as { response?: { status?: number; headers?: Record<string, unknown> } })?.response;
+  if (response?.status !== 503 || positionDeferredRetryCount >= 5 || positionDeferredRetryTimer) return;
+  const headers = response.headers;
+  const rawRetryAfter = headers?.['retry-after'] ?? headers?.['Retry-After'];
+  const retryAfterSeconds = Number(rawRetryAfter);
+  const delay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+    ? Math.min(retryAfterSeconds * 1000, 120_000)
+    : Math.min(1000 * 2 ** positionDeferredRetryCount, 30_000);
+  positionDeferredRetryCount++;
+  positionDeferredRetryTimer = setTimeout(() => {
+    positionDeferredRetryTimer = undefined;
+    void refreshPositionsAfterAccountReconnect();
+  }, delay);
+}
+
+function clearDeferredPositionRetry() {
+  if (positionDeferredRetryTimer) clearTimeout(positionDeferredRetryTimer);
+  positionDeferredRetryTimer = undefined;
+  positionDeferredRetryCount = 0;
+}
 
 function mergePositionHistories(rows: StrategyPositionStateVO[]) {
   const previous = new Map(
@@ -948,9 +972,12 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
       if (generation !== dataGeneration) return;
       if (a.status === 'fulfilled' && revision === accountRevision) account.value = a.value.data;
       if (p.status === 'fulfilled') {
+        clearDeferredPositionRetry();
         positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, snapshotPositionRevision);
         accountSnapshotAvailable.value = true;
         renderOverlays();
+      } else {
+        scheduleDeferredPositionRetry(p.reason);
       }
     } finally {
       hydrationRunning = false;
@@ -1430,14 +1457,16 @@ async function refreshPositionsAfterAccountReconnect() {
   try {
     const response = await listPositions(id, undefined, dataRequestController?.signal);
     if (generation !== dataGeneration || request !== positionSnapshotRequest) return;
+    clearDeferredPositionRetry();
     positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, snapshotRevision);
     accountSnapshotAvailable.value = true;
     renderOverlays();
     connect();
     void loadProtectionOrders(true);
-  } catch {
+  } catch (error) {
     if (generation === dataGeneration && request === positionSnapshotRequest) {
       accountSnapshotAvailable.value = false;
+      scheduleDeferredPositionRetry(error);
     }
   }
 }
@@ -1891,6 +1920,7 @@ async function loadData() {
   marketStreamKey = '';
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
   if (retryTimer) clearTimeout(retryTimer);
+  clearDeferredPositionRetry();
   if (hydrationTimer) clearTimeout(hydrationTimer);
   hydrationTimer = undefined;
   hydrationPending = false;
@@ -2169,6 +2199,7 @@ onBeforeUnmount(() => {
   updateChartBar = undefined;
   if (retryTimer) clearTimeout(retryTimer);
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  clearDeferredPositionRetry();
   resizeObserver?.disconnect();
   if (clock) clearInterval(clock);
   if (positionReconcileTimer) clearInterval(positionReconcileTimer);
