@@ -180,13 +180,15 @@ const dispatchRecheckingKey = ref('');
 const dispatchRowKey = (row: UnresolvedLiveDispatch) =>
   `${row.credentialId}:${row.symbol}:${row.dispatchKey}`;
 const canRecheckDispatch = (row: UnresolvedLiveDispatch) =>
-  ['PROTECT_CREATE', 'PROTECT_CANCEL'].includes(row.operation || '')
+  ['PROTECT_CREATE', 'PROTECT_CANCEL', 'CONFIG_SETTINGS'].includes(row.operation || '')
   && Boolean(row.credentialId && row.symbol && row.dispatchKey && row.clientOrderId);
 const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
   if (!canRecheckDispatch(row) || dispatchRecheckingKey.value) return;
   try {
     await ElMessageBox.confirm(
-      `将按票据身份核查 Binance 的保护单事实。只有订单身份、状态和成交数量均通过现有后端核验时，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`,
+      row.operation === 'CONFIG_SETTINGS'
+        ? `将根据持久化配置意图核查 Binance 的保证金模式和杠杆配置。只有后端完成配置事实核验并满足持仓安全条件后，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`
+        : `将按票据身份核查 Binance 的保护单事实。只有订单身份、状态和成交数量均通过现有后端核验时，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`,
       '确认核查 LIVE 外发订单',
       { confirmButtonText: '开始核查', cancelButtonText: '取消', type: 'warning' }
     );
@@ -203,7 +205,7 @@ const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
       clientOrderId: row.clientOrderId!
     });
     if (result.data) {
-      ElMessage.success('Binance 订单事实核验通过，派发阻断已按原恢复流程处理');
+      ElMessage.success(row.operation === 'CONFIG_SETTINGS' ? 'Binance 配置事实核验通过，派发阻断已按原恢复流程处理' : 'Binance 订单事实核验通过，派发阻断已按原恢复流程处理');
     } else {
       ElMessage.warning('本次未能完成核验，派发阻断保持不变；请检查订单事实和后端日志');
     }
