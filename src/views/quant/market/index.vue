@@ -205,7 +205,7 @@ const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
       clientOrderId: row.clientOrderId!
     });
     if (result.data) {
-      ElMessage.success(row.operation === 'CONFIG_SETTINGS' ? 'Binance 配置事实核验通过，派发阻断已按原恢复流程处理' : 'Binance 订单事实核验通过，派发阻断已按原恢复流程处理');
+      ElMessage.success('派发核查已完成，相关交易对的调度阻断已解除');
     } else {
       ElMessage.warning('本次未能完成核验，派发阻断保持不变；请检查订单事实和后端日志');
     }
