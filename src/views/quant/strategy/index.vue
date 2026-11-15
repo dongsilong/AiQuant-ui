@@ -243,22 +243,15 @@
       <el-alert
         v-if="preflightResult"
         :title="preflightResult.valid ? '预检通过，可以启动' : '预检未通过，请修正配置'"
+        :description="preflightResult.errors?.length ? preflightResult.errors.join('；') : ''"
         :type="preflightResult.valid ? 'success' : 'error'"
+        :closable="false"
         show-icon
       />
       <el-descriptions v-if="preflightResult" :column="2" border class="mt-4">
         <el-descriptions-item label="实例数量">{{ preflightResult.instanceCount }}</el-descriptions-item>
         <el-descriptions-item label="账户数量">{{ preflightResult.accounts.length }}</el-descriptions-item>
       </el-descriptions>
-      <el-alert
-        v-if="preflightResult?.errors?.length"
-        class="mt-2"
-        title="预检问题"
-        :description="preflightResult.errors.join('；')"
-        type="error"
-        :closable="false"
-        show-icon
-      />
       <el-table v-if="preflightResult" :data="preflightResult.symbols" border class="mt-4">
         <el-table-column align="center" label="序号" type="index" width="80"/>
         <el-table-column prop="symbol" label="交易对" />
