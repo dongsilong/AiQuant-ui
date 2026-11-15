@@ -251,12 +251,13 @@
         <el-descriptions-item label="账户数量">{{ preflightResult.accounts.length }}</el-descriptions-item>
       </el-descriptions>
       <el-alert
-        v-for="error in preflightResult?.errors || []"
-        :key="error"
+        v-if="preflightResult?.errors?.length"
         class="mt-2"
-        :title="error"
+        title="预检问题"
+        :description="preflightResult.errors.join('；')"
         type="error"
         :closable="false"
+        show-icon
       />
       <el-table v-if="preflightResult" :data="preflightResult.symbols" border class="mt-4">
         <el-table-column align="center" label="序号" type="index" width="80"/>
