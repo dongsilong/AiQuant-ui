@@ -188,7 +188,7 @@ export const recheckUnresolvedLiveDispatch = (data: {
   dispatchKey: string;
   clientOrderId: string;
 }): AxiosPromise<boolean> =>
-  request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data });
+  request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data, timeout: 180000 });
 
 
 export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>
