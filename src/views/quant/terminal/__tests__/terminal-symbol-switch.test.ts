@@ -132,7 +132,7 @@ describe('terminal symbol switching', () => {
     const { context, load } = setupMarketLoad(Promise.reject(new Error('K-line request failed')));
     await expect(load('account', 1, new AbortController().signal)).resolves.toBe(true);
     expect(context.klines.value).toEqual([]);
-    expect(context.ElMessage.error).toHaveBeenCalledWith(expect.stringContaining('K-line request failed'));
+    expect(context.ElMessage.error).toHaveBeenCalledWith(expect.stringContaining('BTCUSDT K线加载失败'));
     expect(context.renderChart).toHaveBeenCalledOnce();
   });
 
