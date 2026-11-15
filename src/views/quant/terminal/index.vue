@@ -501,6 +501,7 @@ let ordersRevision = 0;
 let protectionRequest = 0;
 let refreshRequest = 0;
 let accountDataRequest = 0;
+let accountRefreshPending = false;
 let ordersLoaded = false;
 let ordersLoading = false;
 let tradesLoaded = false;
@@ -1815,14 +1816,30 @@ async function loadAccountData(id: string | number, generation: number, signal: 
 }
 
 async function refreshAccountData() {
-  const id = credentialId.value;
-  const signal = dataRequestController?.signal;
-  if (!id || !signal || signal.aborted) return;
-  const generation = dataGeneration;
-  const refreshed = await loadAccountData(id, generation, signal, true);
-  if (!refreshed) return;
-  if (activeTab.value === 'orders') void loadOpenOrders(true);
-  else if (activeTab.value === 'trades') void loadTrades();
+  if (loading.value) {
+    accountRefreshPending = true;
+    return;
+  }
+  const requestId = ++refreshRequest;
+  loading.value = true;
+  try {
+    const id = credentialId.value;
+    const signal = dataRequestController?.signal;
+    if (!id || !signal || signal.aborted) return;
+    const generation = dataGeneration;
+    const refreshed = await loadAccountData(id, generation, signal, true);
+    if (!refreshed) return;
+    if (activeTab.value === 'orders') void loadOpenOrders(true);
+    else if (activeTab.value === 'trades') void loadTrades();
+  } finally {
+    if (requestId === refreshRequest) {
+      loading.value = false;
+      if (accountRefreshPending) {
+        accountRefreshPending = false;
+        void refreshAccountData();
+      }
+    }
+  }
 }
 
 // ==================== 数据加载主流程 ====================
@@ -1916,7 +1933,13 @@ async function refresh() {
     streamStatus.value = 'ERROR';
     ElMessage.error(e?.message || '行情或账户数据加载失败');
   } finally {
-    if (requestId === refreshRequest) loading.value = false;
+    if (requestId === refreshRequest) {
+      loading.value = false;
+      if (accountRefreshPending) {
+        accountRefreshPending = false;
+        void refreshAccountData();
+      }
+    }
   }
 }
 
