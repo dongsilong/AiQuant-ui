@@ -1909,7 +1909,7 @@ async function loadData() {
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
 
   captureChartViewport();
-  if (!id) price.value = undefined;
+  price.value = undefined;
   positions.value = [];
   account.value = undefined;
   positionHistories.value = [];
