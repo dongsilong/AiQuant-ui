@@ -2415,7 +2415,7 @@ onBeforeUnmount(() => {
 }
 .slope-panel {
   box-sizing: border-box;
-  width: 620px;
+  width: auto;
   max-width: 620px;
   min-width: 0;
   max-height: calc(100vh - 32px);
