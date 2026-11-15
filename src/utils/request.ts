@@ -254,8 +254,13 @@ service.interceptors.response.use(
     if (error?.code === 'ERR_CANCELED' || axios.isCancel?.(error)) {
       return Promise.reject(error);
     }
+    const deferredPositionQuery =
+      error?.response?.status === 503 &&
+      String(error?.config?.url || '').includes('/quant/position/');
     const message = (await extractErrorMessage(error)) || errorCode['default'];
-    ElMessage({ message: message, type: 'error', duration: 5 * 1000 });
+    if (!deferredPositionQuery) {
+      ElMessage({ message: message, type: 'error', duration: 5 * 1000 });
+    }
     error.isHandled = true;
     return Promise.reject(error);
   }
