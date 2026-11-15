@@ -88,6 +88,22 @@ function setupSlopePanel() {
   return { context, open: executeFunction('openSlopePanel', context) };
 }
 
+function setupAccountRefresh(loading = false, activeTab = 'positions') {
+  const context = {
+    loading: { value: loading },
+    accountRefreshPending: false,
+    refreshRequest: 0,
+    credentialId: { value: 'account' },
+    dataRequestController: { signal: new AbortController().signal },
+    dataGeneration: 1,
+    loadAccountData: vi.fn(async () => true),
+    activeTab: { value: activeTab },
+    loadOpenOrders: vi.fn(),
+    loadTrades: vi.fn()
+  };
+  return { context, refresh: executeFunction('refreshAccountData', context) };
+}
+
 describe('terminal symbol switching', () => {
   it('does not let an older full-refresh market response overwrite a newer symbol selection', async () => {
     const first = deferred();
@@ -108,6 +124,23 @@ describe('terminal symbol switching', () => {
     expect(context.slopePanelVisible.value).toBe(true);
     expect(context.slopeStrategyId.value).toBeUndefined();
     expect(context.listStrategySymbols).not.toHaveBeenCalled();
+  });
+
+  it('refreshes account data without restarting market data or the account stream', async () => {
+    const { context, refresh } = setupAccountRefresh(false, 'orders');
+    await refresh();
+    expect(context.loadAccountData).toHaveBeenCalledWith('account', 1, context.dataRequestController.signal, true);
+    expect(context.loadOpenOrders).toHaveBeenCalledWith(true);
+    expect(context.loadTrades).not.toHaveBeenCalled();
+    expect(context.loading.value).toBe(false);
+  });
+
+  it('queues an account refresh behind an active full refresh', async () => {
+    const { context, refresh } = setupAccountRefresh(true);
+    await refresh();
+    expect(context.accountRefreshPending).toBe(true);
+    expect(context.loadAccountData).not.toHaveBeenCalled();
+    expect(context.loading.value).toBe(true);
   });
 
   it('queries the same environment as realtime subscriptions', async () => {
