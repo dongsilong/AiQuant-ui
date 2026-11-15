@@ -836,6 +836,8 @@ let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
 let hydrationRunning = false;
 let hydrationPending = false;
 let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
+let hydrationLastStartedAt = 0;
+const HYDRATION_MIN_INTERVAL_MS = 5000;
 let positionDeferredRetryTimer: ReturnType<typeof setTimeout> | undefined;
 let positionDeferredRetryCount = 0;
 
@@ -957,11 +959,14 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
   hydrationPositionRevisionFloor = Math.min(hydrationPositionRevisionFloor, positionRevisionBeforeEvent);
   hydrationPending = true;
   if (hydrationRunning || hydrationTimer) return;
+  const nextAllowedAt = hydrationLastStartedAt + HYDRATION_MIN_INTERVAL_MS;
+  const delay = Math.max(250, nextAllowedAt - Date.now());
   hydrationTimer = setTimeout(async () => {
     hydrationTimer = undefined;
     const id = credentialId.value;
     if (!id) return;
     const generation = dataGeneration;
+    hydrationLastStartedAt = Date.now();
     const revision = accountRevision;
     const snapshotPositionRevision = hydrationPositionRevisionFloor === Number.MAX_SAFE_INTEGER ? positionRevision : hydrationPositionRevisionFloor;
     hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
