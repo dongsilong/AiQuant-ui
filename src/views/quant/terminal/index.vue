@@ -988,7 +988,7 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
       hydrationRunning = false;
       if (hydrationPending) scheduleAccountHydration();
     }
-  }, 250);
+  }, delay);
 }
 
 async function loadTrades() {
@@ -1930,6 +1930,7 @@ async function loadData() {
   hydrationTimer = undefined;
   hydrationPending = false;
   hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
+  hydrationLastStartedAt = 0;
   accountRevision = 0;
   positionRevision = 0;
   positionEventChanges.clear();
