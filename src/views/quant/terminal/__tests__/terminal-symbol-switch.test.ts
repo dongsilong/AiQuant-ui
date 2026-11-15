@@ -15,11 +15,17 @@ function executeFunction(name: string, context: Record<string, any>) {
 }
 
 function setup() {
-  const context = {
+  const context: Record<string, any> = {
     symbol: { value: 'BTCUSDT' },
     interval: { value: '15m' },
     dataGeneration: 1,
     symbolRequest: 0,
+    symbolSwitchController: undefined as AbortController | undefined,
+    chartLoading: { value: false },
+    chartDataSymbol: 'BTCUSDT',
+    chartDataInterval: '15m',
+    viewportSnapshot: undefined as any,
+    initialRightGapApplied: false,
     selectedMarketRunMode: vi.fn(() => 'TESTNET'),
     listRealtimeKlines: vi.fn(async () => ({ data: [{ openTime: 'new' }] })),
     listSymbol: vi.fn(async () => ({ data: { rows: [{ id: '1', symbol: 'BRUSDT' }] } })),
@@ -29,10 +35,12 @@ function setup() {
     price: { value: undefined },
     ElMessage: { error: vi.fn() },
     queryError: (error: any, fallback: string) => error?.message || fallback,
+    cacheQuantSymbolTickSize: vi.fn(),
     renderChart: vi.fn(),
     renderOverlays: vi.fn(),
     connect: vi.fn()
   };
+  context.switchChartContext = executeFunction('switchChartContext', context);
   const select = executeFunction('selectRowSymbol', context);
   return { context, select };
 }
@@ -158,7 +166,7 @@ describe('terminal symbol switching', () => {
   it('queries the same environment as realtime subscriptions', async () => {
     const { context, select } = setup();
     await select({ symbol: 'BRUSDT' });
-    expect(context.listRealtimeKlines).toHaveBeenCalledWith('BRUSDT', '15m', 1000, 'TESTNET');
+    expect(context.listRealtimeKlines).toHaveBeenCalledWith('BRUSDT', '15m', 1000, 'TESTNET', expect.any(AbortSignal));
     expect(context.symbol.value).toBe('BRUSDT');
     expect(context.renderChart).toHaveBeenCalledOnce();
   });
