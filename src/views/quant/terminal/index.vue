@@ -1758,7 +1758,10 @@ async function loadMarketData(id: string | number | undefined, generation: numbe
   if (generation !== dataGeneration || signal.aborted || requestId !== symbolRequest) return false;
 
   if (k.status === 'fulfilled') klines.value = k.value.data || [];
-  else ElMessage.error(`${marketSymbol} K线加载失败，已清理旧图表数据`);
+  else {
+    klines.value = [];
+    ElMessage.error(`${marketSymbol} K线加载失败，已清理旧图表数据`);
+  }
 
   symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
   cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
@@ -1897,9 +1900,7 @@ async function loadData() {
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
 
   captureChartViewport();
-  klines.value = [];
-  symbolInfo.value = undefined;
-  price.value = undefined;
+  if (!id) price.value = undefined;
   positions.value = [];
   account.value = undefined;
   positionHistories.value = [];
