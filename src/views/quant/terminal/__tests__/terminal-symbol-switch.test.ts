@@ -45,7 +45,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setupMarketLoad(pending: Promise<any>) {
+function setupMarketLoad(pending: Promise<any>, initialKlines = [{ openTime: 'old' }]) {
   const context = {
     symbol: { value: 'BTCUSDT' },
     interval: { value: '15m' },
@@ -57,7 +57,7 @@ function setupMarketLoad(pending: Promise<any>) {
     chartLoading: { value: true },
     symbolInfo: { value: undefined as any },
     symbolOptions: { value: [] as any[] },
-    klines: { value: [] as any[] },
+    klines: { value: initialKlines as any[] },
     cacheQuantSymbolTickSize: vi.fn(),
     ensureQuantSymbolTickSizes: vi.fn(async () => undefined),
     renderChart: vi.fn(),
@@ -97,6 +97,8 @@ function setupAccountRefresh(loading = false, activeTab = 'positions') {
     dataRequestController: { signal: new AbortController().signal },
     dataGeneration: 1,
     loadAccountData: vi.fn(async () => true),
+    loadMarketData: vi.fn(),
+    connectAccountStream: vi.fn(),
     activeTab: { value: activeTab },
     loadOpenOrders: vi.fn(),
     loadTrades: vi.fn()
@@ -113,9 +115,17 @@ describe('terminal symbol switching', () => {
     context.symbol.value = 'ETHUSDT';
     first.resolve({ data: [{ openTime: 'stale' }] });
     await expect(pending).resolves.toBe(false);
-    expect(context.klines.value).toEqual([]);
+    expect(context.klines.value).toEqual([{ openTime: 'old' }]);
     expect(context.renderChart).not.toHaveBeenCalled();
     expect(context.chartLoading.value).toBe(true);
+  });
+
+  it('clears old candles when the current market refresh fails', async () => {
+    const { context, load } = setupMarketLoad(Promise.reject(new Error('K-line request failed')));
+    await expect(load('account', 1, new AbortController().signal)).resolves.toBe(true);
+    expect(context.klines.value).toEqual([]);
+    expect(context.ElMessage.error).toHaveBeenCalledWith(expect.stringContaining('K-line request failed'));
+    expect(context.renderChart).toHaveBeenCalledOnce();
   });
 
   it('does not reuse the strategy filter or first strategy as the explicit slope strategy', async () => {
@@ -132,6 +142,8 @@ describe('terminal symbol switching', () => {
     expect(context.loadAccountData).toHaveBeenCalledWith('account', 1, context.dataRequestController.signal, true);
     expect(context.loadOpenOrders).toHaveBeenCalledWith(true);
     expect(context.loadTrades).not.toHaveBeenCalled();
+    expect(context.loadMarketData).not.toHaveBeenCalled();
+    expect(context.connectAccountStream).not.toHaveBeenCalled();
     expect(context.loading.value).toBe(false);
   });
 
