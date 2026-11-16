@@ -68,8 +68,8 @@
             <dict-tag :options="quant_run_mode" :value="scope.row.runMode" />
           </template>
         </el-table-column>
-        <el-table-column align="center" label="记录有效时间" min-width="170" prop="effectiveTime">
-          <template #default="scope">{{ scope.row.effectiveTime || '不限制' }}</template>
+        <el-table-column v-if="isSuperAdmin" align="center" label="记录有效时间" min-width="170" prop="effectiveTime">
+          <template #default="scope">{{ scope.row.runMode === 'TESTNET' ? scope.row.effectiveTime || '不限制' : '-' }}</template>
         </el-table-column>
         <el-table-column align="center" label="连接状态" min-width="120">
           <template #default="scope">
@@ -175,7 +175,7 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="记录有效时间" prop="effectiveTime">
+        <el-form-item v-if="isSuperAdmin && form.runMode === 'TESTNET'" label="记录有效时间" prop="effectiveTime">
           <el-date-picker
             v-model="form.effectiveTime"
             type="datetime"
@@ -209,9 +209,11 @@ import {
 import userApi from '@/api/system/user';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
+import { useUserStore } from '@/store/modules/user';
 
 const { quant_connection_status, quant_run_mode, quant_yes_no } = toRefs<any>(useDict('quant_connection_status', 'quant_run_mode', 'quant_yes_no'));
 
+const isSuperAdmin = computed(() => useUserStore().roles.includes('admin'));
 const loading = ref(false);
 const rows = ref<CredentialVO[]>([]);
 const total = ref(0);
