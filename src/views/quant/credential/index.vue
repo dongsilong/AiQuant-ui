@@ -213,7 +213,7 @@ import { useUserStore } from '@/store/modules/user';
 
 const { quant_connection_status, quant_run_mode, quant_yes_no } = toRefs<any>(useDict('quant_connection_status', 'quant_run_mode', 'quant_yes_no'));
 
-const isSuperAdmin = computed(() => useUserStore().roles.includes('admin'));
+const isSuperAdmin = computed(() => useUserStore().roles.includes('superadmin'));
 const loading = ref(false);
 const rows = ref<CredentialVO[]>([]);
 const total = ref(0);
