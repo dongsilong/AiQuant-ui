@@ -6,6 +6,7 @@ export interface CredentialVO extends BaseEntity {
   maskedApiKey: string;
   signatureType: string;
   runMode: string;
+  effectiveTime?: string | null;
   status: string;
   connectionStatus: string;
   tradePermission?: boolean;
@@ -25,6 +26,7 @@ export interface CredentialForm {
   secretKey?: string;
   signatureType: string;
   runMode: string;
+  effectiveTime?: string | null;
   remark?: string;
 }
 export interface SymbolVO extends BaseEntity {

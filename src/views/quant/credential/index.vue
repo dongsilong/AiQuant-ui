@@ -68,6 +68,9 @@
             <dict-tag :options="quant_run_mode" :value="scope.row.runMode" />
           </template>
         </el-table-column>
+        <el-table-column align="center" label="记录有效时间" min-width="170" prop="effectiveTime">
+          <template #default="scope">{{ scope.row.effectiveTime || '不限制' }}</template>
+        </el-table-column>
         <el-table-column align="center" label="连接状态" min-width="120">
           <template #default="scope">
             <dict-tag :options="quant_connection_status" :value="scope.row.connectionStatus" />
@@ -172,6 +175,17 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="记录有效时间" prop="effectiveTime">
+          <el-date-picker
+            v-model="form.effectiveTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            placeholder="选择记录起始时间"
+            clearable
+          />
+          <span class="form-help-text">为空时不限制交易记录、成交记录和订单记录的查询时间。</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -211,7 +225,8 @@ const form = reactive<CredentialForm>({
   apiKey: '',
   secretKey: '',
   signatureType: 'HMAC',
-  runMode: 'PAPER'
+  runMode: 'PAPER',
+  effectiveTime: null
 });
 const rules = computed(() => ({
   accountName: [{ required: true, message: '请输入账户名称', trigger: 'blur' }],
@@ -245,7 +260,8 @@ const resetForm = () => {
     apiKey: '',
     secretKey: '',
     signatureType: 'HMAC',
-    runMode: 'PAPER'
+    runMode: 'PAPER',
+    effectiveTime: null
   });
   nextTick(() => formRef.value?.clearValidate());
 };
