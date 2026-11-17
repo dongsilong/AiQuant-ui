@@ -1,4 +1,5 @@
 import type {
+  KlineSnapshot,
   OrderSnapshot,
   PositionSnapshot,
   ProtectionOrderSnapshot,
@@ -51,6 +52,17 @@ function numeric(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+export function calculateOneMinuteMa(klines: ReadonlyArray<KlineSnapshot>): { ma5: number; ma7: number; direction: 'UP' | 'DOWN' | 'FLAT' } | undefined {
+  const closedKlines = klines.filter(kline => kline.closed).slice(-7);
+  if (closedKlines.length !== 7) return undefined;
+  const closes = closedKlines.map(kline => numeric(kline.close));
+  if (closes.some(close => close === undefined || close <= 0)) return undefined;
+  const values = closes as number[];
+  const ma5 = values.slice(-5).reduce((sum, close) => sum + close, 0) / 5;
+  const ma7 = values.reduce((sum, close) => sum + close, 0) / 7;
+  return { ma5, ma7, direction: ma5 > ma7 ? 'UP' : ma5 < ma7 ? 'DOWN' : 'FLAT' };
 }
 
 export function calculateRealtimeSlope(
