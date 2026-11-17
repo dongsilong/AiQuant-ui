@@ -91,9 +91,10 @@
                 <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
                 <dd>{{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}</dd>
-                <dt>当天总收益率</dt>
+                <dt>当日收益率（自基准快照）</dt>
                 <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
               </dl>
+              <small v-if="dailyBaselineObservedAt" class="fund-baseline">基准快照时间：{{ dailyBaselineObservedAt }}</small>
               <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，显示最近一次有效估值</small>-->
             </div>
             <el-empty v-else description="暂无账户数据" />
@@ -541,11 +542,9 @@ let viewportSnapshot: ViewportSnapshot = { isRightEdge: true };
 const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
 function scheduleDailyBaselineRetry(id: string | number, day: string, generation: number) {
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
-  const remaining = Date.parse(`${day}T00:05:00+08:00`) - now.value;
-  if (remaining <= 0) return;
   dailyBaselineRefreshTimer = setTimeout(() => {
     void refreshDailyBaseline(id, day, generation);
-  }, Math.min(30000, remaining));
+  }, 30000);
 }
 
 async function refreshDailyBaseline(id: string | number, day: string, generation: number) {
@@ -631,6 +630,22 @@ const dailyReturnRate = computed(() => {
   const baseline = Number(dailyAccountBaseline.value?.equity);
   if (!Number.isFinite(baseline) || baseline <= 0 || currentAccountEquity.value === undefined) return undefined;
   return ((currentAccountEquity.value - baseline) / baseline) * 100;
+});
+const dailyBaselineObservedAt = computed(() => {
+  const observedAt = dailyAccountBaseline.value?.observedAt;
+  if (!observedAt) return undefined;
+  const timestamp = Date.parse(observedAt);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(timestamp);
 });
 const visibleInstances = computed(() =>
   instances.value.filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value))
@@ -2556,6 +2571,12 @@ onBeforeUnmount(() => {
   display: block;
   margin-top: 8px;
   color: var(--el-color-warning);
+  font-size: 12px;
+}
+.fund-baseline {
+  display: block;
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .fund dl {
