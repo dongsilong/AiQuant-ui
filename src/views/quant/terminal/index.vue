@@ -1699,7 +1699,7 @@ function connectSlopeStream() {
       if (event.type === 'CONNECTING' && !event.symbol) return;
       const key = `${event.symbol}:${event.interval}`;
       if (event.interval === '1m' && event.symbol && slopeMaKlines.has(event.symbol)) {
-        if (['CONNECTING', 'DISCONNECTED', 'ERROR'].includes(event.type)) {
+        if (['DISCONNECTED', 'ERROR'].includes(event.type)) {
           slopeMaKlines.set(event.symbol, []);
           slopeRows.value.filter(item => item.symbol === event.symbol).forEach(item => {
             item.ma5 = undefined;
