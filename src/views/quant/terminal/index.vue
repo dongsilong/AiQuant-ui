@@ -1799,7 +1799,7 @@ function slopeMaTooltip(row: SlopeRow): string {
   return `1m MA5：${formatQuantPrice(row.symbol, row.ma5)}；MA7：${formatQuantPrice(row.symbol, row.ma7)}`;
 }
 
-function slopeRowClassName({ row }: { row: SlopeRow }): string {
+function slopeRowClassName({ row }: { row: Partial<SlopeRow> }): string {
   if (row.status !== 'CONNECTED' || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
   const degrees = Math.abs(row.degrees!);
   if (degrees > row.entryAngleDegrees) return 'slope-row-danger';
