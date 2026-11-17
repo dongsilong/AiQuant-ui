@@ -90,9 +90,13 @@
                 <dt>可用余额</dt>
                 <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
-                <dd>{{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}</dd>
+                <dd :class="{ 'fund-positive': currentUnrealizedPnl !== undefined && currentUnrealizedPnl > 0, 'fund-negative': currentUnrealizedPnl !== undefined && currentUnrealizedPnl < 0 }">
+                  {{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}
+                </dd>
                 <dt>当日收益率（自基准快照）</dt>
-                <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
+                <dd :class="{ 'fund-positive': dailyReturnRate !== undefined && dailyReturnRate > 0, 'fund-negative': dailyReturnRate !== undefined && dailyReturnRate < 0 }">
+                  {{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}
+                </dd>
               </dl>
               <small v-if="dailyBaselineObservedAt" class="fund-baseline">基准快照时间：{{ dailyBaselineObservedAt }}</small>
               <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，显示最近一次有效估值</small>-->
@@ -2581,16 +2585,26 @@ onBeforeUnmount(() => {
 }
 .fund dl {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+  row-gap: 10px;
   margin: 18px 0 0;
 }
 .fund dt {
+  min-width: 0;
   color: var(--el-text-color-secondary);
 }
 .fund dd {
-  text-align: right;
   margin: 0;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fund-positive {
+  color: var(--el-color-success);
+}
+.fund-negative {
+  color: var(--el-color-danger);
 }
 .strategy-actions {
   display: flex;
