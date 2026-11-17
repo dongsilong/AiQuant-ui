@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
   calculateRealtimeSlope,
+  calculateOneMinuteMa,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -46,6 +47,38 @@ const fill = {
   n: '0.01',
   T: 1000
 };
+describe('one-minute MA direction', () => {
+  const candles = (closes: number[]) => closes.map((close, index) => ({
+    openTime: new Date(Date.UTC(2026, 10, 17, 0, index)).toISOString(),
+    closeTime: new Date(Date.UTC(2026, 10, 17, 0, index, 59)).toISOString(),
+    open: String(close),
+    high: String(close),
+    low: String(close),
+    close: String(close),
+    volume: '1',
+    closed: true
+  }));
+
+  it('returns UP when MA5 is greater than MA7', () => {
+    expect(calculateOneMinuteMa(candles([1, 1, 1, 1, 1, 3, 3]))?.direction).toBe('UP');
+  });
+
+  it('returns DOWN when MA5 is less than MA7', () => {
+    expect(calculateOneMinuteMa(candles([3, 3, 3, 3, 3, 1, 1]))?.direction).toBe('DOWN');
+  });
+
+  it('returns FLAT for equal moving averages and waits for seven closed candles', () => {
+    expect(calculateOneMinuteMa(candles([2, 2, 2, 2, 2, 2, 2]))?.direction).toBe('FLAT');
+    expect(calculateOneMinuteMa(candles([2, 2, 2, 2, 2, 2])).direction).toBeUndefined();
+  });
+
+  it('ignores an unclosed candle and uses the latest seven closed candles', () => {
+    const history = candles([1, 1, 1, 1, 1, 3, 3]);
+    history.push({ ...candles([100])[0], closed: false });
+    expect(calculateOneMinuteMa(history)?.direction).toBe('UP');
+  });
+});
+
 describe('realtime slope display calculation', () => {
   it('calculates the same percent, angle and threshold decision without account state', () => {
     expect(calculateRealtimeSlope('110', '100', 60)).toEqual({ slopePercent: 10, degrees: 84.29, entryApproved: true });
