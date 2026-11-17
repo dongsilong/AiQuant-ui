@@ -1682,10 +1682,10 @@ function connectSlopeStream() {
   }
   const symbols = [...new Set(slopeRows.value.map(row => row.symbol))];
   symbols.forEach(symbol => slopeMaKlines.set(symbol, []));
-  const subscriptions = [...new Map(
-    [...slopeRows.value.map(({ symbol, interval }) => ({ symbol, interval })), ...symbols.map(symbol => ({ symbol, interval: '1m' }))]
-      .map(subscription => [`${subscription.symbol}:${subscription.interval}`, subscription])
-  ).values()];
+  const subscriptionMap = new Map<string, { symbol: string; interval: string }>();
+  slopeRows.value.forEach(({ symbol, interval }) => subscriptionMap.set(`${symbol}:${interval}`, { symbol, interval }));
+  symbols.forEach(symbol => subscriptionMap.set(`${symbol}:1m`, { symbol, interval: '1m' }));
+  const subscriptions = [...subscriptionMap.values()];
   const scheduleReconnect = () => {
     if (!slopePanelVisible.value || slopeStreamRetry) return;
     slopeStreamRetry = setTimeout(() => {
