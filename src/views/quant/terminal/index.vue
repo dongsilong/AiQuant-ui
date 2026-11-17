@@ -914,6 +914,8 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
     const newHighestStep = Number(item.highestStep);
     const oldConfirmedStep = Number(old.confirmedProtectionStep);
     const newConfirmedStep = Number(item.confirmedProtectionStep);
+    const oldLadderPeak = old.ladderMaximumReturnRate == null || old.ladderMaximumReturnRate === '' ? undefined : Number(old.ladderMaximumReturnRate);
+    const newLadderPeak = item.ladderMaximumReturnRate == null || item.ladderMaximumReturnRate === '' ? undefined : Number(item.ladderMaximumReturnRate);
     return {
       ...item,
       [field]: Number.isFinite(oldPeak) && Number.isFinite(newPeak)
@@ -922,6 +924,9 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
       maximumReturnRate: Number.isFinite(oldReturnPeak) && Number.isFinite(newReturnPeak)
         ? Math.max(oldReturnPeak, newReturnPeak)
         : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate,
+      ladderMaximumReturnRate: Number.isFinite(oldLadderPeak) && Number.isFinite(newLadderPeak)
+        ? Math.max(oldLadderPeak, newLadderPeak)
+        : Number.isFinite(oldLadderPeak) ? old.ladderMaximumReturnRate : item.ladderMaximumReturnRate,
       highestStep: Number.isFinite(oldHighestStep) && Number.isFinite(newHighestStep)
         ? Math.max(oldHighestStep, newHighestStep)
         : Number.isFinite(oldHighestStep) ? old.highestStep : item.highestStep,
@@ -972,6 +977,13 @@ function applyPositionPerformanceEvent(event: any) {
         ? Math.max(oldStep, incomingStep)
         : Number.isFinite(incomingStep) ? incomingStep : oldStep;
     }
+  }
+  const oldLadderPeak = old?.ladderMaximumReturnRate == null || old.ladderMaximumReturnRate === '' ? undefined : Number(old.ladderMaximumReturnRate);
+  const eventLadderPeak = event.ladderMaximumReturnRate == null || event.ladderMaximumReturnRate === '' ? undefined : Number(event.ladderMaximumReturnRate);
+  if (Number.isFinite(oldLadderPeak) || Number.isFinite(eventLadderPeak)) {
+    row.ladderMaximumReturnRate = Number.isFinite(oldLadderPeak) && Number.isFinite(eventLadderPeak)
+      ? Math.max(oldLadderPeak, eventLadderPeak)
+      : Number.isFinite(eventLadderPeak) ? eventLadderPeak : oldLadderPeak;
   }
   row.frozenLeverage = event.frozenLeverage ?? old?.frozenLeverage;
   if (index >= 0) positionHistories.value.splice(index, 1, row);
