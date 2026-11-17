@@ -1,7 +1,9 @@
 <template>
   <div class="p-2 app-container">
-    <el-card shadow="hover" class="mb-3">
-      <template #header><h3>开平仓日志</h3></template>
+    <el-card class="search-panel" shadow="hover">
+      <template #header>
+        <div class="panel-heading"><h3>开平仓日志</h3></div>
+      </template>
       <el-form :inline="true" @submit.prevent="search">
         <el-form-item label="交易账户">
           <el-select

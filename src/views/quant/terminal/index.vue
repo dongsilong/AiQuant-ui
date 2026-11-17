@@ -93,12 +93,12 @@
                 <dd :class="{ 'fund-positive': currentUnrealizedPnl !== undefined && currentUnrealizedPnl > 0, 'fund-negative': currentUnrealizedPnl !== undefined && currentUnrealizedPnl < 0 }">
                   {{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}
                 </dd>
-                <dt>当日收益率（自基准快照）</dt>
+                <dt>当日收益率<small v-if="dailyBaselineObservedAt" class="fund-baseline">({{ dailyBaselineObservedAt }})</small></dt>
                 <dd :class="{ 'fund-positive': dailyReturnRate !== undefined && dailyReturnRate > 0, 'fund-negative': dailyReturnRate !== undefined && dailyReturnRate < 0 }">
                   {{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}
                 </dd>
               </dl>
-              <small v-if="dailyBaselineObservedAt" class="fund-baseline">基准快照时间：{{ dailyBaselineObservedAt }}</small>
+
               <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，显示最近一次有效估值</small>-->
             </div>
             <el-empty v-else description="暂无账户数据" />
@@ -202,14 +202,14 @@
                   {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
                 </template>
               </el-table-column>
-              <el-table-column label="标记价最大回报率" min-width="120">
+              <el-table-column label="标记价最大回报率" min-width="130">
                 <template #default="scope">
                   {{
                     scope.row.maximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.maximumReturnRate, 2)}%`
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯最高回报率（合约价）" min-width="170">
+              <el-table-column label="阶梯最高回报率（合约价）" min-width="180">
                 <template #default="scope">
                   {{
                     scope.row.ladderMaximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.ladderMaximumReturnRate, 2)}%`
@@ -2628,7 +2628,7 @@ onBeforeUnmount(() => {
   //flex: 1;
   min-height: 0;
   overflow: hidden;
-  height: 390px;
+  height: 420px;
 }
 .strategy-side-card :deep(.el-card__body) {
   min-height: 0;
@@ -2649,7 +2649,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 .fund-baseline {
-  display: block;
   margin-top: 6px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
