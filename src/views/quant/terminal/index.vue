@@ -1702,6 +1702,9 @@ function connectSlopeStream() {
         if (['CONNECTING', 'DISCONNECTED', 'ERROR'].includes(event.type)) {
           slopeMaKlines.set(event.symbol, []);
           slopeRows.value.filter(item => item.symbol === event.symbol).forEach(item => {
+            item.ma5 = undefined;
+            item.ma7 = undefined;
+            item.maTrend = undefined;
             const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
             if (itemState) scheduleSlopeRowUpdate(item, itemState);
           });
