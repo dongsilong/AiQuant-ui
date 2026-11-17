@@ -69,12 +69,12 @@ describe('one-minute MA direction', () => {
 
   it('returns FLAT for equal moving averages and waits for seven closed candles', () => {
     expect(calculateOneMinuteMa(candles([2, 2, 2, 2, 2, 2, 2]))?.direction).toBe('FLAT');
-    expect(calculateOneMinuteMa(candles([2, 2, 2, 2, 2, 2])).direction).toBeUndefined();
+    expect(calculateOneMinuteMa(candles([2, 2, 2, 2, 2, 2]))?.direction).toBeUndefined();
   });
 
   it('ignores an unclosed candle and uses the latest seven closed candles', () => {
     const history = candles([1, 1, 1, 1, 1, 3, 3]);
-    history.push({ ...candles([100])[0], closed: false });
+    history.push({ ...history[0]!, close: '100', closed: false });
     expect(calculateOneMinuteMa(history)?.direction).toBe('UP');
   });
 });
