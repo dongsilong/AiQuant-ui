@@ -103,7 +103,7 @@
             </div>
             <el-empty v-else description="暂无账户数据" />
           </el-card>
-          <el-card shadow="never" class="side-card strategy-side-card">
+          <el-card shadow="never" class="side-card strategy-side-card" v-hasPermi="['quant:terminal:slope']">
             <template #header>
               <div class="section-head">
                 <b>策略实例</b>
@@ -179,7 +179,7 @@
               <el-table-column type="index" label="序号" align="center" width="60">
                 <template #default="scope">{{ scope.$index + 1 }}</template>
               </el-table-column>
-              <el-table-column prop="symbol" label="交易对" min-width="100" />
+              <el-table-column prop="symbol" label="交易对" min-width="120" />
               <el-table-column label="方向" width="80" align="center">
                 <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
               </el-table-column>
@@ -226,7 +226,7 @@
                   {{ scope.row.confirmedProtectionStep === undefined ? '-' : scope.row.confirmedProtectionStep > 0 ? `${scope.row.confirmedProtectionStep}阶` : '未确认' }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯保护触发价" min-width="130">
+              <el-table-column label="阶梯保护触发价" min-width="130" show-overflow-tooltip>
                 <template #default="scope">
                   {{ stepProtectionDisplay(scope.row as PositionSnapshot) }}
                 </template>
@@ -265,9 +265,9 @@
               </el-table-column>
               <el-table-column prop="symbol" label="交易对" />
               <el-table-column prop="side" label="方向" />
-              <el-table-column prop="type" label="类型" />
+              <el-table-column prop="type" label="类型" min-width="180" />
               <el-table-column prop="source" label="来源" />
-              <el-table-column label="价格 / 触发价">
+              <el-table-column label="价格/触发价" min-width="100">
                 <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
               </el-table-column>
               <el-table-column label="数量">
@@ -292,18 +292,18 @@
               <el-table-column type="index" label="序号" align="center" width="80">
                 <template #default="scope">{{ (tradeQuery.pageNum - 1) * tradeQuery.pageSize + scope.$index + 1 }}</template>
               </el-table-column>
-              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="symbol" label="交易对" min-width="100" />
               <el-table-column prop="side" label="方向" />
               <el-table-column label="数量">
                 <template #default="scope">{{ format(scope.row.quantity) }}</template>
               </el-table-column>
-              <el-table-column label="价格">
+              <el-table-column label="价格" min-width="100">
                 <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
               </el-table-column>
-              <el-table-column label="已实现盈亏">
+              <el-table-column label="已实现盈亏" min-width="120">
                 <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
               </el-table-column>
-              <el-table-column prop="tradeTime" label="成交时间" />
+              <el-table-column prop="tradeTime" label="成交时间" min-width="160" />
             </el-table>
             <pagination
               v-show="tradeTotal > 0"

@@ -82,7 +82,7 @@
         </el-table-column>
         <el-table-column prop="credentialId" label="账户 ID" min-width="175" />
         <el-table-column prop="symbol" label="交易对" min-width="115" />
-        <el-table-column prop="operation" label="操作" min-width="130" />
+        <el-table-column prop="operation" label="操作" min-width="150" />
         <el-table-column prop="status" label="票据状态" min-width="130">
           <template #default="scope">
             <el-tag type="warning">{{ scope.row.status || '票据缺失' }}</el-tag>
