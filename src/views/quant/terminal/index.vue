@@ -425,7 +425,7 @@ import {
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
   positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl,
   terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
-  calculateRealtimeSlope, calculateOneMinuteMa, slopeStreamQuery
+  calculateRealtimeSlope, slopeStreamQuery
 } from './terminal-data';
 
 const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(
@@ -504,7 +504,6 @@ let symbolSearchController: AbortController | undefined;
 let symbolSwitchController: AbortController | undefined;
 let slopeStreams: SseConnection[] = [];
 const slopeStreamStates = new Map<string, SlopeStreamState>();
-const slopeMaKlines = new Map<string, KlineSnapshot[]>();
 const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
 let slopeRenderFrame: number | undefined;
 let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
@@ -1632,7 +1631,6 @@ function closeSlopeStream() {
   slopeStreams.forEach(connection => connection.close());
   slopeStreams = [];
   slopeStreamStates.clear();
-  slopeMaKlines.clear();
   pendingSlopeRows.clear();
   if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
   slopeRenderFrame = undefined;
@@ -1651,10 +1649,6 @@ function flushSlopeRows() {
     const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
     row.slopePercent = slope?.slopePercent;
     row.degrees = slope?.degrees;
-    const ma = calculateOneMinuteMa(slopeMaKlines.get(row.symbol) ?? []);
-    row.ma5 = ma?.ma5;
-    row.ma7 = ma?.ma7;
-    row.maTrend = ma?.direction;
     if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
   });
   pendingSlopeRows.clear();
@@ -1693,7 +1687,6 @@ function connectSlopeStream() {
     row.maTrend = undefined;
   }
   const symbols = [...new Set(slopeRows.value.map(row => row.symbol))];
-  symbols.forEach(symbol => slopeMaKlines.set(symbol, []));
   const subscriptionMap = new Map<string, { symbol: string; interval: string }>();
   slopeRows.value.forEach(({ symbol, interval }) => subscriptionMap.set(`${symbol}:${interval}`, { symbol, interval }));
   symbols.forEach(symbol => subscriptionMap.set(`${symbol}:1m`, { symbol, interval: '1m' }));
@@ -1710,29 +1703,25 @@ function connectSlopeStream() {
       const event = JSON.parse(data);
       if (event.type === 'CONNECTING' && !event.symbol) return;
       const key = `${event.symbol}:${event.interval}`;
-      if (event.interval === '1m' && event.symbol && slopeMaKlines.has(event.symbol)) {
-        if (['DISCONNECTED', 'ERROR'].includes(event.type)) {
-          slopeMaKlines.set(event.symbol, []);
-          slopeRows.value.filter(item => item.symbol === event.symbol).forEach(item => {
+      if (event.interval === '1m' && event.symbol) {
+        const symbolRows = slopeRows.value.filter(item => item.symbol === event.symbol);
+        if (['CONNECTING', 'DISCONNECTED', 'ERROR'].includes(event.type)) {
+          symbolRows.forEach(item => {
             item.ma5 = undefined;
             item.ma7 = undefined;
             item.maTrend = undefined;
-            const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
-            if (itemState) scheduleSlopeRowUpdate(item, itemState);
           });
-        } else if (event.type === 'KLINE' && event.kline && (event.kline as KlineSnapshot).closed) {
-          const klines = slopeMaKlines.get(event.symbol)!;
-          const kline = event.kline as KlineSnapshot;
-          const index = klines.findIndex(item => item.openTime === kline.openTime);
-          if (index < 0) klines.push(kline);
-          else klines[index] = kline;
-          klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-          slopeMaKlines.set(event.symbol, klines.slice(-7));
-          slopeRows.value.filter(item => item.symbol === event.symbol).forEach(item => {
-            const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
-            if (itemState) scheduleSlopeRowUpdate(item, itemState);
+        } else if (['KLINE', 'MARK'].includes(event.type) && !event.replay) {
+          symbolRows.forEach(item => {
+            item.ma5 = event.maReady ? Number(event.ma5) : undefined;
+            item.ma7 = event.maReady ? Number(event.ma7) : undefined;
+            item.maTrend = event.maReady ? event.maTrend : undefined;
           });
         }
+        symbolRows.forEach(item => {
+          const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
+          if (itemState) scheduleSlopeRowUpdate(item, itemState);
+        });
       }
       const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
       const state = slopeStreamStates.get(key);
@@ -1762,7 +1751,6 @@ function connectSlopeStream() {
       }
       scheduleSlopeRowUpdate(row, state);
     } catch {
-      slopeMaKlines.clear();
       slopeRows.value.forEach(row => {
         const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
         if (state) clearSlopeRowValues(row, state, 'ERROR');
@@ -1774,7 +1762,6 @@ function connectSlopeStream() {
     }
   };
   const onError = () => {
-    slopeMaKlines.clear();
     slopeRows.value.forEach(row => {
       const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
       if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
