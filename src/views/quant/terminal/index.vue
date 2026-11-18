@@ -362,7 +362,7 @@
           <el-table-column label="角度" min-width="85" align="center">
             <template #default="scope">
               <span>{{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}</span>
-              <el-tooltip :content="slopeMaTooltip(scope.row)" placement="top">
+              <el-tooltip :content="slopeMaTooltip(scope.row as SlopeRow)" placement="top">
                 <span
                   class="slope-ma-direction"
                   :class="scope.row.maTrend === 'UP' ? 'slope-ma-up' : scope.row.maTrend === 'DOWN' ? 'slope-ma-down' : 'slope-ma-flat'"
