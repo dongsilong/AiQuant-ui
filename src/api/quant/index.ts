@@ -30,6 +30,7 @@ import type {
   StrategyUserBinding,
   WebSocketTransportInfo,
   UnresolvedLiveDispatch,
+  DispatchRecheckResult,
   StrategyFillAuditSummary,
 } from './types';
 
@@ -187,7 +188,7 @@ export const recheckUnresolvedLiveDispatch = (data: {
   symbol: string;
   dispatchKey: string;
   clientOrderId: string;
-}): AxiosPromise<boolean> =>
+}): AxiosPromise<DispatchRecheckResult> =>
   request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data, timeout: 180000 });
 
 
