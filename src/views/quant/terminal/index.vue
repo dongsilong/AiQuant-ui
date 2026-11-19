@@ -1685,65 +1685,66 @@ function connectSlopeStream() {
 
   const onMessage = (data: string) => {
     if (generation !== slopeStreamGeneration) return;
+    try {
       const incoming = JSON.parse(data);
       const events = incoming.type === 'KLINE_SNAPSHOT' && Array.isArray(incoming.klines)
         ? incoming.klines.map((kline: KlineSnapshot) => ({ ...incoming, type: 'KLINE', kline }))
         : [incoming];
       events.forEach(event => {
-      if (event.type === 'CONNECTING' && !event.symbol) return;
-      const key = `${event.symbol}:${event.interval}`;
-      if (event.interval === '1m' && event.symbol) {
-        const symbolRows = slopeRows.value.filter(item => item.symbol === event.symbol);
-        if (event.type === 'KLINE' && event.kline) {
-          const klines = slopeOneMinuteKlines.get(event.symbol) || [];
-          const kline = event.kline as KlineSnapshot;
-          const index = klines.findIndex(item => item.openTime === kline.openTime);
-          if (index < 0) klines.push(kline);
-          else klines[index] = kline;
-          klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-          const retained = klines.slice(-16);
-          slopeOneMinuteKlines.set(event.symbol, retained);
-          const ma = calculateOneMinuteMa(retained);
-          if (ma) {
-            symbolRows.forEach(item => {
-              item.ma5 = ma.ma5;
-              item.ma7 = ma.ma7;
-              item.maTrend = ma.direction;
-            });
+        if (event.type === 'CONNECTING' && !event.symbol) return;
+        const key = `${event.symbol}:${event.interval}`;
+        if (event.interval === '1m' && event.symbol) {
+          const symbolRows = slopeRows.value.filter(item => item.symbol === event.symbol);
+          if (event.type === 'KLINE' && event.kline) {
+            const klines = slopeOneMinuteKlines.get(event.symbol) || [];
+            const kline = event.kline as KlineSnapshot;
+            const index = klines.findIndex(item => item.openTime === kline.openTime);
+            if (index < 0) klines.push(kline);
+            else klines[index] = kline;
+            klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
+            const retained = klines.slice(-16);
+            slopeOneMinuteKlines.set(event.symbol, retained);
+            const ma = calculateOneMinuteMa(retained);
+            if (ma) {
+              symbolRows.forEach(item => {
+                item.ma5 = ma.ma5;
+                item.ma7 = ma.ma7;
+                item.maTrend = ma.direction;
+              });
+            }
           }
+          symbolRows.forEach(item => {
+            const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
+            if (itemState) scheduleSlopeRowUpdate(item, itemState);
+          });
         }
-        symbolRows.forEach(item => {
-          const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
-          if (itemState) scheduleSlopeRowUpdate(item, itemState);
-        });
-      }
-      const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
-      const state = slopeStreamStates.get(key);
-      if (!row || !state) return;
-      if (event.type === 'CONNECTING') {
-        row.status = 'CONNECTING';
-        return;
-      }
-      if (event.type === 'CONNECTED') {
-        state.handshakeComplete = true;
+        const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
+        const state = slopeStreamStates.get(key);
+        if (!row || !state) return;
+        if (event.type === 'CONNECTING') {
+          row.status = 'CONNECTING';
+          return;
+        }
+        if (event.type === 'CONNECTED') {
+          state.handshakeComplete = true;
+          scheduleSlopeRowUpdate(row, state);
+          return;
+        }
+        if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
+          row.status = event.type;
+          return;
+        }
+        if (event.type === 'TRADE' && Number(event.price) > 0) {
+          state.latestTradePrice = Number(event.price);
+        } else if (event.type === 'KLINE' && event.kline) {
+          const kline = event.kline as KlineSnapshot;
+          const index = state.klines.findIndex(item => item.openTime === kline.openTime);
+          if (index < 0) state.klines.push(kline);
+          else state.klines[index] = kline;
+          state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
+          state.klines = state.klines.slice(-4);
+        }
         scheduleSlopeRowUpdate(row, state);
-        return;
-      }
-      if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
-        row.status = event.type;
-        return;
-      }
-      if (event.type === 'TRADE' && Number(event.price) > 0) {
-        state.latestTradePrice = Number(event.price);
-      } else if (event.type === 'KLINE' && event.kline) {
-        const kline = event.kline as KlineSnapshot;
-        const index = state.klines.findIndex(item => item.openTime === kline.openTime);
-        if (index < 0) state.klines.push(kline);
-        else state.klines[index] = kline;
-        state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-        state.klines = state.klines.slice(-4);
-      }
-      scheduleSlopeRowUpdate(row, state);
       });
     } catch {
       // 忽略单条无法解析的消息，避免影响同一连接中的其他交易对。
