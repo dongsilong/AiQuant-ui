@@ -1778,7 +1778,7 @@ function connectSlopeStream() {
 async function hydrateSlopeRows(rows: SlopeRow[], signal: AbortSignal, generation: number) {
   const subscriptions = new Map<string, { symbol: string; interval: string; limit: number }>();
   rows.forEach(row => {
-    subscriptions.set(`${row.symbol}: ${row.interval}`, { symbol: row.symbol, interval: row.interval, limit: 2 });
+    subscriptions.set(`${row.symbol}:${row.interval}`, { symbol: row.symbol, interval: row.interval, limit: 2 });
     subscriptions.set(`${row.symbol}:1m`, { symbol: row.symbol, interval: '1m', limit: 8 });
   });
   const results = await Promise.all(
@@ -1802,7 +1802,7 @@ async function hydrateSlopeRows(rows: SlopeRow[], signal: AbortSignal, generatio
     if (!klines.length) continue;
     if (subscription.interval === '1m') {
       const previous = slopeOneMinuteKlines.get(subscription.symbol) || [];
-      const merged = new Map(klines.map(kline => [kline.openTime, kline]));
+      const merged = new Map<string, KlineSnapshot>(klines.map(kline => [kline.openTime, kline] as const));
       previous.forEach(kline => merged.set(kline.openTime, kline));
       const retained = [...merged.values()]
         .sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime))
@@ -1821,7 +1821,7 @@ async function hydrateSlopeRows(rows: SlopeRow[], signal: AbortSignal, generatio
       const key = `${row.symbol}:${row.interval}`;
       const state = slopeStreamStates.get(key);
       if (!state) return;
-      const merged = new Map(klines.map(kline => [kline.openTime, kline]));
+      const merged = new Map<string, KlineSnapshot>(klines.map(kline => [kline.openTime, kline] as const));
       state.klines.forEach(kline => merged.set(kline.openTime, kline));
       state.klines = [...merged.values()]
         .sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime))
