@@ -507,7 +507,8 @@ const slopeStreamStates = new Map<string, SlopeStreamState>();
 const slopeOneMinuteKlines = new Map<string, KlineSnapshot[]>();
 const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
 let slopeRenderFrame: number | undefined;
-let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
+let slopeStreamGeneration = 0;
+const slopeStreamRetries = new Map<number, ReturnType<typeof setTimeout>>();
 let slopeLoadController: AbortController | undefined;
 
 let dataGeneration = 0;
@@ -1349,7 +1350,8 @@ function handleSseUnauthorized() {
   removeToken();
   if (retryTimer) clearTimeout(retryTimer);
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
+  slopeStreamRetries.forEach(timer => clearTimeout(timer));
+  slopeStreamRetries.clear();
   ElMessage.error('登录状态已失效，请重新登录');
 }
 
@@ -1629,8 +1631,11 @@ function connectAccountStream() {
 }
 // ==================== 实时斜率面板逻辑 ====================
 function closeSlopeStream(resetState = true) {
+  slopeStreamGeneration++;
   slopeStreams.forEach(connection => connection.close());
   slopeStreams = [];
+  slopeStreamRetries.forEach(timer => clearTimeout(timer));
+  slopeStreamRetries.clear();
   if (resetState) {
     slopeStreamStates.clear();
     slopeOneMinuteKlines.clear();
@@ -1638,8 +1643,6 @@ function closeSlopeStream(resetState = true) {
   pendingSlopeRows.clear();
   if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
   slopeRenderFrame = undefined;
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
-  slopeStreamRetry = undefined;
 }
 
 function flushSlopeRows() {
@@ -1666,6 +1669,7 @@ function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
 function connectSlopeStream() {
   closeSlopeStream(false);
   if (!slopePanelVisible.value || !slopeStrategyId.value || !slopeRows.value.length) return;
+  const generation = slopeStreamGeneration;
   for (const row of slopeRows.value) {
     row.status = 'CONNECTING';
     const key = `${row.symbol}:${row.interval}`;
@@ -1678,13 +1682,7 @@ function connectSlopeStream() {
   slopeRows.value.forEach(({ symbol, interval }) => subscriptionMap.set(`${symbol}:${interval}`, { symbol, interval }));
   symbols.forEach(symbol => subscriptionMap.set(`${symbol}:1m`, { symbol, interval: '1m' }));
   const subscriptions = [...subscriptionMap.values()];
-  const scheduleReconnect = () => {
-    if (!slopePanelVisible.value || slopeStreamRetry) return;
-    slopeStreamRetry = setTimeout(() => {
-      slopeStreamRetry = undefined;
-      connectSlopeStream();
-    }, 3000);
-  };
+
   const onMessage = (data: string) => {
     try {
       const event = JSON.parse(data);
@@ -1743,25 +1741,38 @@ function connectSlopeStream() {
       }
       scheduleSlopeRowUpdate(row, state);
     } catch {
-      // 单条异常消息不能清空其他交易对已确认的数据；由后续事件或重连恢复。
-      slopeRows.value.forEach(row => { row.status = 'DISCONNECTED'; });
-      scheduleReconnect();
+      // 忽略单条无法解析的消息，避免影响同一连接中的其他交易对。
     }
   };
-  const onError = () => {
-    slopeRows.value.forEach(row => {
-      row.status = 'DISCONNECTED';
-    });
-    slopeStreams.forEach(connection => connection.close());
-    slopeStreams = [];
-    scheduleReconnect();
-  };
-  for (const batch of chunkSlopeSubscriptions(subscriptions)) {
+  const startBatch = (batch: Array<{ symbol: string; interval: string }>, batchIndex: number) => {
+    if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
     const query = slopeStreamQuery(batch, selectedMarketRunMode());
-    slopeStreams.push(
-      openSse(`${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`, 'quant.market', onMessage, onError, handleSseUnauthorized)
+    let connection: SseConnection;
+    connection = openSse(
+      `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
+      'quant.market',
+      onMessage,
+      () => {
+        if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
+        connection.close();
+        slopeStreams = slopeStreams.filter(item => item !== connection);
+        batch.forEach(subscription => {
+          slopeRows.value
+            .filter(row => row.symbol === subscription.symbol && row.interval === subscription.interval)
+            .forEach(row => { row.status = 'DISCONNECTED'; });
+        });
+        if (slopeStreamRetries.has(batchIndex)) return;
+        const timer = setTimeout(() => {
+          slopeStreamRetries.delete(batchIndex);
+          startBatch(batch, batchIndex);
+        }, 3000);
+        slopeStreamRetries.set(batchIndex, timer);
+      },
+      handleSseUnauthorized
     );
-  }
+    slopeStreams.push(connection);
+  };
+  chunkSlopeSubscriptions(subscriptions).forEach((batch, index) => startBatch(batch, index));
 }
 
 
