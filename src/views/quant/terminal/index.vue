@@ -2247,7 +2247,7 @@ async function reconcilePositionsFromExchange() {
 
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
-  positionReconcileTimer = setInterval(() => void reconcilePositionsFromExchange(), 5000);
+  positionReconcileTimer = setInterval(() => void reconcilePositionsFromExchange(), 30000);
   if (chartRef.value) {
     chart.value = init(chartRef.value);
     resizeObserver = new ResizeObserver(resizeChart);
