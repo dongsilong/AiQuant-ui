@@ -1824,6 +1824,7 @@ async function hydrateSlopeRows(rows: SlopeRow[], signal: AbortSignal, generatio
       const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
       row.slopePercent = slope?.slopePercent;
       row.degrees = slope?.degrees;
+      if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
     });
   }
 }
