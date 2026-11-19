@@ -384,6 +384,14 @@ export interface UnresolvedLiveDispatch {
   blockedAt: string | null;
 }
 
+/** 人工派发核查结果；recovered=false 时调度阻断仍然保留。 */
+export interface DispatchRecheckResult {
+  recovered: boolean;
+  code: string;
+  stage: string;
+  message: string;
+}
+
 /** Only lifetime verified Binance fill facts, NOT a current strategy position. */
 export interface StrategyFillAuditSummary {
   credentialId: string;
