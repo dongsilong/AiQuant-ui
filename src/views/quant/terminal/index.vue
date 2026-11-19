@@ -1916,37 +1916,49 @@ async function loadAccountData(id: string | number, generation: number, signal: 
   const positionSnapshotRevision = positionRevision;
   const accountSnapshotRevision = accountRevision;
   const baselineDay = dailyBaselineDay.value || shanghaiDateKey(now.value);
-  const [p, i, h, a, baseline] = await Promise.allSettled([
-    listPositions(id, undefined, signal),
-    listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    getAccountSnapshot(id, signal),
-    getDailyAccountBaseline(id, signal)
-  ]);
-  if (
-    generation !== dataGeneration ||
-    requestId !== accountDataRequest ||
-    signal.aborted ||
-    String(credentialId.value) !== String(id)
-  ) return false;
+  const isCurrent = () =>
+    generation === dataGeneration &&
+    requestId === accountDataRequest &&
+    !signal.aborted &&
+    String(credentialId.value) === String(id);
 
-  if (p.status === 'fulfilled') {
-    positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
+  // 先建立图表行情订阅；持仓返回后再由 connect() 补齐持仓交易对。
+  connect();
+
+  void listPositions(id, undefined, signal).then(response => {
+    if (!isCurrent()) return;
+    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, positionSnapshotRevision);
     accountSnapshotAvailable.value = true;
-  } else accountSnapshotAvailable.value = false;
-  if (i.status === 'fulfilled') instances.value = i.value.data?.rows || [];
-  if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
-  if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
-  if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
-    if (baseline.status === 'fulfilled') {
-      dailyAccountBaseline.value = baseline.value.data;
-      if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
-    } else {
+    renderOverlays();
+    connect();
+  }).catch(error => {
+    if (!isCurrent()) return;
+    if (!accountSnapshotAvailable.value) accountSnapshotAvailable.value = false;
+    scheduleDeferredPositionRetry(error);
+  });
+
+  void getAccountSnapshot(id, signal).then(response => {
+    if (isCurrent() && accountSnapshotRevision === accountRevision) account.value = response.data;
+  }).catch(() => undefined);
+
+  void getDailyAccountBaseline(id, signal).then(response => {
+    if (!isCurrent() || dailyBaselineDay.value !== baselineDay) return;
+    dailyAccountBaseline.value = response.data;
+    if (!response.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
+  }).catch(() => {
+    if (isCurrent() && dailyBaselineDay.value === baselineDay) {
       scheduleDailyBaselineRetry(id, baselineDay, generation);
     }
-  }
-  renderOverlays();
-  connect();
+  });
+
+  void listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal).then(response => {
+    if (isCurrent()) instances.value = response.data?.rows || [];
+  }).catch(() => undefined);
+
+  void listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal).then(response => {
+    if (isCurrent()) positionHistories.value = mergePositionHistories(response.data?.rows || []);
+  }).catch(() => undefined);
+
   void loadProtectionOrders(forceProtection);
   return true;
 }
