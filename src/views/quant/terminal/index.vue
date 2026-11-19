@@ -2239,16 +2239,17 @@ onMounted(() => {
     resizeObserver.observe(chartRef.value);
   }
 
-  void refresh();
   void listCredential({ pageNum: 1, pageSize: 100 })
     .then(response => {
       credentials.value = response.data?.rows || [];
       if (!credentialId.value && credentials.value.length) {
         credentialId.value = credentials.value[0].id;
-        void refresh();
       }
+      void refresh();
     })
-    .catch(() => undefined);
+    .catch(() => {
+      void refresh();
+    });
   void listStrategies({ pageNum: 1, pageSize: 100 })
     .then(response => {
       strategies.value = response.data?.rows || [];
