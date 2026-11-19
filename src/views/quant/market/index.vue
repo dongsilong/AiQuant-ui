@@ -202,8 +202,7 @@ const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
       credentialId: row.credentialId,
       symbol: row.symbol,
       dispatchKey: row.dispatchKey,
-      clientOrderId: row.clientOrderId!,
-      operation: row.operation || ''
+      clientOrderId: row.clientOrderId!
     });
     const outcome: DispatchRecheckResult = result.data;
     if (outcome.recovered) {
