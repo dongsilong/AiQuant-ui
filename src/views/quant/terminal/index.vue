@@ -1685,8 +1685,11 @@ function connectSlopeStream() {
 
   const onMessage = (data: string) => {
     if (generation !== slopeStreamGeneration) return;
-    try {
-      const event = JSON.parse(data);
+      const incoming = JSON.parse(data);
+      const events = incoming.type === 'KLINE_SNAPSHOT' && Array.isArray(incoming.klines)
+        ? incoming.klines.map((kline: KlineSnapshot) => ({ ...incoming, type: 'KLINE', kline }))
+        : [incoming];
+      events.forEach(event => {
       if (event.type === 'CONNECTING' && !event.symbol) return;
       const key = `${event.symbol}:${event.interval}`;
       if (event.interval === '1m' && event.symbol) {
@@ -1741,6 +1744,7 @@ function connectSlopeStream() {
         state.klines = state.klines.slice(-4);
       }
       scheduleSlopeRowUpdate(row, state);
+      });
     } catch {
       // 忽略单条无法解析的消息，避免影响同一连接中的其他交易对。
     }
