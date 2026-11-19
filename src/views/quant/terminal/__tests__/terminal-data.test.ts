@@ -13,6 +13,7 @@ import {
   parseBinanceAccountEvent,
   positionMetrics,
   aggregateLivePositionPnl,
+  aggregateSnapshotPositionPnl,
   positionMaximumReturnRate,
   positionLadderMetrics,
   protectionPrices,
@@ -279,6 +280,15 @@ describe('terminal account data', () => {
   it('keeps server PnL until an actual mark arrives', () => {
     expect(positionMetrics({ ...position, unrealizedPnl: '0.9' }).unrealizedPnl).toBe(0.9);
     expect(positionMetrics(position, 2.02).unrealizedPnl).toBeCloseTo(2);
+  });
+  it('uses complete exchange snapshot PnL when live marks are unavailable', () => {
+    const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', unrealizedPnl: '3' };
+    expect(aggregateSnapshotPositionPnl([position, second])).toBe(4);
+    expect(aggregateSnapshotPositionPnl([])).toBe(0);
+  });
+  it('does not calculate snapshot PnL when any open position lacks a valid exchange PnL', () => {
+    expect(aggregateSnapshotPositionPnl([{ ...position, unrealizedPnl: '' }])).toBeUndefined();
+    expect(aggregateSnapshotPositionPnl([{ ...position, quantity: '' }])).toBeUndefined();
   });
   it('sums PnL from fresh marks across all open positions', () => {
     const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', entryPrice: '100', markPrice: '99' };
