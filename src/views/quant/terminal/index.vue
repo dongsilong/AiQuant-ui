@@ -1663,17 +1663,6 @@ function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
   if (slopeRenderFrame === undefined) slopeRenderFrame = requestAnimationFrame(flushSlopeRows);
 }
 
-function clearSlopeRowValues(row: SlopeRow, state: SlopeStreamState, status: SlopeRow['status']) {
-  pendingSlopeRows.delete(row);
-  state.latestTradePrice = undefined;
-  row.status = status;
-  row.latestTradePrice = undefined;
-  row.currentPrice = undefined;
-  row.referencePrice = undefined;
-  row.slopePercent = undefined;
-  row.degrees = undefined;
-}
-
 function connectSlopeStream() {
   closeSlopeStream(false);
   if (!slopePanelVisible.value || !slopeStrategyId.value || !slopeRows.value.length) return;
@@ -1755,6 +1744,7 @@ function connectSlopeStream() {
       scheduleSlopeRowUpdate(row, state);
     } catch {
       // 单条异常消息不能清空其他交易对已确认的数据；由后续事件或重连恢复。
+      slopeRows.value.forEach(row => { row.status = 'DISCONNECTED'; });
       scheduleReconnect();
     }
   };
