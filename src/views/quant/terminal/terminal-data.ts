@@ -143,6 +143,20 @@ export function positionMetrics(item: PositionSnapshot, liveMark?: number | stri
   };
 }
 
+/** Sum exchange-snapshot PnL as a display fallback when fresh mark samples are unavailable. */
+export function aggregateSnapshotPositionPnl(positions: ReadonlyArray<PositionSnapshot>): number | undefined {
+  let total = 0;
+  for (const position of positions) {
+    const quantity = numeric(position.quantity);
+    if (quantity === undefined) return undefined;
+    if (quantity === 0) continue;
+    const pnl = numeric(position.unrealizedPnl);
+    if (pnl === undefined) return undefined;
+    total += pnl;
+  }
+  return total;
+}
+
 /** Sum unrealized PnL only when every open position has a fresh mark-price sample. */
 export function aggregateLivePositionPnl(
   positions: ReadonlyArray<PositionSnapshot>,
