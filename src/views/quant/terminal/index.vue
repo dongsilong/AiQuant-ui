@@ -1777,70 +1777,6 @@ function connectSlopeStream() {
 }
 
 
-async function hydrateSlopeRows(rows: SlopeRow[], signal: AbortSignal, generation: number) {
-  const subscriptions = new Map<string, { symbol: string; interval: string; limit: number }>();
-  rows.forEach(row => {
-    subscriptions.set(`${row.symbol}:${row.interval}`, { symbol: row.symbol, interval: row.interval, limit: 2 });
-    subscriptions.set(`${row.symbol}:1m`, { symbol: row.symbol, interval: '1m', limit: 8 });
-  });
-  const results = await Promise.all(
-    [...subscriptions.values()].map(async subscription => {
-      try {
-        const response = await listRealtimeKlines(
-          subscription.symbol,
-          subscription.interval,
-          subscription.limit,
-          selectedMarketRunMode(),
-          signal
-        );
-        return { subscription, klines: response.data || [] };
-      } catch {
-        return { subscription, klines: [] };
-      }
-    })
-  );
-  if (signal.aborted || generation !== slopeLoadGeneration || !slopePanelVisible.value) return;
-  for (const { subscription, klines } of results) {
-    if (!klines.length) continue;
-    if (subscription.interval === '1m') {
-      const previous = slopeOneMinuteKlines.get(subscription.symbol) || [];
-      const merged = new Map<string, KlineSnapshot>(klines.map(kline => [kline.openTime, kline] as const));
-      previous.forEach(kline => merged.set(kline.openTime, kline));
-      const retained = [...merged.values()]
-        .sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime))
-        .slice(-16);
-      slopeOneMinuteKlines.set(subscription.symbol, retained);
-      const ma = calculateOneMinuteMa(retained);
-      if (ma) {
-        rows.filter(row => row.symbol === subscription.symbol).forEach(row => {
-          row.ma5 = ma.ma5;
-          row.ma7 = ma.ma7;
-          row.maTrend = ma.direction;
-        });
-      }
-    }
-    rows.filter(row => row.symbol === subscription.symbol && row.interval === subscription.interval).forEach(row => {
-      const key = `${row.symbol}:${row.interval}`;
-      const state = slopeStreamStates.get(key);
-      if (!state) return;
-      const merged = new Map<string, KlineSnapshot>(klines.map(kline => [kline.openTime, kline] as const));
-      state.klines.forEach(kline => merged.set(kline.openTime, kline));
-      state.klines = [...merged.values()]
-        .sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime))
-        .slice(-4);
-      const latest = state.klines[state.klines.length - 1];
-      const reference = state.klines[state.klines.length - 2];
-      if (state.latestTradePrice === undefined && latest) row.currentPrice = Number(latest.close);
-      row.latestTradePrice = state.latestTradePrice;
-      row.referencePrice = reference ? Number(reference.open) : undefined;
-      const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
-      row.slopePercent = slope?.slopePercent;
-      row.degrees = slope?.degrees;
-      if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
-    });
-  }
-}
-
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
   try {
     const strategy = strategies.value.find(item => String(item.id) === String(slopeStrategyId.value));
@@ -1909,7 +1845,6 @@ async function openSlopePanel() {
       }));
     slopeRows.value = rows;
     connectSlopeStream();
-    void hydrateSlopeRows(rows, controller.signal, generation);
   } catch {
     if (!controller.signal.aborted && generation === slopeLoadGeneration && slopePanelVisible.value) {
       slopeLoadError.value = '策略交易对列表加载失败';
