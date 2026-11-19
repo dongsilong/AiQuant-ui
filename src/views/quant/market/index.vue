@@ -163,7 +163,7 @@
   </div>
 </template>
 <script lang="ts" setup>
-import type { SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch } from '@/api/quant/types';
+import type { SymbolQuery, SymbolVO, WebSocketTransportInfo, UnresolvedLiveDispatch, DispatchRecheckResult } from '@/api/quant/types';
 import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, switchWebSocketTransport, listUnresolvedLiveDispatches, recheckUnresolvedLiveDispatch } from '@/api/quant';
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -202,12 +202,14 @@ const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
       credentialId: row.credentialId,
       symbol: row.symbol,
       dispatchKey: row.dispatchKey,
-      clientOrderId: row.clientOrderId!
+      clientOrderId: row.clientOrderId!,
+      operation: row.operation || ''
     });
-    if (result.data) {
-      ElMessage.success('派发核查已完成，相关交易对的调度阻断已解除');
+    const outcome: DispatchRecheckResult = result.data;
+    if (outcome.recovered) {
+      ElMessage.success(outcome.message || '派发核查已完成，相关交易对的调度阻断已解除');
     } else {
-      ElMessage.warning('本次未能完成核验，派发阻断保持不变；请检查订单事实和后端日志');
+      ElMessage.warning(`[${outcome.code} / ${outcome.stage}] ${outcome.message}`);
     }
     await loadDispatch();
   } finally {
