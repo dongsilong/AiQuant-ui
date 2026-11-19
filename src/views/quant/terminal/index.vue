@@ -98,8 +98,7 @@
                   {{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}
                 </dd>
               </dl>
-
-              <small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，当前为最近一次有效估值</small>
+              <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，当前为最近一次有效估值</small>-->
             </div>
             <el-empty v-else description="暂无账户数据" />
           </el-card>
