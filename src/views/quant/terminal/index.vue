@@ -1504,20 +1504,26 @@ async function refreshPositionsAfterAccountReconnect() {
   const generation = dataGeneration;
   const request = ++positionSnapshotRequest;
   const snapshotRevision = positionRevision;
-  try {
-    const response = await listPositions(id, undefined, dataRequestController?.signal);
-    if (generation !== dataGeneration || request !== positionSnapshotRequest) return;
+  const accountRevisionBeforeRequest = accountRevision;
+  const signal = dataRequestController?.signal;
+  const [accountResult, positionsResult] = await Promise.allSettled([
+    getAccountSnapshot(id, signal),
+    listPositions(id, undefined, signal)
+  ]);
+  if (generation !== dataGeneration || request !== positionSnapshotRequest) return;
+  if (accountResult.status === 'fulfilled' && accountRevisionBeforeRequest === accountRevision) {
+    account.value = accountResult.value.data;
+  }
+  if (positionsResult.status === 'fulfilled') {
     clearDeferredPositionRetry();
-    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, snapshotRevision);
+    positions.value = mergePositionSnapshots(positionsResult.value.data || [], positionEventChanges, snapshotRevision);
     accountSnapshotAvailable.value = true;
     renderOverlays();
     connect();
     void loadProtectionOrders(true);
-  } catch (error) {
-    if (generation === dataGeneration && request === positionSnapshotRequest) {
-      accountSnapshotAvailable.value = false;
-      scheduleDeferredPositionRetry(error);
-    }
+  } else {
+    accountSnapshotAvailable.value = false;
+    scheduleDeferredPositionRetry(positionsResult.reason);
   }
 }
 
@@ -1566,7 +1572,7 @@ function connectAccountStream() {
           } else if (event.positionsSnapshotAvailable && Array.isArray(event.positions)) {
             positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
             accountSnapshotAvailable.value = true;
-          } else {
+          } else if (!event.positionsSnapshotSkipped) {
             accountSnapshotAvailable.value = false;
           }
           if (event.ordersSnapshotAvailable && Array.isArray(event.orders) && !changed) {
