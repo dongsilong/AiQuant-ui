@@ -99,7 +99,7 @@
                 </dd>
               </dl>
 
-              <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，显示最近一次有效估值</small>-->
+              <small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，当前为最近一次有效估值</small>
             </div>
             <el-empty v-else description="暂无账户数据" />
           </el-card>
@@ -423,7 +423,7 @@ import {
 import {
   accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
-  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl,
+  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl, aggregateSnapshotPositionPnl,
   terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
   calculateOneMinuteMa, calculateRealtimeSlope, slopeStreamQuery
 } from './terminal-data';
@@ -627,11 +627,16 @@ watch(
 watch(accountSnapshotAvailable, available => {
   if (!available) lastValidUnrealizedPnl.value = undefined;
 });
+const snapshotUnrealizedPnl = computed(() =>
+  accountSnapshotAvailable.value ? aggregateSnapshotPositionPnl(positions.value) : undefined
+);
 const currentUnrealizedPnl = computed(() =>
-  accountSnapshotAvailable.value ? (freshUnrealizedPnl.value ?? lastValidUnrealizedPnl.value) : undefined
+  accountSnapshotAvailable.value
+    ? (freshUnrealizedPnl.value ?? lastValidUnrealizedPnl.value ?? snapshotUnrealizedPnl.value)
+    : undefined
 );
 const unrealizedPnlStale = computed(() =>
-  accountSnapshotAvailable.value && freshUnrealizedPnl.value === undefined && lastValidUnrealizedPnl.value !== undefined
+  accountSnapshotAvailable.value && freshUnrealizedPnl.value === undefined && currentUnrealizedPnl.value !== undefined
 );
 const currentAccountEquity = computed(() => {
   const walletBalance = Number(account.value?.walletBalance);
