@@ -1922,9 +1922,6 @@ async function loadAccountData(id: string | number, generation: number, signal: 
     !signal.aborted &&
     String(credentialId.value) === String(id);
 
-  // 先建立图表行情订阅；持仓返回后再由 connect() 补齐持仓交易对。
-  connect();
-
   void listPositions(id, undefined, signal).then(response => {
     if (!isCurrent()) return;
     positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, positionSnapshotRevision);
@@ -1933,7 +1930,7 @@ async function loadAccountData(id: string | number, generation: number, signal: 
     connect();
   }).catch(error => {
     if (!isCurrent()) return;
-    if (!accountSnapshotAvailable.value) accountSnapshotAvailable.value = false;
+    connect();
     scheduleDeferredPositionRetry(error);
   });
 
