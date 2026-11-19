@@ -1684,6 +1684,7 @@ function connectSlopeStream() {
   const subscriptions = [...subscriptionMap.values()];
 
   const onMessage = (data: string) => {
+    if (generation !== slopeStreamGeneration) return;
     try {
       const event = JSON.parse(data);
       if (event.type === 'CONNECTING' && !event.symbol) return;
@@ -1758,7 +1759,7 @@ function connectSlopeStream() {
         slopeStreams = slopeStreams.filter(item => item !== connection);
         batch.forEach(subscription => {
           slopeRows.value
-            .filter(row => row.symbol === subscription.symbol && row.interval === subscription.interval)
+            .filter(row => row.symbol === subscription.symbol && (subscription.interval === '1m' || row.interval === subscription.interval))
             .forEach(row => { row.status = 'DISCONNECTED'; });
         });
         if (slopeStreamRetries.has(batchIndex)) return;
