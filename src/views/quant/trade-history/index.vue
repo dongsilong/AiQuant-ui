@@ -72,10 +72,10 @@ const balance = (value: unknown, checkedAt: unknown, captureSource: unknown, res
   const checked = checkedAt ? `（${source}；${timeLabel}：${time(checkedAt)}）` : `（${source}；时间未知）`;
   return `${fixedAmount(value)}${checked}`;
 };
-const closingBalance = (row: Record<string, unknown>) =>
+const closingBalance = (row: Record<string, unknown>, value: unknown) =>
   row.status === 'CLOSED'
     ? balance(
-        row.closingEquity ?? row.walletBalance,
+        value,
         row.closingEquityCapturedAt ?? row.closingEquityAt,
         row.closingEquityCaptureSource,
         row.closingEquityResponseReceivedAt
@@ -100,8 +100,8 @@ const columns = [
   { prop: 'closePrice', label: '平仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.closePrice) },
   { prop: 'commission', label: '手续费', ...centered, width: 180, formatter: (row: Record<string, unknown>) => displayCommission(row.commission) },
   { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
-  { prop: 'closingEquity', label: '账户权益(U)', ...centered, width: 240, formatter: (row: Record<string, unknown>) => closingBalance(row) },
-  { prop: 'walletBalance', label: '钱包余额(U)', ...centered, width: 150, formatter: (row: Record<string, unknown>) => closingBalance(row) },
+  { prop: 'closingEquity', label: '账户权益(U)', ...centered, width: 240, formatter: (row: Record<string, unknown>) => closingBalance(row, row.closingEquity) },
+  { prop: 'walletBalance', label: '钱包余额(U)', ...centered, width: 150, formatter: (row: Record<string, unknown>) => closingBalance(row, row.walletBalance) },
   /*{ prop: 'unrealizedPnl', label: '未实现盈亏', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.unrealizedPnl) },*/
   /*{ prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },*/
   { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, sortable: 'custom', formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
