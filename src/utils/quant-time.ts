@@ -137,6 +137,31 @@ export function formatQuantLocalTime(value: unknown): string {
   return formatDateTime(value, parseQuantLocalTime);
 }
 
+const QUANT_TIME_FIELDS = new Set([
+  'createdAt', 'updatedAt', 'updateTime', 'tradeTime', 'time', 'eventTime', 'klineTime',
+  'openTime', 'closeTime', 'openedAt', 'closedAt', 'lastSignalAt', 'syncedAt',
+  'observedAt', 'lastConnectTime', 'createTime', 'effectiveTime', 'startTime',
+  'endTime', 'blockedAt', 'lastTime', 'firstTime', 'reviewedAt', 'completedAt',
+  'closingEquityAt', 'closingEquityCapturedAt', 'closingEquityResponseReceivedAt',
+  'accountUpdateTransactionTime'
+]);
+
+const SERVER_LOCAL_TIME_FIELDS = new Set([
+  'createTime', 'lastConnectTime', 'syncedAt', 'lastSignalAt'
+]);
+
+/** Whether a response property is a quant timestamp field. */
+export function isQuantTimeField(field: string): boolean {
+  return QUANT_TIME_FIELDS.has(field);
+}
+
+/** Format an API timestamp using its documented source semantics and the configured display timezone. */
+export function formatQuantApiTime(field: string, value: unknown): string {
+  return SERVER_LOCAL_TIME_FIELDS.has(field)
+    ? formatQuantLocalTime(value)
+    : formatQuantTime(value);
+}
+
 /** Format an absolute timestamp as a date in the configured display timezone. */
 export function formatQuantDate(value: unknown): string {
   if (value == null || value === '') return '—';
