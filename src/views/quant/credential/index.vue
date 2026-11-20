@@ -68,8 +68,8 @@
             <dict-tag :options="quant_run_mode" :value="scope.row.runMode" />
           </template>
         </el-table-column>
-        <el-table-column v-if="isSuperAdmin" align="center" label="记录有效时间" min-width="170" prop="effectiveTime">
-          <template #default="scope">{{ scope.row.runMode === 'TESTNET' ? scope.row.effectiveTime || '不限制' : '-' }}</template>
+        <el-table-column v-if="isSuperAdmin" align="center" :label="'记录有效时间（' + getQuantTimeZone() + '）'" min-width="170" prop="effectiveTime">
+          <template #default="scope">{{ scope.row.runMode === 'TESTNET' ? (scope.row.effectiveTime ? formatQuantTime(scope.row.effectiveTime) : '不限制') : '-' }}</template>
         </el-table-column>
         <el-table-column align="center" label="连接状态" min-width="120">
           <template #default="scope">
@@ -175,7 +175,7 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="isSuperAdmin && form.runMode === 'TESTNET'" label="记录有效时间" prop="effectiveTime">
+        <el-form-item v-if="isSuperAdmin && form.runMode === 'TESTNET'" :label="'记录有效时间（' + getQuantTimeZone() + '）'" prop="effectiveTime">
           <el-date-picker
             v-model="form.effectiveTime"
             type="datetime"
@@ -196,7 +196,7 @@
 </template>
 
 <script lang="ts" setup>
-import { formatQuantLocalTime } from '@/utils/quant-time';
+import { formatQuantLocalTime, formatQuantTime, getQuantTimeZone } from '@/utils/quant-time';
 import type { CredentialForm, CredentialQuery, CredentialVO } from '@/api/quant/types';
 import type { UserQuery, UserVO } from '@/api/system/user/types';
 import {
@@ -273,7 +273,7 @@ const openAdd = () => {
   dialogVisible.value = true;
 };
 const openEdit = (row: CredentialVO) => {
-  Object.assign(form, row, { apiKey: '', secretKey: '', userId: row.userId });
+  Object.assign(form, row, { effectiveTime: row.effectiveTime ? formatQuantTime(row.effectiveTime) : null, apiKey: '', secretKey: '', userId: row.userId });
   dialogVisible.value = true;
   nextTick(() => formRef.value?.clearValidate());
 };
