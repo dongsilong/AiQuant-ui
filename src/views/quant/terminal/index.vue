@@ -148,7 +148,7 @@
                     />
                   </p>
                   <small>
-                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantTime(item.lastSignalAt) : '暂无信号' }}）</div>
+                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantLocalTime(item.lastSignalAt) : '暂无信号' }}）</div>
                     <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
                   </small>
                 </div>
@@ -393,7 +393,7 @@
 </template>
 
 <script lang="ts" setup>
-import { formatQuantDate, formatQuantTime } from '@/utils/quant-time';
+import { formatQuantDate, formatQuantLocalTime, formatQuantTime } from '@/utils/quant-time';
 import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, shallowRef, toRefs } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { init, dispose, type Chart, type KLineData } from 'klinecharts';
