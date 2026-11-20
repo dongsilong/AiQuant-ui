@@ -148,7 +148,7 @@
                     />
                   </p>
                   <small>
-                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
+                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantTime(item.lastSignalAt) : '暂无信号' }}）</div>
                     <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
                   </small>
                 </div>
@@ -302,7 +302,7 @@
               <el-table-column label="已实现盈亏" min-width="120">
                 <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
               </el-table-column>
-              <el-table-column prop="tradeTime" label="成交时间" min-width="160" />
+              <el-table-column label="成交时间" min-width="160"><template #default="scope">{{ formatQuantTime(scope.row.tradeTime) }}</template></el-table-column>
             </el-table>
             <pagination
               v-show="tradeTotal > 0"
@@ -393,6 +393,7 @@
 </template>
 
 <script lang="ts" setup>
+import { formatQuantDate, formatQuantTime } from '@/utils/quant-time';
 import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, shallowRef, toRefs } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { init, dispose, type Chart, type KLineData } from 'klinecharts';
@@ -550,7 +551,7 @@ type ViewportSnapshot = { isRightEdge: boolean; visibleRange?: { from: number; t
 let viewportSnapshot: ViewportSnapshot = { isRightEdge: true };
 
 // ==================== 工具函数 ====================
-const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
+const shanghaiDateKey = (timestamp: number) => formatQuantDate(timestamp);
 function scheduleDailyBaselineRetry(id: string | number, day: string, generation: number) {
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   dailyBaselineRefreshTimer = setTimeout(() => {
@@ -649,19 +650,7 @@ const dailyReturnRate = computed(() => {
 });
 const dailyBaselineObservedAt = computed(() => {
   const observedAt = dailyAccountBaseline.value?.observedAt;
-  if (!observedAt) return undefined;
-  const timestamp = Date.parse(observedAt);
-  if (!Number.isFinite(timestamp)) return undefined;
-  return new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(timestamp);
+  return observedAt ? formatQuantTime(observedAt) : undefined;
 });
 const visibleInstances = computed(() =>
   instances.value.filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value))
@@ -1475,7 +1464,7 @@ function applyRawAccountEvent(rawJson: string | undefined) {
         if (Number.isFinite(time)) lastOrderEvents.set(key, time);
       }
       if (credentialId.value) {
-        const trade = accountTrade(raw.o, credentialId.value, time => parseTime(time) || '');
+        const trade = accountTrade(raw.o, credentialId.value, time => formatQuantTime(time));
         if (trade) {
           scheduleAccountHydration();
           const isNew =
