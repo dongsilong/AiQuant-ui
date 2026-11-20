@@ -88,8 +88,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column align="center" label="最后连接时间" prop="lastConnectTime" width="160" />
-        <el-table-column align="center" label="授权时间" prop="createTime" width="160" />
+        <el-table-column align="center" label="最后连接时间" width="160"><template #default="scope">{{ formatQuantTime(scope.row.lastConnectTime) }}</template></el-table-column>
+        <el-table-column align="center" label="授权时间" width="160"><template #default="scope">{{ formatQuantTime(scope.row.createTime) }}</template></el-table-column>
         <el-table-column align="center" fixed="right" label="操作" width="120">
           <template #default="scope">
             <el-tooltip content="验证凭证" placement="top">
@@ -196,6 +196,7 @@
 </template>
 
 <script lang="ts" setup>
+import { formatQuantTime } from '@/utils/quant-time';
 import type { CredentialForm, CredentialQuery, CredentialVO } from '@/api/quant/types';
 import type { UserQuery, UserVO } from '@/api/system/user/types';
 import {
