@@ -6,7 +6,7 @@
           <div class="panel-heading"><h3>筛选条件</h3></div>
         </template>
         <el-form :inline="true" class="query-form" @submit.prevent="handleQuery">
-          <el-form-item v-for="filter in filters" :key="filter.key" :label="filter.label">
+          <el-form-item v-for="filter in filters" :key="filter.key" :label="filter.type === 'daterange' ? filter.label + '（' + getQuantTimeZone() + '）' : filter.label">
             <el-select
               v-if="filter.type === 'select'"
               v-model="query[filter.key]"
@@ -97,6 +97,7 @@
 </template>
 <script lang="ts" setup>
 import type { PageResult } from '@/api/types';
+import { formatQuantApiTime, getQuantTimeZone, isQuantTimeField } from '@/utils/quant-time';
 
 type LedgerRow = Record<string, unknown> & { id?: string | number };
 type LedgerColumn = { prop: string; label: string; width?: number; sortable?: boolean | 'custom'; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
@@ -164,9 +165,21 @@ const resetQuery = () => {
   handleQuery();
 };
 const formatCell = (row: LedgerRow, column: LedgerColumn) =>
-  column.formatter ? column.formatter(row) : String(row[column.prop] ?? '-');
+  column.formatter
+    ? column.formatter(row)
+    : isQuantTimeField(column.prop)
+      ? formatQuantApiTime(column.prop, row[column.prop])
+      : String(row[column.prop] ?? '-');
+const formatDetail = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(formatDetail);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isQuantTimeField(key) ? formatQuantApiTime(key, item) : formatDetail(item)
+  ]));
+};
 const showDetail = (row: LedgerRow) => {
-  detailText.value = JSON.stringify(row, null, 2);
+  detailText.value = JSON.stringify(formatDetail(row), null, 2);
   detailVisible.value = true;
 };
 onMounted(load);
