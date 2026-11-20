@@ -38,6 +38,7 @@
 import { listTradeHistory } from '@/api/quant/trade-history';
 import AdminLedgerTable from '../components/AdminLedgerTable.vue';
 import { displayCommission, displayDecimal } from '../components/ledger-display';
+import { formatQuantTime } from '@/utils/quant-time';
 import { useCredentialOptions } from '../components/useCredentialOptions';
 import { useDict } from '@/utils/dict';
 
@@ -45,16 +46,6 @@ const { credentialFilter } = useCredentialOptions();
 const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
 const incompleteCount = ref(0);
 const inferredCount = ref(0);
-const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23'
-});
 const decimal = (value: unknown) => (value == null ? '—' : displayDecimal(value));
 const price = (value: unknown) => (value == null ? '—' : String(value));
 const amount = (value: unknown) => (value == null ? '—' : displayDecimal(value, 8));
@@ -64,7 +55,7 @@ const fixedAmount = (value: unknown) => {
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(formatted)) return formatted;
   return formatted.includes('.') ? formatted.padEnd(formatted.indexOf('.') + 3, '0') : `${formatted}.00`;
 };
-const time = (value: unknown) => (value ? timeFormatter.format(new Date(String(value))) : '—');
+const time = formatQuantTime;
 const balance = (value: unknown, checkedAt: unknown, captureSource: unknown, responseReceivedAt: unknown) => {
   if (value == null) return '—';
   const source = String(captureSource || '').includes('REST') ? 'REST快照' : '账户快照';
