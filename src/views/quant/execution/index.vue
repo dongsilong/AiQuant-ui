@@ -53,6 +53,7 @@
   </div>
 </template>
 <script lang="ts" setup>
+import { formatQuantTime } from '@/utils/quant-time';
 import { getStrategyFillAuditSummary, listCredential, listExecution, listStrategyInstances } from '@/api/quant';
 import type { CredentialVO, StrategyFillAuditSummary, StrategyInstanceVO } from '@/api/quant/types';
 import { useUserStore } from '@/store/modules/user';
@@ -193,7 +194,7 @@ const columns = [
     label: '交易所订单状态',
     formatter: (row: Record<string, unknown>) => displayLabel(protectionStatuses, row.exchangeOrderStatus)
   },
-  { prop: 'createdAt', label: '创建时间' }
+  { prop: 'createdAt', label: '创建时间', formatter: (row: Record<string, unknown>) => formatQuantTime(row.createdAt) }
 ];
 const filters = computed(() => [
   credentialFilter.value,
