@@ -133,6 +133,7 @@ import { useCredentialOptions } from '../components/useCredentialOptions';
 import { getTradeDecisionLog, listTradeDecisionLogs } from '@/api/quant/trade-decision-log';
 import { useDict } from '@/utils/dict';
 import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
+import { formatQuantTime } from '@/utils/quant-time';
 
 const { quant_run_mode, quant_position_direction } = toRefs<any>(useDict('quant_run_mode', 'quant_position_direction'));
 
