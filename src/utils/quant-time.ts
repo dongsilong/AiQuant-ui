@@ -8,8 +8,8 @@ let serverTimeZone = 'Asia/Shanghai';
 export function setQuantTimeZone(value?: string) {
   if (!value || value === configuredTimeZone) return;
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value });
-    configuredTimeZone = value;
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: value });
+    configuredTimeZone = formatter.resolvedOptions().timeZone;
   } catch {
     // Ignore an invalid response header and keep the last valid timezone.
   }
@@ -21,8 +21,8 @@ export function setQuantTimeZone(value?: string) {
 export function setQuantServerTimeZone(value?: string) {
   if (!value || value === serverTimeZone) return;
   try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value });
-    serverTimeZone = value;
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: value });
+    serverTimeZone = formatter.resolvedOptions().timeZone;
   } catch {
     // Ignore an invalid response header and keep the last valid timezone.
   }
