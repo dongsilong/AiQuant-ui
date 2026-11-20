@@ -142,6 +142,7 @@
   </div>
 </template>
 <script lang="ts" setup>
+import { formatQuantTime } from '@/utils/quant-time';
 import type { CredentialVO, OrderLedgerRow, TradeRecord } from '@/api/quant/types';
 import { cancelOrder, listAccessibleOrders, listAccessibleTrades, listCredential, syncOrders } from '@/api/quant';
 import { ensureQuantSymbolTickSizes, formatQuantTablePrice } from '../components/price-format';
@@ -168,22 +169,7 @@ const selectedOrder = ref<OrderLedgerRow>();
 const fillRows = ref<TradeRecord[]>([]);
 const fillTotal = ref(0);
 const fillQuery = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
-const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23'
-});
-const formatTime = (value?: string) => {
-  if (!value) return '—';
-  const normalized = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(' ', 'T')}Z`;
-  const date = new Date(normalized);
-  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
-};
+const formatTime = formatQuantTime;
 const formatOrderPrice = (row: OrderLedgerRow) => {
   const isMarketOrder = row.type === 'MARKET' || row.type.endsWith('_MARKET');
   const price = isMarketOrder ? row.averagePrice : row.price;
