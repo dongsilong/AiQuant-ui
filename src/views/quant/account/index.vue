@@ -30,7 +30,7 @@
             <el-option label="卖出" value="SELL" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="activeTab === 'trades'" label="成交时间">
+        <el-form-item v-if="activeTab === 'trades'" :label="'成交日期（' + getQuantTimeZone() + '）'">
           <el-date-picker v-model="tradeTimeRange" range-separator="至" type="daterange" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item>
@@ -175,7 +175,7 @@
 </template>
 
 <script lang="ts" setup>
-import { formatQuantTime } from '@/utils/quant-time';
+import { formatQuantTime, getQuantTimeZone } from '@/utils/quant-time';
 import type { AccountSnapshot, CredentialVO, OrderSnapshot, PositionSnapshot, TradeRecord } from '@/api/quant/types';
 import {
   cancelOrder,
