@@ -393,7 +393,7 @@
 </template>
 
 <script lang="ts" setup>
-import { formatQuantDate, formatQuantLocalTime, formatQuantTime } from '@/utils/quant-time';
+import { formatQuantDate, formatQuantLocalTime, formatQuantTime, getQuantTimeZone, setQuantServerTimeZone, setQuantTimeZone } from '@/utils/quant-time';
 import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, shallowRef, toRefs } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { init, dispose, type Chart, type KLineData } from 'klinecharts';
@@ -1306,6 +1306,9 @@ function openSse(
         return;
       }
       if (!response.ok || !response.body) throw new Error(`SSE 请求失败: ${response.status}`);
+      setQuantTimeZone(response.headers.get('X-Quant-Time-Zone') || undefined);
+      setQuantServerTimeZone(response.headers.get('X-Quant-Server-Time-Zone') || undefined);
+      (chart.value as any)?.setTimezone?.(getQuantTimeZone());
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -2242,7 +2245,7 @@ onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
   positionReconcileTimer = setInterval(() => void reconcilePositionsFromExchange(), 30000);
   if (chartRef.value) {
-    chart.value = init(chartRef.value);
+    chart.value = init(chartRef.value, { timezone: getQuantTimeZone() });
     resizeObserver = new ResizeObserver(resizeChart);
     resizeObserver.observe(chartRef.value);
   }
@@ -2250,6 +2253,7 @@ onMounted(() => {
   void listCredential({ pageNum: 1, pageSize: 100 })
     .then(response => {
       credentials.value = response.data?.rows || [];
+      (chart.value as any)?.setTimezone?.(getQuantTimeZone());
       if (!credentialId.value && credentials.value.length) {
         credentialId.value = credentials.value[0].id;
       }
