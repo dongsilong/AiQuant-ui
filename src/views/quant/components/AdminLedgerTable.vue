@@ -6,7 +6,7 @@
           <div class="panel-heading"><h3>筛选条件</h3></div>
         </template>
         <el-form :inline="true" class="query-form" @submit.prevent="handleQuery">
-          <el-form-item v-for="filter in filters" :key="filter.key" :label="filter.type === 'daterange' ? filter.label + '（' + getQuantTimeZone() + '）' : filter.label">
+          <el-form-item v-for="filter in filters" :key="filter.key" :label="filter.label">
             <el-select
               v-if="filter.type === 'select'"
               v-model="query[filter.key]"

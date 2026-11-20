@@ -40,7 +40,7 @@
             <el-option v-for="(label, value) in statuses" :key="value" :label="label" :value="value" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="'时间范围（' + getQuantTimeZone() + '）'">
+        <el-form-item label="时间范围">
           <el-date-picker
             v-model="range"
             type="datetimerange"
