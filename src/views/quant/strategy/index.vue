@@ -146,7 +146,7 @@
             <el-table-column label="需恢复" align="center" width="100">
               <template #default="scope">{{ scope.row.recoveryRequiredLabel || (scope.row.recoveryRequired ? '是' : '否') }}</template>
             </el-table-column>
-            <el-table-column label="更新时间" align="center" min-width="170"><template #default="scope">{{ formatQuantTime(scope.row.updatedAt) }}</template></el-table-column>
+            <el-table-column label="更新时间" align="center" min-width="170"><template #default="scope">{{ formatQuantLocalTime(scope.row.updatedAt) }}</template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="插件目录" name="plugins">
@@ -268,7 +268,7 @@
 </template>
 
 <script lang="ts" setup>
-import { formatQuantTime } from '@/utils/quant-time';
+import { formatQuantLocalTime } from '@/utils/quant-time';
 import type {
   CredentialVO,
   StrategyForm,
