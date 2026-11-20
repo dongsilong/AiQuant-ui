@@ -151,7 +151,7 @@
             <dict-tag :options="quant_exchange_status" :value="scope.row.exchangeStatus" />
           </template>
         </el-table-column>
-        <el-table-column label="同步时间" min-width="160" align="center"><template #default="scope">{{ formatQuantTime(scope.row.syncedAt) }}</template></el-table-column>
+        <el-table-column label="同步时间" min-width="160" align="center"><template #default="scope">{{ formatQuantLocalTime(scope.row.syncedAt) }}</template></el-table-column>
         <el-table-column align="center" label="收藏" width="80">
           <template #default="scope">
             <el-button v-hasPermi="['quant:symbol:edit']" :type="scope.row.favorite ? 'warning' : 'info'" link @click="favorite(scope.row as SymbolVO)">
@@ -170,7 +170,7 @@ import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, sw
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
-import { formatQuantTime } from '@/utils/quant-time';
+import { formatQuantLocalTime, formatQuantTime } from '@/utils/quant-time';
 
 const { quant_exchange_status } = toRefs<any>(useDict('quant_exchange_status'));
 
