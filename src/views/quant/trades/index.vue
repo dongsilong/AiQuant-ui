@@ -79,6 +79,7 @@
   </div>
 </template>
 <script lang="ts" setup>
+import { formatQuantTime } from '@/utils/quant-time';
 import type { CredentialVO, TradeRecord } from '@/api/quant/types';
 import { listAccessibleTrades, listCredential, syncTrades } from '@/api/quant';
 import { displayDecimal } from '../components/ledger-display';
@@ -97,21 +98,7 @@ const total = ref(0);
 const credentialId = ref<number | string>('ALL');
 const symbol = ref('');
 const query = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
-const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23'
-});
-const formatTime = (value?: string) => {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : timeFormatter.format(date);
-};
+const formatTime = formatQuantTime;
 const loadCredentials = async () => {
   credentials.value = (await listCredential({ pageNum: 1, pageSize: 100 })).data?.rows || [];
 };
