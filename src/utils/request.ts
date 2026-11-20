@@ -11,7 +11,7 @@ import { errorCode } from '@/utils/errorCode';
 import { decrypt, encrypt } from '@/utils/jsencrypt';
 import { blobValidate, tansParams } from '@/utils/ruoyi';
 import { saveBlob } from '@/utils/save';
-import { setQuantTimeZone } from '@/utils/quant-time';
+import { setQuantServerTimeZone, setQuantTimeZone } from '@/utils/quant-time';
 
 /** axios 1.13 + TS6：默认导出在类型上会被解析为不可调用的 export= 形态 */
 const axios = axiosModule as any;
@@ -180,6 +180,7 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (res: any) => {
     setQuantTimeZone(res.headers?.['x-quant-time-zone']);
+    setQuantServerTimeZone(res.headers?.['x-quant-server-time-zone']);
     if (import.meta.env.VITE_APP_ENCRYPT === 'true') {
       // 加密后的 AES 秘钥
       const keyStr = res.headers[encryptHeader];
