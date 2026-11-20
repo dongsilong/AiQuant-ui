@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - hardening/live-production-20261014
+      - fix/live-dispatch-manual-recheck-20261112
   pull_request:
     branches:
       - ai-quant-ui-dev
@@ -25,7 +26,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --no-frozen-lockfile
       # The current source branch has a stale lockfile; perform code validation first.
-      - run: pnpm exec vitest run src/views/quant/terminal/__tests__
+      - run: pnpm exec vitest run src/views/quant/terminal/__tests__ src/utils/__tests__/quant-time.test.ts
       # The AutoImport Vite plugin generates src/types/auto-imports.d.ts during build.
       - run: pnpm run build:prod
       - run: pnpm exec vue-tsc --noEmit
