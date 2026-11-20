@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  formatQuantApiTime,
   formatQuantDate,
   formatQuantLocalTime,
   formatQuantTime,
   getQuantServerTimeZone,
   getQuantTimeZone,
+  isQuantTimeField,
   setQuantServerTimeZone,
   setQuantTimeZone
 } from '../quant-time';
@@ -47,6 +49,19 @@ describe('quant-time', () => {
   it('uses the configured timezone to display server-local values', () => {
     setQuantTimeZone('America/New_York');
     expect(formatQuantLocalTime('2026-11-20 22:15:16')).toBe('2026-11-20 09:15:16');
+  });
+
+  it('formats API fields according to their documented source timezone', () => {
+    setQuantServerTimeZone('America/New_York');
+    expect(formatQuantApiTime('lastConnectTime', '2026-11-20 09:15:16')).toBe('2026-11-20 22:15:16');
+    expect(formatQuantApiTime('createdAt', '2026-11-20T14:15:16Z')).toBe('2026-11-20 22:15:16');
+    expect(formatQuantApiTime('effectiveTime', '2026-11-20T09:15:16-05:00')).toBe('2026-11-20 22:15:16');
+  });
+
+  it('recognizes quant timestamp fields for generic ledger rendering', () => {
+    expect(isQuantTimeField('createdAt')).toBe(true);
+    expect(isQuantTimeField('openedAt')).toBe(true);
+    expect(isQuantTimeField('symbol')).toBe(false);
   });
 
   it('formats dates in the configured timezone including day rollover', () => {
