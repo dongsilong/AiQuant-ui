@@ -97,7 +97,7 @@
           </template>
         </el-table-column>
         <el-table-column label="时间" min-width="190" align="center">
-          <template #default="{ row }">{{ row.tradeTime || row.eventTime }}</template>
+          <template #default="{ row }">{{ formatQuantTime(row.tradeTime || row.eventTime) }}</template>
         </el-table-column>
         <el-table-column label="详情" fixed="right" width="80" align="center">
           <template #default="{ row }">
@@ -224,6 +224,7 @@ const showDetail = async (id: string) => {
 const detailValue = (key: keyof TradeDecisionLog) => {
   if (key === 'status' && detail.value) return statusLabel(detail.value);
   if (key === 'price' && detail.value) return formatQuantPrice(detail.value.symbol, detail.value.price);
+  if (['eventTime', 'lastTime', 'tradeTime', 'klineTime'].includes(key)) return formatQuantTime(detail.value?.[key]);
   if (['amount', 'price', 'quantity', 'margin', 'angle', 'threshold'].includes(key))
     return displayDecimal(detail.value?.[key]);
   return detail.value?.[key] ?? '-';
