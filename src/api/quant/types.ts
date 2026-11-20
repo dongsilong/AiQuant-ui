@@ -381,6 +381,7 @@ export interface UnresolvedLiveDispatch {
   exchangeOrderId: string | null;
   strategyInstanceId: string | null;
   leaseEpoch: string | null;
+  /** UTC ISO-8601 timestamp returned by the dispatch inspection API. */
   blockedAt: string | null;
 }
 
