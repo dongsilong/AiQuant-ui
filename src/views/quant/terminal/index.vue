@@ -399,7 +399,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { init, dispose, type Chart, type KLineData } from 'klinecharts';
 import { getToken, removeToken } from '@/utils/auth';
 import { useDict } from '@/utils/dict';
-import {parseTime, selectDictLabel} from '@/utils/ruoyi';
+import { selectDictLabel } from '@/utils/ruoyi';
 import { cacheQuantSymbolTickSize, ensureQuantSymbolTickSizes, formatQuantPrice, priceScaleFromTickSize } from '../components/price-format';
 
 // Types
