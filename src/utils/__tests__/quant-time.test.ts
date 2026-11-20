@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { formatQuantDate, formatQuantTime, getQuantTimeZone, setQuantTimeZone } from '../quant-time';
+import {
+  formatQuantDate,
+  formatQuantLocalTime,
+  formatQuantTime,
+  getQuantServerTimeZone,
+  getQuantTimeZone,
+  setQuantServerTimeZone,
+  setQuantTimeZone
+} from '../quant-time';
 
 describe('quant-time', () => {
-  beforeEach(() => setQuantTimeZone('Asia/Shanghai'));
+  beforeEach(() => {
+    setQuantTimeZone('Asia/Shanghai');
+    setQuantServerTimeZone('Asia/Shanghai');
+  });
 
   it('uses Beijing time by default', () => {
     expect(getQuantTimeZone()).toBe('Asia/Shanghai');
@@ -27,6 +38,17 @@ describe('quant-time', () => {
     expect(formatQuantTime('2026-11-20T14:15:16Z')).toBe('2026-11-20 09:15:16');
   });
 
+  it('interprets server LocalDateTime using the reported JVM timezone', () => {
+    setQuantServerTimeZone('America/New_York');
+    expect(getQuantServerTimeZone()).toBe('America/New_York');
+    expect(formatQuantLocalTime('2026-11-20 09:15:16')).toBe('2026-11-20 22:15:16');
+  });
+
+  it('uses the configured timezone to display server-local values', () => {
+    setQuantTimeZone('America/New_York');
+    expect(formatQuantLocalTime('2026-11-20 22:15:16')).toBe('2026-11-20 09:15:16');
+  });
+
   it('formats dates in the configured timezone including day rollover', () => {
     expect(formatQuantDate('2026-11-20T18:30:00Z')).toBe('2026-11-21');
   });
@@ -36,8 +58,10 @@ describe('quant-time', () => {
     expect(formatQuantTime('not-a-time')).toBe('not-a-time');
   });
 
-  it('ignores an invalid timezone from a response header', () => {
+  it('ignores invalid timezone values from response headers', () => {
     setQuantTimeZone('Invalid/Timezone');
+    setQuantServerTimeZone('Invalid/Timezone');
     expect(getQuantTimeZone()).toBe('Asia/Shanghai');
+    expect(getQuantServerTimeZone()).toBe('Asia/Shanghai');
   });
 });
