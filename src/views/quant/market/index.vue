@@ -91,7 +91,9 @@
         <el-table-column prop="clientOrderId" label="客户端订单号" min-width="220" show-overflow-tooltip />
         <el-table-column prop="dispatchKey" label="调度幂等键" min-width="220" show-overflow-tooltip />
         <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
-        <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
+        <el-table-column label="阻断时间" min-width="175">
+          <template #default="{ row }">{{ formatUtcTimeInBeijing(row.blockedAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="155" fixed="right" align="center">
           <template #default="scope">
             <el-button
@@ -168,6 +170,7 @@ import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, sw
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
+import { formatUtcTimeInBeijing } from './time-format';
 
 const { quant_exchange_status } = toRefs<any>(useDict('quant_exchange_status'));
 
