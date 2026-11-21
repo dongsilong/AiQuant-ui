@@ -29,7 +29,8 @@ describe('terminal MA controls', () => {
   it('selects MA5, MA7, MA15, MA30 and MA60 through a multi-select dropdown', () => {
     const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
     const template = compiledTemplate();
-    expect(source).toContain('const maPeriodOptions = [5, 7, 15, 30, 60];');
+    expect(source).toContain('options: [5, 7, 15, 30, 60]');
+    expect(source).toContain('defaultPeriods: [5, 7, 15]');
     expect(source).toContain('calcParams: [...maPeriods.value]');
     expect(source).toContain('function toggleMaPeriod(value: number)');
     expect(template).toContain('el-dropdown');
@@ -44,7 +45,8 @@ describe('terminal EMA controls', () => {
   it('selects EMA6, EMA12 and EMA20 through an independent dropdown', () => {
     const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
     const template = compiledTemplate();
-    expect(source).toContain('const emaPeriodOptions = [6, 12, 20];');
+    expect(source).toContain('options: [6, 12, 20]');
+    expect(source).toContain('defaultPeriods: [6, 12]');
     expect(source).toContain('calcParams: [...emaPeriods.value]');
     expect(source).toContain("!['MA', 'EMA'].includes(item.value)");
     expect(source).toContain('function toggleEmaPeriod(value: number)');
@@ -103,5 +105,16 @@ describe('terminal EMA default initialization', () => {
     expect(initialization).toContain('calcParams: [...emaPeriods.value]');
     expect(initialization).toContain("paneId: 'candle_pane'");
     expect(initialization).not.toContain("renderIndicator('EMA')");
+  });
+});
+
+describe('terminal indicator initialization configuration', () => {
+  it('uses configured default periods and BOLL parameters on initial and incremental rendering', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    expect(source).toContain("enabled: true,\n    calcParams: [20, 2]");
+    expect(source).toContain("ref<string[]>(indicatorConfig.boll.enabled ? ['BOLL'] : [])");
+    expect(source.match(/calcParams: \[\.\.\.indicatorConfig\.boll\.calcParams\]/g)).toHaveLength(2);
+    expect(source).toContain('ref<number[]>([...indicatorConfig.ma.defaultPeriods])');
+    expect(source).toContain('ref<number[]>([...indicatorConfig.ema.defaultPeriods])');
   });
 });
