@@ -33,7 +33,7 @@ describe('terminal MA controls', () => {
     expect(source).toContain('calcParams: [...maPeriods.value]');
     expect(source).toContain('function toggleMaPeriod(value: number)');
     expect(template).toContain('el-dropdown');
-    expect(template).toContain(':hide-on-click="false"');
+    expect(source).toContain(':hide-on-click="false"');
     expect(template).toContain('toggleMaPeriod');
     expect(template).toContain('ma-dropdown-caret');
     expect(template).toContain('maPeriods');
