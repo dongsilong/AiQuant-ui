@@ -262,6 +262,7 @@ export interface StrategySymbolBinding {
   status?: string;
   runtimeEnabled?: boolean;
   runtimeActive?: boolean;
+  runtimeStatusReason?: string;
 }
 export interface StrategyPreflightResult {
   valid: boolean;
