@@ -49,16 +49,24 @@
               </el-radio-group>
             </div>
             <div class="toolbar-control indicator-control">
-              <span class="toolbar-label">指标</span>
-              <el-button
-                v-for="maPeriod in maPeriodOptions"
-                :key="`MA${maPeriod}`"
+              <span class="toolbar-label">MA</span>
+              <el-select
+                v-model="maPeriods"
+                class="ma-period-select"
                 size="small"
-                :type="maPeriods.includes(maPeriod) ? 'primary' : ''"
-                @click="toggleMaPeriod(maPeriod)"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                placeholder="选择 MA 周期"
+                @change="handleMaPeriodsChange"
               >
-                MA{{ maPeriod }}
-              </el-button>
+                <el-option
+                  v-for="maPeriod in maPeriodOptions"
+                  :key="maPeriod"
+                  :label="`MA${maPeriod}`"
+                  :value="maPeriod"
+                />
+              </el-select>
               <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
               <el-button
                 v-for="tool in otherIndicatorOptions"
@@ -863,10 +871,8 @@ function renderOverlays() {
   }
 }
 
-function toggleMaPeriod(value: number) {
-  maPeriods.value = maPeriods.value.includes(value)
-    ? maPeriods.value.filter(period => period !== value)
-    : [...maPeriods.value, value].sort((a, b) => a - b);
+function handleMaPeriodsChange(values: number[]) {
+  maPeriods.value = [...values].sort((a, b) => a - b);
   renderIndicators();
 }
 
@@ -2491,6 +2497,9 @@ onBeforeUnmount(() => {
 }
 .chart-symbol-select {
   width: 160px;
+}
+.ma-period-select {
+  width: 180px;
 }
 .toolbar-divider {
   width: 1px;

@@ -26,10 +26,13 @@ describe('strategy instance symbol link', () => {
 });
 
 describe('terminal MA controls', () => {
-  it('configures MA5, MA7, MA15, MA30 and MA60 as independent indicators', () => {
+  it('selects MA5, MA7, MA15, MA30 and MA60 through a multi-select dropdown', () => {
     const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    const template = compiledTemplate();
     expect(source).toContain('const maPeriodOptions = [5, 7, 15, 30, 60];');
     expect(source).toContain('calcParams: [...maPeriods.value]');
-    expect(compiledTemplate()).toContain('toggleMaPeriod(maPeriod)');
+    expect(source).toContain('function handleMaPeriodsChange(values: number[])');
+    expect(template).toContain('maPeriods');
+    expect(template).toContain('handleMaPeriodsChange');
   });
 });
