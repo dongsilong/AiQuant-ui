@@ -94,3 +94,14 @@ describe('terminal price-line overlay updates', () => {
     expect(source).toContain('`order:${item.symbol}:${item.orderId}`');
   });
 });
+
+describe('terminal EMA default initialization', () => {
+  it('creates the default EMA directly when the chart is initialized', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    const initialization = source.slice(source.indexOf('function renderIndicators'), source.indexOf('function renderOverlays'));
+    expect(initialization).toContain("name: 'EMA'");
+    expect(initialization).toContain('calcParams: [...emaPeriods.value]');
+    expect(initialization).toContain("paneId: 'candle_pane'");
+    expect(initialization).not.toContain("renderIndicator('EMA')");
+  });
+});
