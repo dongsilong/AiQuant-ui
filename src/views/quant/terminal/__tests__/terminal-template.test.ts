@@ -111,8 +111,8 @@ describe('terminal EMA default initialization', () => {
 describe('terminal indicator initialization configuration', () => {
   it('supports independent enabled flags for MA, EMA and BOLL', () => {
     const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
-    expect(source).toContain('ma: {\\n    enabled: true');
-    expect(source).toContain('ema: {\\n    enabled: true');
+    expect(source).toContain('ma: {\n    enabled: true');
+    expect(source).toContain('ema: {\n    enabled: true');
     expect(source).toContain('const maEnabled = ref(indicatorConfig.ma.enabled)');
     expect(source).toContain('const emaEnabled = ref(indicatorConfig.ema.enabled)');
     expect(source).toContain('maEnabled.value && maPeriods.value.length');
