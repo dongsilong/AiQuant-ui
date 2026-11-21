@@ -107,7 +107,7 @@
             <template #header>
               <div class="section-head">
                 <b>策略实例</b>
-                <span>可直接启停</span>
+                <span>独立控制开仓评估</span>
               </div>
             </template>
             <el-select
@@ -142,15 +142,18 @@
                       :model-value="item.runtimeEnabled !== false"
                       :loading="strategySymbolToggling.has(strategySymbolToggleKey(item))"
                       :disabled="!item.strategySymbolId || strategySymbolToggling.has(strategySymbolToggleKey(item))"
-                      active-text="开"
-                      inactive-text="停"
+                      active-text="开仓"
+                      inactive-text="暂停"
                       inline-prompt
                       @change="enabled => toggleStrategySymbol(item, Boolean(enabled))"
                     />
                   </p>
                   <small>
-                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
-                    <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
+                    <div>实际运行：{{ item.runtimeActive === true ? '运行中' : item.runtimeActive === false ? '未运行' : '状态未知' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
+                    <div>开仓开关：{{ item.runtimeEnabled === false ? '已暂停' : '已启用' }}</div>
+                    <div v-if="item.runtimeActive === false && item.runtimeEnabled !== false">
+                      {{ item.lastError || '开仓已启用，但实例尚未取得有效运行租约，请检查运行日志' }}
+                    </div>
                   </small>
                 </div>
               </div>
