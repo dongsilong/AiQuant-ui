@@ -360,12 +360,32 @@
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="85" align="center">
             <template #default="scope">
-              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
+              {{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="1m MA5/MA7" width="175" align="center">
+            <template #default="scope">
               <el-tooltip :content="slopeMaTooltip(scope.row as SlopeRow)" placement="top">
-                <span
-                  class="slope-ma-direction"
-                  :class="isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP' ? 'slope-ma-up' : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN' ? 'slope-ma-down' : 'slope-ma-flat'"
-                >{{ isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP' ? '↑' : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN' ? '↓' : '—' }}</span>
+                <div class="slope-ma-cell">
+                  <div class="slope-ma-values">
+                    <span>MA5 {{ isSlopeMaFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.ma5) : '-' }}</span>
+                    <span>MA7 {{ isSlopeMaFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.ma7) : '-' }}</span>
+                  </div>
+                  <span
+                    class="slope-ma-direction"
+                    :class="isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP' ? 'slope-ma-up' : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN' ? 'slope-ma-down' : 'slope-ma-flat'"
+                  >{{
+                    isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP'
+                      ? '偏多（MA5 > MA7）'
+                      : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN'
+                        ? '偏空（MA5 < MA7）'
+                        : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'FLAT'
+                          ? '横向（MA5 = MA7）'
+                          : isSlopeMaFresh(scope.row as SlopeRow)
+                            ? '趋势字段缺失'
+                            : '未就绪'
+                  }}</span>
+                </div>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -1803,7 +1823,8 @@ function slopeMaTooltip(row: SlopeRow): string {
     const reason = row.maBlockReason || (row.maReady ? '数据有效期已到' : '数据未就绪');
     return `1m MA5/MA7 不可用：${reason}；最后收盘K线：${row.maLastClosedKlineOpenTime || '-'}`;
   }
-  return `1m MA5：${formatQuantPrice(row.symbol, row.ma5)}；MA7：${formatQuantPrice(row.symbol, row.ma7)}；最后收盘K线：${row.maLastClosedKlineOpenTime || '-'}`;
+  const trend = row.maTrend === 'UP' ? '偏多（MA5 > MA7）' : row.maTrend === 'DOWN' ? '偏空（MA5 < MA7）' : row.maTrend === 'FLAT' ? '横向（MA5 = MA7）' : '趋势字段缺失';
+  return `1m MA5：${formatQuantPrice(row.symbol, row.ma5)}；MA7：${formatQuantPrice(row.symbol, row.ma7)}；趋势：${trend}；最后收盘K线：${row.maLastClosedKlineOpenTime || '-'}`;
 }
 
 function slopeRowClassName({ row }: { row: Partial<SlopeRow> }): string {
@@ -2557,8 +2578,20 @@ onBeforeUnmount(() => {
   color: var(--el-color-warning);
   font-size: 12px;
 }
+.slope-ma-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.4;
+}
+.slope-ma-values {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .slope-ma-direction {
-  margin-left: 5px;
   font-weight: 700;
 }
 .slope-ma-up {
