@@ -55,7 +55,7 @@
                 popper-class="ma-indicator-dropdown"
                 @command="toggleMaPeriod"
               >
-                <el-button size="small" :type="maPeriods.length ? 'primary' : ''">
+                <el-button class="indicator-button" size="small" :type="maPeriods.length ? 'primary' : ''">
                   MA <span class="indicator-dropdown-caret">▾</span>
                 </el-button>
                 <template #dropdown>
@@ -82,7 +82,7 @@
                 popper-class="ema-indicator-dropdown"
                 @command="toggleEmaPeriod"
               >
-                <el-button size="small" :type="emaPeriods.length ? 'primary' : ''">
+                <el-button class="indicator-button" size="small" :type="emaPeriods.length ? 'primary' : ''">
                   EMA <span class="indicator-dropdown-caret">▾</span>
                 </el-button>
                 <template #dropdown>
@@ -107,6 +107,7 @@
               <el-button
                 v-for="tool in otherIndicatorOptions"
                 :key="tool.value"
+                class="indicator-button"
                 size="small"
                 :type="indicators.includes(tool.value) ? 'primary' : ''"
                 @click="toggleIndicator(tool.value)"
@@ -2553,6 +2554,10 @@ onBeforeUnmount(() => {
 .chart-symbol-select {
   width: 160px;
 }
+.indicator-control :deep(.indicator-button) {
+  width: 68px;
+}
+
 .indicator-dropdown-caret {
   margin-left: 3px;
   font-size: 11px;
