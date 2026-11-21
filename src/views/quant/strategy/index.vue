@@ -122,10 +122,10 @@
         <el-tab-pane label="运行实例" name="instances">
           <el-table :data="instances" border>
             <el-table-column align="center" label="序号" type="index" width="80" />
-            <el-table-column label="策略" prop="strategyName" align="center" min-width="180" show-overflow-tooltip />
-            <el-table-column label="账户" prop="accountName" align="center" min-width="100" show-overflow-tooltip />
-            <el-table-column label="交易对" prop="symbol" align="center" width="120" show-overflow-tooltip />
-            <el-table-column label="状态" prop="status" align="center" width="100" />
+            <el-table-column label="策略" prop="strategyName" align="center" width="320" show-overflow-tooltip />
+            <el-table-column label="账户" prop="accountName" align="center" width="150" />
+            <el-table-column label="交易对" prop="symbol" align="center" width="150" />
+            <el-table-column label="状态" prop="status" align="center" width="120" />
             <el-table-column label="最近错误" prop="lastError" align="center" min-width="220" show-overflow-tooltip />
           </el-table>
         </el-tab-pane>
@@ -146,7 +146,7 @@
             <el-table-column label="需恢复" align="center" width="100">
               <template #default="scope">{{ scope.row.recoveryRequiredLabel || (scope.row.recoveryRequired ? '是' : '否') }}</template>
             </el-table-column>
-            <el-table-column label="更新时间" prop="updatedAt" align="center" min-width="170" />
+            <el-table-column label="更新时间" align="center" min-width="170"><template #default="scope">{{ formatQuantLocalTime(scope.row.updatedAt) }}</template></el-table-column>
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="插件目录" name="plugins">
@@ -243,21 +243,15 @@
       <el-alert
         v-if="preflightResult"
         :title="preflightResult.valid ? '预检通过，可以启动' : '预检未通过，请修正配置'"
+        :description="preflightResult.errors?.length ? preflightResult.errors.join('；') : ''"
         :type="preflightResult.valid ? 'success' : 'error'"
+        :closable="false"
         show-icon
       />
       <el-descriptions v-if="preflightResult" :column="2" border class="mt-4">
         <el-descriptions-item label="实例数量">{{ preflightResult.instanceCount }}</el-descriptions-item>
         <el-descriptions-item label="账户数量">{{ preflightResult.accounts.length }}</el-descriptions-item>
       </el-descriptions>
-      <el-alert
-        v-for="error in preflightResult?.errors || []"
-        :key="error"
-        class="mt-2"
-        :title="error"
-        type="error"
-        :closable="false"
-      />
       <el-table v-if="preflightResult" :data="preflightResult.symbols" border class="mt-4">
         <el-table-column align="center" label="序号" type="index" width="80"/>
         <el-table-column prop="symbol" label="交易对" />
@@ -274,6 +268,7 @@
 </template>
 
 <script lang="ts" setup>
+import { formatQuantLocalTime } from '@/utils/quant-time';
 import type {
   CredentialVO,
   StrategyForm,

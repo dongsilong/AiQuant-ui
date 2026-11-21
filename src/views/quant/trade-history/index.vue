@@ -38,6 +38,7 @@
 import { listTradeHistory } from '@/api/quant/trade-history';
 import AdminLedgerTable from '../components/AdminLedgerTable.vue';
 import { displayCommission, displayDecimal } from '../components/ledger-display';
+import { formatQuantTime } from '@/utils/quant-time';
 import { useCredentialOptions } from '../components/useCredentialOptions';
 import { useDict } from '@/utils/dict';
 
@@ -45,16 +46,6 @@ const { credentialFilter } = useCredentialOptions();
 const { quant_position_direction } = toRefs<any>(useDict('quant_position_direction'));
 const incompleteCount = ref(0);
 const inferredCount = ref(0);
-const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hourCycle: 'h23'
-});
 const decimal = (value: unknown) => (value == null ? '—' : displayDecimal(value));
 const price = (value: unknown) => (value == null ? '—' : String(value));
 const amount = (value: unknown) => (value == null ? '—' : displayDecimal(value, 8));
@@ -64,7 +55,7 @@ const fixedAmount = (value: unknown) => {
   if (!/^[+-]?\d+(?:\.\d+)?$/.test(formatted)) return formatted;
   return formatted.includes('.') ? formatted.padEnd(formatted.indexOf('.') + 3, '0') : `${formatted}.00`;
 };
-const time = (value: unknown) => (value ? timeFormatter.format(new Date(String(value))) : '—');
+const time = formatQuantTime;
 const balance = (value: unknown, checkedAt: unknown, captureSource: unknown, responseReceivedAt: unknown) => {
   if (value == null) return '—';
   const source = String(captureSource || '').includes('REST') ? 'REST快照' : '账户快照';
@@ -72,6 +63,15 @@ const balance = (value: unknown, checkedAt: unknown, captureSource: unknown, res
   const checked = checkedAt ? `（${source}；${timeLabel}：${time(checkedAt)}）` : `（${source}；时间未知）`;
   return `${fixedAmount(value)}${checked}`;
 };
+const closingBalance = (row: Record<string, unknown>, value: unknown) =>
+  row.status === 'CLOSED'
+    ? balance(
+        value,
+        row.closingEquityCapturedAt ?? row.closingEquityAt,
+        row.closingEquityCaptureSource,
+        row.closingEquityResponseReceivedAt
+      )
+    : '—';
 const centered = { align: 'center' as const, headerAlign: 'center' as const };
 const columns = [
   { prop: 'accountName', label: '客户名称', ...centered, width: 120 },
@@ -87,15 +87,15 @@ const columns = [
     formatter: (row: Record<string, unknown>) => (row.leverage == null ? '—' : `${row.leverage}x`)
   },*/
   /*{ prop: 'openingBalance', label: '开仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.openingBalance, row.openingBalanceAt) },*/
-  { prop: 'openedAt', label: '开仓时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.openedAt) },
+  { prop: 'openedAt', label: '开仓时间', ...centered, width: 160, sortable: 'custom' as const, formatter: (row: Record<string, unknown>) => time(row.openedAt) },
   { prop: 'closePrice', label: '平仓价', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.closePrice) },
-  { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
   { prop: 'commission', label: '手续费', ...centered, width: 180, formatter: (row: Record<string, unknown>) => displayCommission(row.commission) },
-  { prop: 'closingEquity', label: '账户权益(U)', ...centered, width: 240, formatter: (row: Record<string, unknown>) => balance(row.closingEquity, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource, row.closingEquityResponseReceivedAt) },
-  { prop: 'walletBalance', label: '钱包余额(U)', ...centered, width: 150, formatter: (row: Record<string, unknown>) => balance(row.walletBalance, row.closingEquityCapturedAt ?? row.closingEquityAt, row.closingEquityCaptureSource, row.closingEquityResponseReceivedAt) },
+  { prop: 'realizedPnl', label: '盈亏', ...centered, width: 100,formatter: (row: Record<string, unknown>) => amount(row.realizedPnl) },
+  { prop: 'closingEquity', label: '账户权益(U)', ...centered, width: 240, formatter: (row: Record<string, unknown>) => closingBalance(row, row.closingEquity) },
+  { prop: 'walletBalance', label: '钱包余额(U)', ...centered, width: 150, formatter: (row: Record<string, unknown>) => closingBalance(row, row.walletBalance) },
   /*{ prop: 'unrealizedPnl', label: '未实现盈亏', ...centered, width: 120, formatter: (row: Record<string, unknown>) => fixedAmount(row.unrealizedPnl) },*/
   /*{ prop: 'closingBalance', label: '平仓余额U（核实时间）', ...centered, width: 230, formatter: (row: Record<string, unknown>) => balance(row.closingBalance, row.closingBalanceAt) },*/
-  { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
+  { prop: 'closedAt', label: '平仓成交时间', ...centered, width: 160, sortable: 'custom' as const, formatter: (row: Record<string, unknown>) => time(row.closeEventTime ?? row.closedAt) }
 ];
 const filters = computed(() => [
   { ...credentialFilter.value, label: '客户名称', placeholder: '全部客户' },

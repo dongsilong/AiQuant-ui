@@ -1,5 +1,7 @@
 <template>
   <div class="p-2 app-container quant-terminal-page">
+    <div class="terminal-workspace" :class="{ 'is-slope-open': slopePanelVisible }">
+      <div class="terminal-main">
     <el-card shadow="never" class="terminal-card">
       <div class="terminal-overview">
         <div class="account-control">
@@ -47,10 +49,65 @@
               </el-radio-group>
             </div>
             <div class="toolbar-control indicator-control">
-              <span class="toolbar-label">指标</span>
+              <el-dropdown
+                trigger="click"
+                :hide-on-click="false"
+                popper-class="ma-indicator-dropdown"
+                @command="toggleMaPeriod"
+              >
+                <el-button class="indicator-button" size="small" :type="maEnabled && maPeriods.length ? 'primary' : ''">
+                  MA <span class="indicator-dropdown-caret">▾</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="maPeriod in maPeriodOptions"
+                      :key="maPeriod"
+                      :command="maPeriod"
+                      :class="{ 'is-selected': maPeriods.includes(maPeriod) }"
+                    >
+                      <span class="indicator-dropdown-option">
+                        <span class="indicator-dropdown-check" aria-hidden="true">
+                          {{ maPeriods.includes(maPeriod) ? '✓' : '' }}
+                        </span>
+                        MA{{ maPeriod }}
+                      </span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-dropdown
+                trigger="click"
+                :hide-on-click="false"
+                popper-class="ema-indicator-dropdown"
+                @command="toggleEmaPeriod"
+              >
+                <el-button class="indicator-button" size="small" :type="emaEnabled && emaPeriods.length ? 'primary' : ''">
+                  EMA <span class="indicator-dropdown-caret">▾</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="emaPeriod in emaPeriodOptions"
+                      :key="emaPeriod"
+                      :command="emaPeriod"
+                      :class="{ 'is-selected': emaPeriods.includes(emaPeriod) }"
+                    >
+                      <span class="indicator-dropdown-option">
+                        <span class="indicator-dropdown-check" aria-hidden="true">
+                          {{ emaPeriods.includes(emaPeriod) ? '✓' : '' }}
+                        </span>
+                        EMA{{ emaPeriod }}
+                      </span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
               <el-button
-                v-for="tool in indicatorOptions"
+                v-for="tool in otherIndicatorOptions"
                 :key="tool.value"
+                class="indicator-button"
                 size="small"
                 :type="indicators.includes(tool.value) ? 'primary' : ''"
                 @click="toggleIndicator(tool.value)"
@@ -74,7 +131,7 @@
             </div>
           </div>
           <div class="kline-chart-wrap">
-            <div ref="chartRef" v-loading="loading" class="kline-chart" />
+            <div ref="chartRef" v-loading="chartLoading" class="kline-chart" />
           </div>
         </el-card>
         <div class="chart-side">
@@ -88,15 +145,19 @@
                 <dt>可用余额</dt>
                 <dd>{{ formatFixed(account.availableBalance, 2) }}</dd>
                 <dt>未实现盈亏</dt>
-                <dd>{{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}</dd>
-                <dt>当天总收益率</dt>
-                <dd>{{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}</dd>
+                <dd :class="{ 'fund-positive': currentUnrealizedPnl !== undefined && currentUnrealizedPnl > 0, 'fund-negative': currentUnrealizedPnl !== undefined && currentUnrealizedPnl < 0 }">
+                  {{ currentUnrealizedPnl === undefined ? '—' : formatFixed(currentUnrealizedPnl, 2) }}
+                </dd>
+                <dt>当日收益率<small v-if="dailyBaselineObservedAt" class="fund-baseline">({{ dailyBaselineObservedAt }})</small></dt>
+                <dd :class="{ 'fund-positive': dailyReturnRate !== undefined && dailyReturnRate > 0, 'fund-negative': dailyReturnRate !== undefined && dailyReturnRate < 0 }">
+                  {{ dailyReturnRate === undefined ? '—' : `${formatFixed(dailyReturnRate, 2)}%` }}
+                </dd>
               </dl>
-              <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，显示最近一次有效估值</small>-->
+              <!--<small v-if="unrealizedPnlStale" class="fund-stale">行情暂未更新，当前为最近一次有效估值</small>-->
             </div>
             <el-empty v-else description="暂无账户数据" />
           </el-card>
-          <el-card shadow="never" class="side-card strategy-side-card">
+          <el-card shadow="never" class="side-card strategy-side-card" v-hasPermi="['quant:terminal:slope']">
             <template #header>
               <div class="section-head">
                 <b>策略实例</b>
@@ -108,12 +169,11 @@
               class="strategy-select"
               clearable
               placeholder="筛选策略"
-              @change="handleStrategyChange"
             >
               <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
             </el-select>
-            <div v-if="instances.length" class="strategy-grid">
-              <div v-for="item in instances" :key="item.id" class="strategy">
+            <div v-if="visibleInstances.length" class="strategy-grid">
+              <div v-for="item in visibleInstances" :key="item.id" class="strategy">
                 <div>
                   <!--<div class="strategy-actions">
                     <el-button
@@ -143,7 +203,7 @@
                     />
                   </p>
                   <small>
-                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
+                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantLocalTime(item.lastSignalAt) : '暂无信号' }}）</div>
                     <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
                   </small>
                 </div>
@@ -170,11 +230,11 @@
               border
               @row-dblclick="selectRowSymbol"
             >
-              <el-table-column type="index" label="序号" align="center" width="80">
+              <el-table-column type="index" label="序号" align="center" width="60">
                 <template #default="scope">{{ scope.$index + 1 }}</template>
               </el-table-column>
-              <el-table-column prop="symbol" label="交易对" min-width="100" />
-              <el-table-column label="方向" width="100" align="center">
+              <el-table-column prop="symbol" label="交易对" min-width="120" />
+              <el-table-column label="方向" width="80" align="center">
                 <template #default="scope"><dict-tag :options="quant_position_direction" :value="directionCode(scope.row)" /></template>
               </el-table-column>
               <el-table-column label="数量 / 名义价值 U" min-width="150">
@@ -191,7 +251,7 @@
               <el-table-column label="未实现盈亏" min-width="100">
                 <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
               </el-table-column>
-              <el-table-column label="回报率" min-width="100">
+              <el-table-column label="回报率" min-width="80" align="center">
                 <template #default="scope">
                   {{ scope.row.returnRate === undefined ? '-' : `${formatFixed(scope.row.returnRate, 2)}%` }}
                 </template>
@@ -203,26 +263,26 @@
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯最高回报率（合约价）" min-width="150">
+              <el-table-column label="阶梯最高回报率（合约价）" min-width="180">
                 <template #default="scope">
                   {{
                     scope.row.ladderMaximumReturnRate === undefined ? '-' : `${formatFixed(scope.row.ladderMaximumReturnRate, 2)}%`
                   }}
                 </template>
               </el-table-column>
-              <el-table-column label="当前阶梯" min-width="90" align="center">
+              <el-table-column label="当前阶梯" min-width="80" align="center">
                 <template #default="scope">
                   {{ scope.row.highestStep === undefined ? '-' : scope.row.highestStep > 0 ? `${scope.row.highestStep}阶` : '未达到' }}
                 </template>
               </el-table-column>
-              <el-table-column label="已确认阶梯" min-width="100" align="center">
+              <el-table-column label="已确认阶梯" min-width="90" align="center">
                 <template #default="scope">
                   {{ scope.row.confirmedProtectionStep === undefined ? '-' : scope.row.confirmedProtectionStep > 0 ? `${scope.row.confirmedProtectionStep}阶` : '未确认' }}
                 </template>
               </el-table-column>
-              <el-table-column label="阶梯保护触发价" min-width="130">
+              <el-table-column label="阶梯保护触发价" min-width="130" show-overflow-tooltip>
                 <template #default="scope">
-                  {{ stepProtectionDisplay(scope.row) }}
+                  {{ stepProtectionDisplay(scope.row as PositionSnapshot) }}
                 </template>
               </el-table-column>
               <el-table-column label="强平价" min-width="100">
@@ -233,7 +293,7 @@
                   {{ protectionDisplay(scope.row, 'takeProfit') }} / {{ protectionDisplay(scope.row, 'stopLoss') }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="110" align="center">
+              <el-table-column label="操作" width="80" align="center">
                 <template #default="scope">
                   <el-button v-hasPermi="['quant:position:close']" link type="danger" @click="close(scope.row)">平仓</el-button>
                 </template>
@@ -259,9 +319,9 @@
               </el-table-column>
               <el-table-column prop="symbol" label="交易对" />
               <el-table-column prop="side" label="方向" />
-              <el-table-column prop="type" label="类型" />
+              <el-table-column prop="type" label="类型" min-width="180" />
               <el-table-column prop="source" label="来源" />
-              <el-table-column label="价格 / 触发价">
+              <el-table-column label="价格/触发价" min-width="100">
                 <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
               </el-table-column>
               <el-table-column label="数量">
@@ -286,18 +346,18 @@
               <el-table-column type="index" label="序号" align="center" width="80">
                 <template #default="scope">{{ (tradeQuery.pageNum - 1) * tradeQuery.pageSize + scope.$index + 1 }}</template>
               </el-table-column>
-              <el-table-column prop="symbol" label="交易对" />
+              <el-table-column prop="symbol" label="交易对" min-width="100" />
               <el-table-column prop="side" label="方向" />
               <el-table-column label="数量">
                 <template #default="scope">{{ format(scope.row.quantity) }}</template>
               </el-table-column>
-              <el-table-column label="价格">
+              <el-table-column label="价格" min-width="100">
                 <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template>
               </el-table-column>
-              <el-table-column label="已实现盈亏">
+              <el-table-column label="已实现盈亏" min-width="120">
                 <template #default="scope">{{ format(scope.row.realizedPnl) }}</template>
               </el-table-column>
-              <el-table-column prop="tradeTime" label="成交时间" />
+              <el-table-column label="成交时间" min-width="160"><template #default="scope">{{ formatQuantTime(scope.row.tradeTime) }}</template></el-table-column>
             </el-table>
             <pagination
               v-show="tradeTotal > 0"
@@ -310,81 +370,93 @@
         </el-tabs>
       </el-card>
     </el-card>
-
-    <el-button v-hasPermi="['quant:terminal:slope']" class="slope-floating-button" type="primary" circle @click="openSlopePanel" aria-label="打开实时斜率">
+      </div>
+      <aside class="slope-panel" aria-label="实时斜率面板">
+        <div class="slope-panel-header">
+          <b>实时斜率</b>
+          <el-button link type="primary" @click="hideSlopePanel">收起</el-button>
+        </div>
+        <el-select
+          v-model="slopeStrategyId"
+          class="slope-strategy-select"
+          placeholder="选择策略"
+          @change="openSlopePanel"
+        >
+          <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
+        </el-select>
+        <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
+          <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
+          <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
+        </div>
+        <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
+        <el-table
+          v-else-if="slopeRows.length"
+          :data="slopeRows"
+          :row-class-name="slopeRowClassName"
+          border
+          stripe
+          class="slope-table"
+        >
+          <el-table-column type="index" label="序号" align="center" width="55" />
+          <el-table-column label="交易对" width="120">
+            <template #default="scope">
+              <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
+                {{ scope.row.symbol }}
+              </el-link>
+            </template>
+          </el-table-column>
+          <el-table-column prop="interval" label="周期" width="60" align="center" />
+          <!--<el-table-column label="参考开盘价" min-width="110">
+            <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
+          </el-table-column>-->
+          <el-table-column label="当前价" min-width="80">
+            <template #default="scope">{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</template>
+          </el-table-column>
+          <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
+          <el-table-column label="角度" min-width="85" align="center">
+            <template #default="scope">
+              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
+              <span
+                v-if="slopeMaDirection(scope.row as SlopeRow) === 'UP'"
+                class="slope-ma-direction slope-ma-up"
+              > ↑</span>
+              <span
+                v-else-if="slopeMaDirection(scope.row as SlopeRow) === 'DOWN'"
+                class="slope-ma-direction slope-ma-down"
+              > ↓</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="70" align="center">
+            <template #default="scope">
+              {{ statusText(scope.row.status) }}
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
+      </aside>
+    </div>
+    <el-button
+      v-hasPermi="['quant:terminal:slope']"
+      v-if="!slopePanelVisible"
+      class="slope-floating-button"
+      type="primary"
+      circle
+      @click="toggleSlopePanel"
+      aria-label="打开实时斜率"
+    >
       斜率
     </el-button>
-    <el-drawer
-      v-model="slopePanelVisible"
-      title="实时斜率"
-      direction="rtl"
-      size="620px"
-      :modal="false"
-      :modal-penetrable="true"
-      :resizable="true"
-      :lock-scroll="false"
-      @closed="closeSlopePanel"
-    >
-      <el-select
-        v-model="slopeStrategyId"
-        class="slope-strategy-select"
-        placeholder="选择策略"
-        @change="openSlopePanel"
-      >
-        <el-option v-for="item in strategies" :key="item.id" :label="item.strategyName" :value="item.id" />
-      </el-select>
-      <div v-if="slopeLoadError || slopeSymbolErrors.length" class="slope-load-error">
-        <span>{{ slopeLoadError || `交易对信息加载失败：${slopeSymbolErrors.join('、')}` }}</span>
-        <el-button link type="primary" :disabled="slopeLoading" @click="openSlopePanel">重试</el-button>
-      </div>
-      <el-skeleton v-if="slopeLoading && !slopeRows.length" :rows="5" animated />
-      <el-table
-        v-else-if="slopeRows.length"
-        :data="slopeRows"
-        :row-class-name="slopeRowClassName"
-        border
-        stripe
-        class="slope-table"
-      >
-        <el-table-column type="index" label="序号" align="center" width="60" />
-        <el-table-column label="交易对" width="120">
-          <template #default="scope">
-            <el-link type="primary" :underline="'never'" @click.stop="selectRowSymbol({ symbol: scope.row.symbol })">
-              {{ scope.row.symbol }}
-            </el-link>
-          </template>
-        </el-table-column>
-        <el-table-column prop="interval" label="周期" width="72" />
-        <!--<el-table-column label="参考开盘价" min-width="110">
-          <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
-        </el-table-column>-->
-        <el-table-column label="当前价" min-width="110">
-          <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
-        </el-table-column>
-        <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
-        <el-table-column label="角度" min-width="82">
-          <template #default="scope">
-            {{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="82">
-          <template #default="scope">
-            {{ statusText(scope.row.status) }}
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
-    </el-drawer>
   </div>
 </template>
 
 <script lang="ts" setup>
+import { formatQuantDate, formatQuantLocalTime, formatQuantTime, getQuantTimeZone, setQuantServerTimeZone, setQuantTimeZone } from '@/utils/quant-time';
 import { ref, reactive, computed, watch, onMounted, onActivated, onDeactivated, onBeforeUnmount, nextTick, shallowRef, toRefs } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { init, dispose, type Chart, type KLineData } from 'klinecharts';
 import { getToken, removeToken } from '@/utils/auth';
 import { useDict } from '@/utils/dict';
-import {parseTime, selectDictLabel} from '@/utils/ruoyi';
+import { selectDictLabel } from '@/utils/ruoyi';
 import { cacheQuantSymbolTickSize, ensureQuantSymbolTickSizes, formatQuantPrice, priceScaleFromTickSize } from '../components/price-format';
 
 // Types
@@ -408,9 +480,8 @@ import {
 import {
   accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
-  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl,
-  terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
-  calculateRealtimeSlope, slopeStreamQuery
+  positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl, aggregateSnapshotPositionPnl,
+  terminalMarketSubscriptions, updateOrders, exactCloseQuantity
 } from './terminal-data';
 
 const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(
@@ -423,9 +494,32 @@ const interval = ref('15m');
 const currentInterval = interval;
 const strategyId = ref<string | number>();
 const credentialId = ref<string | number>();
-const indicators = ref<string[]>(['MA']);
+const indicatorConfig = {
+  ma: {
+    enabled: true,
+    options: [5, 7, 15, 30, 60],
+    defaultPeriods: [5, 7, 15]
+  },
+  ema: {
+    enabled: true,
+    options: [6, 12, 20],
+    defaultPeriods: [6, 12]
+  },
+  boll: {
+    enabled: true,
+    calcParams: [20, 2]
+  }
+};
+const maPeriodOptions = indicatorConfig.ma.options;
+const maEnabled = ref(indicatorConfig.ma.enabled);
+const maPeriods = ref<number[]>([...indicatorConfig.ma.defaultPeriods]);
+const emaPeriodOptions = indicatorConfig.ema.options;
+const emaEnabled = ref(indicatorConfig.ema.enabled);
+const emaPeriods = ref<number[]>([...indicatorConfig.ema.defaultPeriods]);
+const indicators = ref<string[]>(indicatorConfig.boll.enabled ? ['BOLL'] : []);
 const activeTab = ref('positions');
 const loading = ref(false);
+const chartLoading = ref(false);
 const streamStatus = ref('CONNECTING');
 const accountSnapshotAvailable = ref(false);
 const now = ref(Date.now());
@@ -463,9 +557,30 @@ const liveTrades = ref<TradeRecord[]>([]);
 const ordersError = ref('');
 const tradesError = ref('');
 
-// ==================== 斜率抽屉状态 ====================
-type SlopeRow = { symbol: string; interval: string; status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR'; currentPrice?: number; latestTradePrice?: number; referencePrice?: number; slopePercent?: number; degrees?: number; entryAngleDegrees?: number };
-type SlopeStreamState = { klines: KlineSnapshot[]; latestTradePrice?: number; handshakeComplete: boolean };
+// ==================== 实时斜率面板状态 ====================
+type SlopeRow = {
+  symbol: string;
+  interval: string;
+  status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  sequence?: number;
+  instanceId?: string;
+  currentPrice?: number;
+  referencePrice?: number;
+  slopePercent?: number;
+  degrees?: number;
+  entryAngleDegrees?: number;
+  slopeReady?: boolean;
+  slopeFreshForMillis?: number;
+  slopeReceivedAtLocal?: number;
+  ma5?: number;
+  ma7?: number;
+  maTrend?: 'UP' | 'DOWN' | 'FLAT';
+  maReady?: boolean;
+  maBlockReason?: string;
+  maLastClosedKlineOpenTime?: string;
+  maFreshForMillis?: number;
+  maReceivedAtLocal?: number;
+};
 const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
 const statusText = (status: string) => statusMap[status] ?? '未知';
 const slopePanelVisible = ref(false);
@@ -487,16 +602,24 @@ let dataRequestController: AbortController | undefined;
 let symbolSearchController: AbortController | undefined;
 let symbolSwitchController: AbortController | undefined;
 let slopeStreams: SseConnection[] = [];
-const slopeStreamStates = new Map<string, SlopeStreamState>();
-const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
-let slopeRenderFrame: number | undefined;
-let slopeStreamRetry: ReturnType<typeof setTimeout> | undefined;
+let slopeStreamGeneration = 0;
+const slopeStreamRetries = new Map<number, ReturnType<typeof setTimeout>>();
 let slopeLoadController: AbortController | undefined;
 
 let dataGeneration = 0;
 let symbolRequest = 0;
 let tradeRequest = 0;
+let ordersRequest = 0;
+let ordersRevision = 0;
 let protectionRequest = 0;
+let refreshRequest = 0;
+let accountDataRequest = 0;
+let accountRefreshPending = false;
+let ordersLoaded = false;
+let ordersLoading = false;
+let tradesLoaded = false;
+let chartDataSymbol = symbol.value;
+let chartDataInterval = interval.value;
 let accountRevision = 0;
 let positionRevision = 0;
 let positionSnapshotRequest = 0;
@@ -514,7 +637,7 @@ const chartRef = ref<HTMLElement>();
 const chart = shallowRef<Chart>();
 let resizeObserver: ResizeObserver | undefined;
 let updateChartBar: ((data: KLineData) => void) | undefined;
-let overlayIds: string[] = [];
+const overlayIds = new Map<string, string>();
 // 控制右侧留白，只在初始化或切换品种/周期时应用一次
 let initialRightGapApplied = false;
 
@@ -523,14 +646,12 @@ type ViewportSnapshot = { isRightEdge: boolean; visibleRange?: { from: number; t
 let viewportSnapshot: ViewportSnapshot = { isRightEdge: true };
 
 // ==================== 工具函数 ====================
-const shanghaiDateKey = (timestamp: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(timestamp);
+const shanghaiDateKey = (timestamp: number) => formatQuantDate(timestamp);
 function scheduleDailyBaselineRetry(id: string | number, day: string, generation: number) {
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
-  const remaining = Date.parse(`${day}T00:05:00+08:00`) - now.value;
-  if (remaining <= 0) return;
   dailyBaselineRefreshTimer = setTimeout(() => {
     void refreshDailyBaseline(id, day, generation);
-  }, Math.min(30000, remaining));
+  }, 30000);
 }
 
 async function refreshDailyBaseline(id: string | number, day: string, generation: number) {
@@ -580,6 +701,7 @@ const strategySymbolToggleKey = (item: StrategyInstanceVO) => `${String(item.str
 
 // ==================== 计算属性 ====================
 const indicatorOptions = computed(() => quant_indicator.value || []);
+const otherIndicatorOptions = computed(() => indicatorOptions.value.filter((item: any) => !['MA', 'EMA'].includes(item.value)));
 const indicatorNames = computed<Record<string, string>>(() => Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label])));
 
 const freshUnrealizedPnl = computed(() =>
@@ -601,11 +723,16 @@ watch(
 watch(accountSnapshotAvailable, available => {
   if (!available) lastValidUnrealizedPnl.value = undefined;
 });
+const snapshotUnrealizedPnl = computed(() =>
+  accountSnapshotAvailable.value ? aggregateSnapshotPositionPnl(positions.value) : undefined
+);
 const currentUnrealizedPnl = computed(() =>
-  accountSnapshotAvailable.value ? (freshUnrealizedPnl.value ?? lastValidUnrealizedPnl.value) : undefined
+  accountSnapshotAvailable.value
+    ? (freshUnrealizedPnl.value ?? lastValidUnrealizedPnl.value ?? snapshotUnrealizedPnl.value)
+    : undefined
 );
 const unrealizedPnlStale = computed(() =>
-  accountSnapshotAvailable.value && freshUnrealizedPnl.value === undefined && lastValidUnrealizedPnl.value !== undefined
+  accountSnapshotAvailable.value && freshUnrealizedPnl.value === undefined && currentUnrealizedPnl.value !== undefined
 );
 const currentAccountEquity = computed(() => {
   const walletBalance = Number(account.value?.walletBalance);
@@ -617,6 +744,13 @@ const dailyReturnRate = computed(() => {
   if (!Number.isFinite(baseline) || baseline <= 0 || currentAccountEquity.value === undefined) return undefined;
   return ((currentAccountEquity.value - baseline) / baseline) * 100;
 });
+const dailyBaselineObservedAt = computed(() => {
+  const observedAt = dailyAccountBaseline.value?.observedAt;
+  return observedAt ? formatQuantTime(observedAt) : undefined;
+});
+const visibleInstances = computed(() =>
+  instances.value.filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value))
+);
 
 const candleCountdown = computed(() => {
   const match = /^(\d+)([smhdwM])$/.exec(interval.value);
@@ -757,40 +891,140 @@ function renderChart() {
   setTimeout(() => { if (chart.value) restoreChartViewport(); }, 50);
 }
 
+function renderIndicator(name: string) {
+  if (!chart.value) return;
+  chart.value.removeIndicator({ name });
+  if (name === 'MA') {
+    if (maEnabled.value && maPeriods.value.length) {
+      chart.value.createIndicator({
+        name: 'MA',
+        calcParams: [...maPeriods.value],
+        paneId: 'candle_pane',
+        shortName: 'MA'
+      }, true);
+    }
+    return;
+  }
+  if (name === 'EMA') {
+    if (emaEnabled.value && emaPeriods.value.length) {
+      chart.value.createIndicator({
+        name: 'EMA',
+        calcParams: [...emaPeriods.value],
+        paneId: 'candle_pane',
+        shortName: 'EMA'
+      }, true);
+    }
+    return;
+  }
+  if (!indicators.value.includes(name)) return;
+  const mainIndicator = name === 'BOLL';
+  chart.value.createIndicator(
+    {
+      name,
+      ...(mainIndicator ? { paneId: 'candle_pane' } : {}),
+      ...(name === 'BOLL' ? { calcParams: [...indicatorConfig.boll.calcParams] } : {}),
+      shortName: indicatorNames.value[name] || name
+    },
+    mainIndicator
+  );
+}
+
 function renderIndicators() {
   if (!chart.value) return;
   chart.value.removeIndicator();
+  if (maEnabled.value && maPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'MA',
+      calcParams: [...maPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'MA'
+    }, true);
+  }
+  if (emaEnabled.value && emaPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'EMA',
+      calcParams: [...emaPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'EMA'
+    }, true);
+  }
   for (const name of indicators.value) {
-    const mainIndicator = ['MA', 'EMA', 'BOLL'].includes(name);
-    chart.value.createIndicator({ name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name }, mainIndicator);
+    const mainIndicator = ['EMA', 'BOLL'].includes(name);
+    chart.value.createIndicator(
+      {
+        name,
+        ...(mainIndicator ? { paneId: 'candle_pane' } : {}),
+        ...(name === 'BOLL' ? { calcParams: [...indicatorConfig.boll.calcParams] } : {}),
+        shortName: indicatorNames.value[name] || name
+      },
+      mainIndicator
+    );
   }
 }
 
 function renderOverlays() {
   if (!chart.value) return;
-  for (const id of overlayIds) chart.value.removeOverlay({ id });
-  overlayIds = [];
   const currentPositions = positionRows.value.filter(item => item.symbol === symbol.value);
   const currentOrders = orders.value.filter(item => item.symbol === symbol.value && Number(item.price) > 0);
   const lines = [
     ...currentPositions.flatMap(item => [
-      { value: Number(item.entryPrice), color: '#409eff' },
-      { value: Number(item.liquidationPrice), color: '#f56c6c' }
+      { key: `position:${item.symbol}:${item.side}:entry`, value: Number(item.entryPrice), color: '#409eff' },
+      { key: `position:${item.symbol}:${item.side}:liquidation`, value: Number(item.liquidationPrice), color: '#f56c6c' }
     ]),
-    ...chartProtectionLines.value.map(line => ({ value: line.value, color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c' })),
-    ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
+    ...chartProtectionLines.value.map(line => ({
+      key: `protection:${line.kind}:${line.value}`,
+      value: line.value,
+      color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c'
+    })),
+    ...currentOrders.map(item => ({
+      key: `order:${item.symbol}:${item.orderId}`,
+      value: Number(item.price),
+      color: '#909399'
+    }))
   ].filter(item => Number.isFinite(item.value) && item.value > 0);
-  for (const line of lines) {
-    const id = chart.value.createOverlay({ name: 'priceLine', points: [{ value: line.value }], styles: { line: { color: line.color } } });
-    if (typeof id === 'string') overlayIds.push(id);
+  const activeKeys = new Set(lines.map(line => line.key));
+  for (const [key, id] of overlayIds) {
+    if (!activeKeys.has(key)) {
+      chart.value.removeOverlay({ id });
+      overlayIds.delete(key);
+    }
   }
+  for (const line of lines) {
+    const overlay = {
+      points: [{ value: line.value }],
+      styles: { line: { color: line.color } }
+    };
+    const id = overlayIds.get(line.key);
+    if (id) {
+      chart.value.overrideOverlay({ id, ...overlay });
+    } else {
+      const createdId = chart.value.createOverlay({ name: 'priceLine', ...overlay });
+      if (typeof createdId === 'string') overlayIds.set(line.key, createdId);
+    }
+  }
+}
+
+function toggleMaPeriod(value: number) {
+  maPeriods.value = maPeriods.value.includes(value)
+    ? maPeriods.value.filter(period => period !== value)
+    : [...maPeriods.value, value].toSorted((a, b) => a - b);
+  maEnabled.value = maPeriods.value.length > 0;
+  renderIndicator('MA');
+}
+
+function toggleEmaPeriod(value: number) {
+  emaPeriods.value = emaPeriods.value.includes(value)
+    ? emaPeriods.value.filter(period => period !== value)
+    : [...emaPeriods.value, value].toSorted((a, b) => a - b);
+  emaEnabled.value = emaPeriods.value.length > 0;
+  renderIndicator('EMA');
 }
 
 function toggleIndicator(value: string) {
   indicators.value = indicators.value.includes(value)
     ? indicators.value.filter(item => item !== value)
     : [...indicators.value, value];
-  renderIndicators();
+  renderIndicator(value);
 }
 
 // ==================== 数据加载与处理逻辑 ====================
@@ -823,6 +1057,32 @@ let hydrationTimer: ReturnType<typeof setTimeout> | undefined;
 let hydrationRunning = false;
 let hydrationPending = false;
 let hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
+let hydrationLastStartedAt = 0;
+const HYDRATION_MIN_INTERVAL_MS = 5000;
+let positionDeferredRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let positionDeferredRetryCount = 0;
+
+function scheduleDeferredPositionRetry(error: unknown) {
+  const response = (error as { response?: { status?: number; headers?: Record<string, unknown> } })?.response;
+  if (response?.status !== 503 || positionDeferredRetryCount >= 5 || positionDeferredRetryTimer) return;
+  const headers = response.headers;
+  const rawRetryAfter = headers?.['retry-after'] ?? headers?.['Retry-After'];
+  const retryAfterSeconds = Number(rawRetryAfter);
+  const delay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+    ? Math.min(retryAfterSeconds * 1000, 2_147_000_000)
+    : Math.min(1000 * 2 ** positionDeferredRetryCount, 30_000);
+  positionDeferredRetryCount++;
+  positionDeferredRetryTimer = setTimeout(() => {
+    positionDeferredRetryTimer = undefined;
+    void refreshPositionsAfterAccountReconnect();
+  }, delay);
+}
+
+function clearDeferredPositionRetry() {
+  if (positionDeferredRetryTimer) clearTimeout(positionDeferredRetryTimer);
+  positionDeferredRetryTimer = undefined;
+  positionDeferredRetryCount = 0;
+}
 
 function mergePositionHistories(rows: StrategyPositionStateVO[]) {
   const previous = new Map(
@@ -844,6 +1104,8 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
     const newHighestStep = Number(item.highestStep);
     const oldConfirmedStep = Number(old.confirmedProtectionStep);
     const newConfirmedStep = Number(item.confirmedProtectionStep);
+    const oldLadderPeak = old.ladderMaximumReturnRate == null || old.ladderMaximumReturnRate === '' ? undefined : Number(old.ladderMaximumReturnRate);
+    const newLadderPeak = item.ladderMaximumReturnRate == null || item.ladderMaximumReturnRate === '' ? undefined : Number(item.ladderMaximumReturnRate);
     return {
       ...item,
       [field]: Number.isFinite(oldPeak) && Number.isFinite(newPeak)
@@ -852,6 +1114,9 @@ function mergePositionHistories(rows: StrategyPositionStateVO[]) {
       maximumReturnRate: Number.isFinite(oldReturnPeak) && Number.isFinite(newReturnPeak)
         ? Math.max(oldReturnPeak, newReturnPeak)
         : Number.isFinite(oldReturnPeak) ? old.maximumReturnRate : item.maximumReturnRate,
+      ladderMaximumReturnRate: Number.isFinite(oldLadderPeak) && Number.isFinite(newLadderPeak)
+        ? Math.max(oldLadderPeak, newLadderPeak)
+        : Number.isFinite(oldLadderPeak) ? old.ladderMaximumReturnRate : item.ladderMaximumReturnRate,
       highestStep: Number.isFinite(oldHighestStep) && Number.isFinite(newHighestStep)
         ? Math.max(oldHighestStep, newHighestStep)
         : Number.isFinite(oldHighestStep) ? old.highestStep : item.highestStep,
@@ -875,6 +1140,7 @@ function applyPositionPerformanceEvent(event: any) {
       String(item.positionCycleKey || '') === String(event.positionCycleKey || '')
   );
   const old = index >= 0 ? positionHistories.value[index] : undefined;
+  if (old?.updatedAt && event.updatedAt && String(old.updatedAt) > String(event.updatedAt)) return;
   const short = String(event.direction || old?.direction).toUpperCase() === 'SHORT';
   const field = short ? 'lowestPriceSinceEntry' : 'highestPriceSinceEntry';
   const oldPeak = Number(old?.[field]);
@@ -902,6 +1168,13 @@ function applyPositionPerformanceEvent(event: any) {
         : Number.isFinite(incomingStep) ? incomingStep : oldStep;
     }
   }
+  const oldLadderPeak = old?.ladderMaximumReturnRate == null || old.ladderMaximumReturnRate === '' ? undefined : Number(old.ladderMaximumReturnRate);
+  const eventLadderPeak = event.ladderMaximumReturnRate == null || event.ladderMaximumReturnRate === '' ? undefined : Number(event.ladderMaximumReturnRate);
+  if (Number.isFinite(oldLadderPeak) || Number.isFinite(eventLadderPeak)) {
+    row.ladderMaximumReturnRate = Number.isFinite(oldLadderPeak) && Number.isFinite(eventLadderPeak)
+      ? Math.max(oldLadderPeak, eventLadderPeak)
+      : Number.isFinite(eventLadderPeak) ? eventLadderPeak : oldLadderPeak;
+  }
   row.frozenLeverage = event.frozenLeverage ?? old?.frozenLeverage;
   if (index >= 0) positionHistories.value.splice(index, 1, row);
   else positionHistories.value = [...positionHistories.value, row];
@@ -919,11 +1192,14 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
   hydrationPositionRevisionFloor = Math.min(hydrationPositionRevisionFloor, positionRevisionBeforeEvent);
   hydrationPending = true;
   if (hydrationRunning || hydrationTimer) return;
+  const nextAllowedAt = hydrationLastStartedAt + HYDRATION_MIN_INTERVAL_MS;
+  const delay = Math.max(250, nextAllowedAt - Date.now());
   hydrationTimer = setTimeout(async () => {
     hydrationTimer = undefined;
     const id = credentialId.value;
     if (!id) return;
     const generation = dataGeneration;
+    hydrationLastStartedAt = Date.now();
     const revision = accountRevision;
     const snapshotPositionRevision = hydrationPositionRevisionFloor === Number.MAX_SAFE_INTEGER ? positionRevision : hydrationPositionRevisionFloor;
     hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
@@ -934,15 +1210,18 @@ function scheduleAccountHydration(positionRevisionBeforeEvent = positionRevision
       if (generation !== dataGeneration) return;
       if (a.status === 'fulfilled' && revision === accountRevision) account.value = a.value.data;
       if (p.status === 'fulfilled') {
+        clearDeferredPositionRetry();
         positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, snapshotPositionRevision);
         accountSnapshotAvailable.value = true;
         renderOverlays();
+      } else {
+        scheduleDeferredPositionRetry(p.reason);
       }
     } finally {
       hydrationRunning = false;
       if (hydrationPending) scheduleAccountHydration();
     }
-  }, 250);
+  }, delay);
 }
 
 async function loadTrades() {
@@ -959,10 +1238,12 @@ async function loadTrades() {
     trades.value = query.pageNum === 1 ? mergeTrades(rows, liveTrades.value).slice(0, query.pageSize) : rows;
     tradeTotal.value = result.data?.total || 0;
     tradePending.value = false;
+    tradesLoaded = true;
     tradesError.value = '';
   } catch (error) {
     if (generation === dataGeneration && requestId === tradeRequest) {
       trades.value = [];
+      tradesLoaded = false;
       tradesError.value = queryError(error, '成交记录加载失败');
     }
   } finally {
@@ -970,7 +1251,8 @@ async function loadTrades() {
   }
 }
 
-async function loadProtectionOrders() {
+async function loadProtectionOrders(force = false) {
+  if (!force && (protectionLoaded.value || protectionLoading.value)) return;
   const id = credentialId.value;
   if (!id) return;
   const generation = dataGeneration;
@@ -1003,40 +1285,109 @@ async function loadProtectionOrders() {
   }
 }
 
-async function loadOpenOrders() {
+async function loadOpenOrders(force = false, retryOnRevision = true) {
   const id = credentialId.value;
-  if (!id) return;
+  if (!id || (!force && (ordersLoaded || ordersLoading))) return;
   const generation = dataGeneration;
-  const revision = accountRevision;
+  const requestId = ++ordersRequest;
+  const revision = ordersRevision;
+  ordersLoading = true;
   try {
-    const result = await listOrders(id);
-    if (generation !== dataGeneration) return;
-    if (revision === accountRevision) orders.value = result.data || [];
-    ordersError.value = '';
+    const result = await listOrders(id, undefined, dataRequestController?.signal);
+    if (generation !== dataGeneration || requestId !== ordersRequest) return;
+    if (revision === ordersRevision) {
+      orders.value = result.data || [];
+      ordersLoaded = true;
+      ordersError.value = '';
+    } else {
+      ordersLoaded = false;
+    }
   } catch (error) {
-    if (generation === dataGeneration) ordersError.value = queryError(error, '委托加载失败');
+    if (generation === dataGeneration && requestId === ordersRequest) {
+      ordersLoaded = false;
+      ordersError.value = queryError(error, '委托加载失败');
+    }
+  } finally {
+    if (generation === dataGeneration && requestId === ordersRequest) {
+      ordersLoading = false;
+      if (revision !== ordersRevision && activeTab.value === 'orders') {
+        if (retryOnRevision) void loadOpenOrders(true, false);
+        else ordersError.value = '委托更新期间发生变化，请重新加载';
+      }
+    }
   }
 }
 
 function handleDataTab(tab: string | number) {
-  if (tab === 'trades') void loadTrades();
+  if (tab === 'trades' && !tradesLoaded) void loadTrades();
   if (tab === 'orders') {
-    void loadOpenOrders();
-    void loadProtectionOrders();
+    if (!ordersLoaded) void loadOpenOrders();
+    if (!protectionLoaded.value) void loadProtectionOrders();
+  }
+}
+
+async function switchChartContext(nextSymbol: string, nextInterval: string) {
+  if (!nextSymbol) return;
+  if (nextSymbol === chartDataSymbol && nextInterval === chartDataInterval) {
+    if (symbolSwitchController) {
+      symbolSwitchController.abort();
+      symbolSwitchController = undefined;
+      ++symbolRequest;
+      chartLoading.value = false;
+    }
+    return;
+  }
+  symbolSwitchController?.abort();
+  const controller = new AbortController();
+  symbolSwitchController = controller;
+  const requestId = ++symbolRequest;
+  const generation = dataGeneration;
+  const runMode = selectedMarketRunMode();
+  const symbolChanged = nextSymbol !== chartDataSymbol;
+  chartLoading.value = true;
+  try {
+    const [k, symbolResult] = await Promise.allSettled([
+      listRealtimeKlines(nextSymbol, nextInterval, 1000, runMode, controller.signal),
+      symbolChanged ? listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal) : Promise.resolve(undefined)
+    ]);
+    if (controller.signal.aborted || generation !== dataGeneration || requestId !== symbolRequest || runMode !== selectedMarketRunMode()) return;
+    price.value = undefined;
+    if (k.status !== 'fulfilled') throw new Error(queryError(k.reason, nextSymbol + ' K线加载失败'));
+    symbol.value = nextSymbol;
+    interval.value = nextInterval;
+    chartDataSymbol = nextSymbol;
+    chartDataInterval = nextInterval;
+    klines.value = k.value.data || [];
+    if (symbolChanged) {
+      symbolInfo.value = symbolResult.status === 'fulfilled' ? symbolResult.value?.data?.rows?.[0] : undefined;
+      cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
+      if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
+        symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+      }
+    }
+    viewportSnapshot = { isRightEdge: true };
+    initialRightGapApplied = false;
+    renderChart();
+    renderOverlays();
+    connect();
+  } catch (error) {
+    if (!controller.signal.aborted && generation === dataGeneration && requestId === symbolRequest) {
+      symbol.value = chartDataSymbol;
+      interval.value = chartDataInterval;
+      ElMessage.error(queryError(error, '图表数据加载失败，已保留原交易对和周期'));
+    }
+  } finally {
+    if (symbolSwitchController === controller) symbolSwitchController = undefined;
+    if (requestId === symbolRequest) chartLoading.value = false;
   }
 }
 
 async function loadKline(value: string) {
-  interval.value = value;
-  viewportSnapshot = { isRightEdge: true };
-  initialRightGapApplied = false;
-  await refresh();
+  await switchChartContext(symbol.value, value);
 }
 
-async function handleSymbolChange() {
-  viewportSnapshot = { isRightEdge: true };
-  initialRightGapApplied = false;
-  await refresh();
+async function handleSymbolChange(value: string) {
+  await switchChartContext(value, interval.value);
 }
 
 async function searchSymbols(keyword: string) {
@@ -1151,6 +1502,9 @@ function openSse(
         return;
       }
       if (!response.ok || !response.body) throw new Error(`SSE 请求失败: ${response.status}`);
+      setQuantTimeZone(response.headers.get('X-Quant-Time-Zone') || undefined);
+      setQuantServerTimeZone(response.headers.get('X-Quant-Server-Time-Zone') || undefined);
+      (chart.value as any)?.setTimezone?.(getQuantTimeZone());
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -1188,7 +1542,8 @@ function handleSseUnauthorized() {
   removeToken();
   if (retryTimer) clearTimeout(retryTimer);
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
+  slopeStreamRetries.forEach(timer => clearTimeout(timer));
+  slopeStreamRetries.clear();
   ElMessage.error('登录状态已失效，请重新登录');
 }
 
@@ -1250,7 +1605,7 @@ watch(
 );
 
 watch(
-  () => selectedMarketRunMode(),
+  () => credentialId.value,
   () => {
     if (slopePanelVisible.value) connectSlopeStream();
   }
@@ -1302,12 +1657,13 @@ function applyRawAccountEvent(rawJson: string | undefined) {
       const key = `${raw.o.s}:${raw.o.i}`;
       const time = Number(raw.o.T ?? raw.E);
       if (!Number.isFinite(time) || time >= (lastOrderEvents.get(key) || 0)) {
+        ordersRevision++;
         orders.value = updateOrders(orders.value, raw.o);
         ordersError.value = '';
         if (Number.isFinite(time)) lastOrderEvents.set(key, time);
       }
       if (credentialId.value) {
-        const trade = accountTrade(raw.o, credentialId.value, time => parseTime(time) || '');
+        const trade = accountTrade(raw.o, credentialId.value, time => formatQuantTime(time));
         if (trade) {
           scheduleAccountHydration();
           const isNew =
@@ -1340,18 +1696,26 @@ async function refreshPositionsAfterAccountReconnect() {
   const generation = dataGeneration;
   const request = ++positionSnapshotRequest;
   const snapshotRevision = positionRevision;
-  try {
-    const response = await listPositions(id, undefined, dataRequestController?.signal);
-    if (generation !== dataGeneration || request !== positionSnapshotRequest) return;
-    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, snapshotRevision);
+  const accountRevisionBeforeRequest = accountRevision;
+  const signal = dataRequestController?.signal;
+  const [accountResult, positionsResult] = await Promise.allSettled([
+    getAccountSnapshot(id, signal),
+    listPositions(id, undefined, signal)
+  ]);
+  if (generation !== dataGeneration || request !== positionSnapshotRequest) return;
+  if (accountResult.status === 'fulfilled' && accountRevisionBeforeRequest === accountRevision) {
+    account.value = accountResult.value.data;
+  }
+  if (positionsResult.status === 'fulfilled') {
+    clearDeferredPositionRetry();
+    positions.value = mergePositionSnapshots(positionsResult.value.data || [], positionEventChanges, snapshotRevision);
     accountSnapshotAvailable.value = true;
     renderOverlays();
     connect();
-    void loadProtectionOrders();
-  } catch {
-    if (generation === dataGeneration && request === positionSnapshotRequest) {
-      accountSnapshotAvailable.value = false;
-    }
+    void loadProtectionOrders(true);
+  } else {
+    accountSnapshotAvailable.value = false;
+    scheduleDeferredPositionRetry(positionsResult.reason);
   }
 }
 
@@ -1400,7 +1764,7 @@ function connectAccountStream() {
           } else if (event.positionsSnapshotAvailable && Array.isArray(event.positions)) {
             positions.value = mergePositionSnapshots(event.positions, positionEventChanges, snapshotPositionRevision);
             accountSnapshotAvailable.value = true;
-          } else {
+          } else if (!event.positionsSnapshotSkipped) {
             accountSnapshotAvailable.value = false;
           }
           if (event.ordersSnapshotAvailable && Array.isArray(event.orders) && !changed) {
@@ -1413,12 +1777,21 @@ function connectAccountStream() {
           void refreshPositionHistories();
           // The initial CONNECTED is followed by the controller's initial SNAPSHOT.
           // A later CONNECTED means the exchange private stream itself was rebuilt.
-          if (hasReceivedSnapshot) void refreshPositionsAfterAccountReconnect();
+          if (hasReceivedSnapshot) {
+            positionReconcileRequest++;
+            accountSnapshotAvailable.value = false;
+            void refreshPositionsAfterAccountReconnect();
+          }
         } else if (event.type === 'DISCONNECTED') {
+          positionReconcileRequest++;
           positionSnapshotRequest++;
           accountSnapshotAvailable.value = false;
           account.value = undefined;
           orders.value = [];
+          ordersLoaded = false;
+          ordersLoading = false;
+          ordersRevision++;
+          ordersRequest++;
           ordersError.value = '账户数据暂不可用';
           protectionOrders.value = [];
           protectionLoaded.value = false;
@@ -1434,6 +1807,7 @@ function connectAccountStream() {
     },
     () => {
       if (generation !== dataGeneration) return;
+      positionReconcileRequest++;
       positionSnapshotRequest++;
       ordersError.value = '账户连接已断开';
       protectionOrders.value = [];
@@ -1442,6 +1816,10 @@ function connectAccountStream() {
       accountSnapshotAvailable.value = false;
       account.value = undefined;
       orders.value = [];
+      ordersLoaded = false;
+      ordersLoading = false;
+      ordersRevision++;
+      ordersRequest++;
       renderOverlays();
       accountStream?.close();
       accountRetryTimer = setTimeout(connectAccountStream, 3000);
@@ -1449,125 +1827,143 @@ function connectAccountStream() {
     handleSseUnauthorized
   );
 }
-// ==================== 斜率抽屉逻辑 ====================
-function closeSlopeStream() {
-  slopeStreams.forEach(connection => connection.close());
-  slopeStreams = [];
-  slopeStreamStates.clear();
-  pendingSlopeRows.clear();
-  if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
-  slopeRenderFrame = undefined;
-  if (slopeStreamRetry) clearTimeout(slopeStreamRetry);
-  slopeStreamRetry = undefined;
-}
-
-function flushSlopeRows() {
-  slopeRenderFrame = undefined;
-  pendingSlopeRows.forEach((state, row) => {
-    const latestKline = state.klines[state.klines.length - 1];
-    const referenceKline = state.klines[state.klines.length - 2];
-    row.latestTradePrice = state.latestTradePrice;
-    row.currentPrice = state.latestTradePrice ?? (latestKline ? Number(latestKline.close) : undefined);
-    row.referencePrice = referenceKline ? Number(referenceKline.open) : undefined;
-    const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
-    row.slopePercent = slope?.slopePercent;
-    row.degrees = slope?.degrees;
-    if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
-  });
-  pendingSlopeRows.clear();
-}
-
-function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
-  pendingSlopeRows.set(row, state);
-  if (slopeRenderFrame === undefined) slopeRenderFrame = requestAnimationFrame(flushSlopeRows);
-}
-
-function clearSlopeRowValues(row: SlopeRow, state: SlopeStreamState, status: SlopeRow['status']) {
-  pendingSlopeRows.delete(row);
-  state.latestTradePrice = undefined;
+// ==================== 实时斜率面板逻辑 ====================
+function clearSlopeSnapshot(row: SlopeRow, status: SlopeRow['status'], resetSequence = false) {
   row.status = status;
-  row.latestTradePrice = undefined;
+  if (resetSequence) {
+    row.sequence = undefined;
+    row.instanceId = undefined;
+  }
   row.currentPrice = undefined;
   row.referencePrice = undefined;
   row.slopePercent = undefined;
   row.degrees = undefined;
+  row.slopeReady = false;
+  row.slopeFreshForMillis = 0;
+  row.slopeReceivedAtLocal = undefined;
+  row.ma5 = undefined;
+  row.ma7 = undefined;
+  row.maTrend = undefined;
+  row.maReady = false;
+  row.maBlockReason = undefined;
+  row.maLastClosedKlineOpenTime = undefined;
+  row.maFreshForMillis = 0;
+  row.maReceivedAtLocal = undefined;
 }
 
-function connectSlopeStream() {
-  closeSlopeStream();
-  if (!slopePanelVisible.value || !slopeStrategyId.value || !slopeRows.value.length) return;
-  for (const row of slopeRows.value) {
-    row.status = 'CONNECTING';
-    const state: SlopeStreamState = { klines: [], handshakeComplete: false };
-    slopeStreamStates.set(`${row.symbol}:${row.interval}`, state);
-    row.latestTradePrice = undefined;
-    row.currentPrice = undefined;
-    row.referencePrice = undefined;
-    row.slopePercent = undefined;
-    row.degrees = undefined;
+function closeSlopeStream(resetState = true) {
+  slopeStreamGeneration++;
+  slopeStreams.forEach(connection => connection.close());
+  slopeStreams = [];
+  slopeStreamRetries.forEach(timer => clearTimeout(timer));
+  slopeStreamRetries.clear();
+  if (resetState) {
+    slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'CONNECTING', true));
   }
-  const scheduleReconnect = () => {
-    if (!slopePanelVisible.value || slopeStreamRetry) return;
-    slopeStreamRetry = setTimeout(() => {
-      slopeStreamRetry = undefined;
-      connectSlopeStream();
-    }, 3000);
-  };
-  const onMessage = (data: string) => {
-    try {
-      const event = JSON.parse(data);
-      if (event.type === 'CONNECTING' && !event.symbol) return;
-      const key = `${event.symbol}:${event.interval}`;
-      const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
-      const state = slopeStreamStates.get(key);
-      if (!row || !state) return;
-      if (event.type === 'CONNECTING') {
-        clearSlopeRowValues(row, state, 'CONNECTING');
-        return;
-      }
-      if (event.type === 'CONNECTED') {
-        state.handshakeComplete = true;
-        scheduleSlopeRowUpdate(row, state);
-        return;
-      }
-      if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
-        clearSlopeRowValues(row, state, event.type);
-        return;
-      }
-      if (event.type === 'TRADE' && Number(event.price) > 0) {
-        state.latestTradePrice = Number(event.price);
-      } else if (event.type === 'KLINE' && event.kline) {
-        const kline = event.kline as KlineSnapshot;
-        const index = state.klines.findIndex(item => item.openTime === kline.openTime);
-        if (index < 0) state.klines.push(kline);
-        else state.klines[index] = kline;
-        state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-        state.klines = state.klines.slice(-4);
-      }
-      scheduleSlopeRowUpdate(row, state);
-    } catch {
-      slopeRows.value.forEach(row => {
-        const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
-        if (state) clearSlopeRowValues(row, state, 'ERROR');
-      });
-      scheduleReconnect();
+}
+
+function isSlopeFresh(row: SlopeRow): boolean {
+  return row.slopeReady === true && row.slopeReceivedAtLocal !== undefined
+    && now.value - row.slopeReceivedAtLocal < (row.slopeFreshForMillis ?? 0);
+}
+
+function isSlopeMaFresh(row: SlopeRow): boolean {
+  return row.maReady === true && row.maReceivedAtLocal !== undefined
+    && now.value - row.maReceivedAtLocal < (row.maFreshForMillis ?? 0);
+}
+
+watch(now, current => {
+  slopeRows.value.forEach(row => {
+    if (row.slopeReady && row.slopeReceivedAtLocal !== undefined
+      && current - row.slopeReceivedAtLocal >= (row.slopeFreshForMillis ?? 0)) {
+      row.currentPrice = undefined;
+      row.referencePrice = undefined;
+      row.slopePercent = undefined;
+      row.degrees = undefined;
+      row.slopeReady = false;
     }
-  };
-  const onError = () => {
-    slopeRows.value.forEach(row => {
-      const state = slopeStreamStates.get(`${row.symbol}:${row.interval}`);
-      if (state) clearSlopeRowValues(row, state, 'DISCONNECTED');
-    });
-    slopeStreams.forEach(connection => connection.close());
-    slopeStreams = [];
-    scheduleReconnect();
-  };
-  for (const batch of chunkSlopeSubscriptions(slopeRows.value)) {
-    const query = slopeStreamQuery(batch, selectedMarketRunMode());
-    slopeStreams.push(
-      openSse(`${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`, 'quant.market', onMessage, onError, handleSseUnauthorized)
-    );
-  }
+    if (row.maReady && row.maReceivedAtLocal !== undefined
+      && current - row.maReceivedAtLocal >= (row.maFreshForMillis ?? 0)) {
+      row.ma5 = undefined;
+      row.ma7 = undefined;
+      row.maTrend = undefined;
+      row.maReady = false;
+      row.maBlockReason = 'STALE_EVENT';
+    }
+  });
+});
+
+function connectSlopeStream() {
+  closeSlopeStream(false);
+  if (!slopePanelVisible.value || !slopeStrategyId.value || !credentialId.value || !slopeRows.value.length) return;
+  const generation = slopeStreamGeneration;
+  slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'CONNECTING', true));
+
+  const query = new URLSearchParams({
+    strategyId: String(slopeStrategyId.value),
+    credentialId: String(credentialId.value)
+  });
+  let connection: SseConnection;
+  connection = openSse(
+    `${import.meta.env.VITE_APP_BASE_API}/quant/strategy/slope/stream?${query}`,
+    'quant.strategy.slope',
+    data => {
+      if (generation !== slopeStreamGeneration) return;
+      try {
+        const event = JSON.parse(data);
+        if (event.type === 'CONNECTED' || !event.symbol) return;
+        const row = slopeRows.value.find(item => item.symbol === event.symbol && item.interval === event.interval);
+        if (!row) return;
+        const instanceId = String(event.instanceId ?? '');
+        if (!instanceId) return;
+        if (row.instanceId !== undefined && row.instanceId !== instanceId) {
+          row.sequence = undefined;
+        }
+        row.instanceId = instanceId;
+        const sequence = Number(event.sequence);
+        if (!Number.isSafeInteger(sequence) || (row.sequence !== undefined && sequence <= row.sequence)) return;
+        row.sequence = sequence;
+        row.status = 'CONNECTED';
+
+        const receivedAt = Date.now();
+        row.slopeReady = event.slopeReady === true && Number(event.slopeFreshForMillis) > 0;
+        row.slopeFreshForMillis = Math.max(0, Number(event.slopeFreshForMillis) || 0);
+        row.slopeReceivedAtLocal = receivedAt;
+        row.currentPrice = row.slopeReady && event.currentPrice != null ? Number(event.currentPrice) : undefined;
+        row.referencePrice = row.slopeReady && event.referenceOpenPrice != null ? Number(event.referenceOpenPrice) : undefined;
+        row.slopePercent = row.slopeReady && event.slopePercent != null ? Number(event.slopePercent) : undefined;
+        row.degrees = row.slopeReady && event.degrees != null ? Number(event.degrees) : undefined;
+        if (event.entryThreshold != null && Number.isFinite(Number(event.entryThreshold))) {
+          row.entryAngleDegrees = Number(event.entryThreshold);
+        }
+
+        row.maReady = event.maReady === true && Number(event.maFreshForMillis) > 0;
+        row.maFreshForMillis = Math.max(0, Number(event.maFreshForMillis) || 0);
+        row.maReceivedAtLocal = receivedAt;
+        row.ma5 = row.maReady && event.ma5 != null ? Number(event.ma5) : undefined;
+        row.ma7 = row.maReady && event.ma7 != null ? Number(event.ma7) : undefined;
+        row.maTrend = row.maReady ? event.maTrend as SlopeRow['maTrend'] : undefined;
+        row.maBlockReason = row.maReady ? undefined : String(event.maBlockReason || 'MA_NOT_READY');
+        row.maLastClosedKlineOpenTime = event.maLastClosedKlineOpenTime || undefined;
+      } catch {
+        // 忽略不完整的遥测消息，不保留或推断 MA 状态。
+      }
+    },
+    () => {
+      if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
+      connection.close();
+      slopeStreams = slopeStreams.filter(item => item !== connection);
+      slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'DISCONNECTED'));
+      if (slopeStreamRetries.has(0)) return;
+      const timer = setTimeout(() => {
+        slopeStreamRetries.delete(0);
+        connectSlopeStream();
+      }, 3000);
+      slopeStreamRetries.set(0, timer);
+    },
+    handleSseUnauthorized
+  );
+  slopeStreams.push(connection);
 }
 
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
@@ -1582,8 +1978,15 @@ function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
   }
 }
 
-function slopeRowClassName({ row }: { row: SlopeRow }): string {
-  if (row.status !== 'CONNECTED' || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
+function slopeMaDirection(row: SlopeRow): 'UP' | 'DOWN' | undefined {
+  if (!isSlopeFresh(row) || !isSlopeMaFresh(row) || !Number.isFinite(row.ma5) || !Number.isFinite(row.ma7)) return undefined;
+  if (row.ma5! > row.ma7!) return 'UP';
+  if (row.ma5! < row.ma7!) return 'DOWN';
+  return undefined;
+}
+
+function slopeRowClassName({ row }: { row: Partial<SlopeRow> }): string {
+  if (row.status !== 'CONNECTED' || !isSlopeFresh(row as SlopeRow) || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
   const degrees = Math.abs(row.degrees!);
   if (degrees > row.entryAngleDegrees) return 'slope-row-danger';
   return degrees >= Math.max(0, row.entryAngleDegrees - 10) ? 'slope-row-warning' : '';
@@ -1596,7 +1999,6 @@ async function openSlopePanel() {
   const generation = ++slopeLoadGeneration;
 
   slopePanelVisible.value = true;
-  slopeStrategyId.value = slopeStrategyId.value || strategyId.value || strategies.value[0]?.id;
   closeSlopeStream();
   slopeRows.value = [];
   slopeLoadError.value = '';
@@ -1646,25 +2048,132 @@ async function openSlopePanel() {
   }
 }
 
-function closeSlopePanel() {
+function hideSlopePanel() {
+  // 收起面板只改变布局，不关闭实时行情订阅。
   slopePanelVisible.value = false;
-  ++slopeLoadGeneration;
-  slopeLoadController?.abort();
-  slopeLoadController = undefined;
-  slopeLoading.value = false;
-  closeSlopeStream();
+}
+
+function toggleSlopePanel() {
+  if (slopePanelVisible.value) {
+    hideSlopePanel();
+    return;
+  }
+  if (slopeRows.value.length || slopeLoading.value) {
+    slopePanelVisible.value = true;
+    return;
+  }
+  void openSlopePanel();
+}
+
+// ==================== 账户与行情数据刷新 ====================
+async function loadMarketData(id: string | number | undefined, generation: number, signal: AbortSignal) {
+  const requestId = ++symbolRequest;
+  const marketSymbol = symbol.value;
+  const marketInterval = interval.value;
+  const [k, s] = await Promise.allSettled([
+    id ? listRealtimeKlines(marketSymbol, marketInterval, 1000, selectedMarketRunMode(), signal) : Promise.resolve({ data: [] as KlineSnapshot[] }),
+    listSymbol({ pageNum: 1, pageSize: 1, symbol: marketSymbol }, signal)
+  ]);
+  if (generation !== dataGeneration || signal.aborted || requestId !== symbolRequest) return false;
+
+  if (k.status === 'fulfilled') klines.value = k.value.data || [];
+  else {
+    klines.value = [];
+    ElMessage.error(`${marketSymbol} K线加载失败，已清理旧图表数据`);
+  }
+
+  symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
+  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
+  if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
+    symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+  }
+  void ensureQuantSymbolTickSizes().catch(() => undefined);
+
+  renderChart();
+  renderOverlays();
+  chartLoading.value = false;
+  chartDataSymbol = marketSymbol;
+  chartDataInterval = marketInterval;
+  return true;
+}
+
+async function loadAccountData(id: string | number, generation: number, signal: AbortSignal, forceProtection = false) {
+  const requestId = ++accountDataRequest;
+  const positionSnapshotRevision = positionRevision;
+  const accountSnapshotRevision = accountRevision;
+  const baselineDay = dailyBaselineDay.value || shanghaiDateKey(now.value);
+  const isCurrent = () =>
+    generation === dataGeneration &&
+    requestId === accountDataRequest &&
+    !signal.aborted &&
+    String(credentialId.value) === String(id);
+
+  void listPositions(id, undefined, signal).then(response => {
+    if (!isCurrent()) return;
+    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, positionSnapshotRevision);
+    accountSnapshotAvailable.value = true;
+    renderOverlays();
+    connect();
+  }).catch(error => {
+    if (!isCurrent()) return;
+    connect();
+    scheduleDeferredPositionRetry(error);
+  });
+
+  void getAccountSnapshot(id, signal).then(response => {
+    if (isCurrent() && accountSnapshotRevision === accountRevision) account.value = response.data;
+  }).catch(() => undefined);
+
+  void getDailyAccountBaseline(id, signal).then(response => {
+    if (!isCurrent() || dailyBaselineDay.value !== baselineDay) return;
+    dailyAccountBaseline.value = response.data;
+    if (!response.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
+  }).catch(() => {
+    if (isCurrent() && dailyBaselineDay.value === baselineDay) {
+      scheduleDailyBaselineRetry(id, baselineDay, generation);
+    }
+  });
+
+  void listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal).then(response => {
+    if (isCurrent()) instances.value = response.data?.rows || [];
+  }).catch(() => undefined);
+
+  void listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal).then(response => {
+    if (isCurrent()) positionHistories.value = mergePositionHistories(response.data?.rows || []);
+  }).catch(() => undefined);
+
+  void loadProtectionOrders(forceProtection);
+  return true;
+}
+
+async function refreshAccountData() {
+  if (loading.value) {
+    accountRefreshPending = true;
+    return;
+  }
+  const requestId = ++refreshRequest;
+  loading.value = true;
+  try {
+    const id = credentialId.value;
+    const signal = dataRequestController?.signal;
+    if (!id || !signal || signal.aborted) return;
+    const generation = dataGeneration;
+    const refreshed = await loadAccountData(id, generation, signal, true);
+    if (!refreshed) return;
+    if (activeTab.value === 'orders') void loadOpenOrders(true);
+    else if (activeTab.value === 'trades') void loadTrades();
+  } finally {
+    if (requestId === refreshRequest) {
+      loading.value = false;
+      if (accountRefreshPending) {
+        accountRefreshPending = false;
+        void refreshAccountData();
+      }
+    }
+  }
 }
 
 // ==================== 数据加载主流程 ====================
-async function handleStrategyChange() {
-  const selected = strategies.value.find(item => String(item.id) === String(strategyId.value));
-  if (selected) {
-    const configured = instances.value.filter(item => String(item.strategyId) === String(selected.id));
-    if (configured[0]?.symbol) symbol.value = configured[0].symbol;
-    if (configured[0]?.credentialId) credentialId.value = configured[0].credentialId;
-  }
-  await refresh();
-}
 
 async function loadData() {
   symbolSwitchController?.abort();
@@ -1674,10 +2183,16 @@ async function loadData() {
   dataRequestController = controller;
   const signal = controller.signal;
   const generation = ++dataGeneration;
+  chartLoading.value = true;
   positionSnapshotRequest++;
   ++symbolRequest;
   ++tradeRequest;
+  ++ordersRequest;
+  ordersRevision = 0;
   ++protectionRequest;
+  ordersLoaded = false;
+  ordersLoading = false;
+  tradesLoaded = false;
   tradeQuery.pageNum = 1;
   tradeTotal.value = 0;
   tradePending.value = false;
@@ -1695,10 +2210,12 @@ async function loadData() {
   marketStreamKey = '';
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
   if (retryTimer) clearTimeout(retryTimer);
+  clearDeferredPositionRetry();
   if (hydrationTimer) clearTimeout(hydrationTimer);
   hydrationTimer = undefined;
   hydrationPending = false;
   hydrationPositionRevisionFloor = Number.MAX_SAFE_INTEGER;
+  hydrationLastStartedAt = 0;
   accountRevision = 0;
   positionRevision = 0;
   positionEventChanges.clear();
@@ -1712,8 +2229,7 @@ async function loadData() {
   dailyBaselineRequest++;
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
 
-  klines.value = [];
-  symbolInfo.value = undefined;
+  captureChartViewport();
   price.value = undefined;
   positions.value = [];
   account.value = undefined;
@@ -1724,79 +2240,23 @@ async function loadData() {
   trades.value = [];
   renderOverlays();
 
-  const [k, s] = await Promise.allSettled([
-    id ? listRealtimeKlines(symbol.value, interval.value, 1000, selectedMarketRunMode(), signal) : Promise.resolve({ data: [] as KlineSnapshot[] }),
-    listSymbol({ pageNum: 1, pageSize: 1, symbol: symbol.value }, signal)
-  ]);
-  if (generation !== dataGeneration) return;
-
-  if (k.status === 'fulfilled') klines.value = k.value.data || [];
-  else ElMessage.error(`${symbol.value} K线加载失败，已清理旧图表数据`);
-
-  symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
-  cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
-  if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
-    symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
+  const marketRequest = loadMarketData(id, generation, signal);
+  if (!id) {
+    await marketRequest;
+    return;
   }
-  void ensureQuantSymbolTickSizes().catch(() => undefined);
-
-  renderChart();
-  renderOverlays();
-
-  if (!id) return;
-  connect();
   connectAccountStream();
-
-  const positionSnapshotRevision = positionRevision;
-  const accountSnapshotRevision = accountRevision;
-
-  void Promise.allSettled([
-    listPositions(id, undefined, signal),
-    listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id }, signal),
-    listStrategyPositionStates({ pageNum: 1, pageSize: 100, credentialId: id }, signal)
-  ]).then(([p, i, h]) => {
-    if (generation !== dataGeneration || signal.aborted) return;
-    if (p.status === 'fulfilled') {
-      positions.value = mergePositionSnapshots(p.value.data || [], positionEventChanges, positionSnapshotRevision);
-      accountSnapshotAvailable.value = true;
-    } else accountSnapshotAvailable.value = false;
-    if (i.status === 'fulfilled') {
-      instances.value = (i.value.data?.rows || []).filter(item => !strategyId.value || String(item.strategyId) === String(strategyId.value));
-    }
-    if (h.status === 'fulfilled') positionHistories.value = mergePositionHistories(h.value.data?.rows || []);
-    renderOverlays();
-    connect();
+  if (activeTab.value === 'orders') {
+    void loadOpenOrders();
     void loadProtectionOrders();
-  });
+  } else if (activeTab.value === 'trades') {
+    void loadTrades();
+  }
 
-  void Promise.allSettled([
-    getAccountSnapshot(id, signal),
-    listOrders(id, undefined, signal),
-    listTrades(id, undefined, { ...tradeQuery }, signal),
-    getDailyAccountBaseline(id, signal)
-  ]).then(([a, o, t, baseline]) => {
-    if (generation !== dataGeneration || signal.aborted) return;
-    ordersError.value = o.status === 'rejected' ? queryError(o.reason, '委托加载失败') : '';
-    tradesError.value = t.status === 'rejected' ? queryError(t.reason, '成交记录加载失败') : '';
-    if (a.status === 'fulfilled' && accountSnapshotRevision === accountRevision) account.value = a.value.data;
-    if (dailyBaselineDay.value === baselineDay && String(credentialId.value) === String(id)) {
-      if (baseline.status === 'fulfilled') {
-        dailyAccountBaseline.value = baseline.value.data;
-        if (!baseline.value.data) scheduleDailyBaselineRetry(id, baselineDay, generation);
-      } else {
-        scheduleDailyBaselineRetry(id, baselineDay, generation);
-      }
-    }
-    if (o.status === 'fulfilled' && accountSnapshotRevision === accountRevision) orders.value = o.value.data || [];
-    if (t.status === 'fulfilled') {
-      trades.value = mergeTrades(t.value.data?.rows || [], liveTrades.value);
-      tradeTotal.value = t.value.data?.total || 0;
-    }
-    renderOverlays();
-  });
+  await Promise.all([marketRequest, loadAccountData(id, generation, signal)]);
 }
-
 async function refresh() {
+  const requestId = ++refreshRequest;
   loading.value = true;
   try {
     if (!credentialId.value && credentials.value.length) credentialId.value = credentials.value[0].id;
@@ -1805,7 +2265,13 @@ async function refresh() {
     streamStatus.value = 'ERROR';
     ElMessage.error(e?.message || '行情或账户数据加载失败');
   } finally {
-    loading.value = false;
+    if (requestId === refreshRequest) {
+      loading.value = false;
+      if (accountRefreshPending) {
+        accountRefreshPending = false;
+        void refreshAccountData();
+      }
+    }
   }
 }
 
@@ -1818,7 +2284,7 @@ async function confirmAction(title: string, message: string, action: () => Promi
   });
   await action();
   ElMessage.success('操作已提交');
-  await refresh();
+  await refreshAccountData();
 }
 
 async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) {
@@ -1842,7 +2308,7 @@ async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) 
     });
     await setStrategySymbolRuntimeEnabled(item.strategyId, item.strategySymbolId, enabled);
     ElMessage.success(enabled ? '已恢复该交易对的开仓评估' : '已暂停该交易对的新开仓');
-    await refresh();
+    await refreshAccountData();
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error(queryError(error, '交易对运行状态切换失败'));
@@ -1867,47 +2333,7 @@ function toggleStrategy(item: StrategyInstanceVO) {
 
 async function selectRowSymbol(row: { symbol?: string }) {
   if (!row?.symbol) return;
-  symbolSwitchController?.abort();
-  symbolSwitchController = undefined;
-  const requestId = ++symbolRequest;
-  if (row.symbol === symbol.value) return;
-  const controller = new AbortController();
-  symbolSwitchController = controller;
-  const nextSymbol = row.symbol;
-  const generation = dataGeneration;
-  const requestedInterval = interval.value;
-  const runMode = selectedMarketRunMode();
-  try {
-    const [k, s] = await Promise.allSettled([
-      listRealtimeKlines(nextSymbol, requestedInterval, 1000, runMode, controller.signal),
-      listSymbol({ pageNum: 1, pageSize: 1, symbol: nextSymbol }, controller.signal)
-    ]);
-    if (
-      controller.signal.aborted ||
-      generation !== dataGeneration ||
-      requestId !== symbolRequest ||
-      requestedInterval !== interval.value ||
-      runMode !== selectedMarketRunMode()
-    ) return;
-    if (k.status !== 'fulfilled') {
-      ElMessage.error(`${nextSymbol} K线加载失败，交易对未切换：${queryError(k.reason, '未知错误')}`);
-      return;
-    }
-    symbol.value = nextSymbol;
-    klines.value = k.value.data || [];
-    symbolInfo.value = s.status === 'fulfilled' ? s.value.data?.rows?.[0] : undefined;
-    cacheQuantSymbolTickSize(symbolInfo.value?.symbol, symbolInfo.value?.priceTickSize);
-    if (symbolInfo.value && !symbolOptions.value.some(item => String(item.id) === String(symbolInfo.value?.id))) {
-      symbolOptions.value = [symbolInfo.value, ...symbolOptions.value];
-    }
-    price.value = undefined;
-    viewportSnapshot = { isRightEdge: true };
-    renderChart();
-    renderOverlays();
-    connect();
-  } finally {
-    if (symbolSwitchController === controller) symbolSwitchController = undefined;
-  }
+  await switchChartContext(row.symbol, interval.value);
 }
 
 function cancel(row: unknown) {
@@ -1976,25 +2402,50 @@ async function waitForPositionClosed(positionSymbol: string) {
 
 // ==================== 生命周期钩子 ====================
 let clock: ReturnType<typeof setInterval> | undefined;
+let positionReconcileTimer: ReturnType<typeof setInterval> | undefined;
+let positionReconcileRequest = 0;
+let positionReconcileRunning = false;
+
+async function reconcilePositionsFromExchange() {
+  const id = credentialId.value;
+  if (!id || !accountSnapshotAvailable.value || positionReconcileRunning) return;
+  const generation = dataGeneration;
+  const request = ++positionReconcileRequest;
+  const snapshotRevision = positionRevision;
+  positionReconcileRunning = true;
+  try {
+    const response = await listPositions(id);
+    if (generation !== dataGeneration || request !== positionReconcileRequest || !accountSnapshotAvailable.value) return;
+    positions.value = mergePositionSnapshots(response.data || [], positionEventChanges, snapshotRevision);
+    renderOverlays();
+  } catch {
+    // 校准失败不清空已确认持仓，等待下一轮或私有流事件恢复。
+  } finally {
+    positionReconcileRunning = false;
+  }
+}
 
 onMounted(() => {
   clock = setInterval(() => (now.value = Date.now()), 1000);
+  positionReconcileTimer = setInterval(() => void reconcilePositionsFromExchange(), 30000);
   if (chartRef.value) {
-    chart.value = init(chartRef.value);
+    chart.value = init(chartRef.value, { timezone: getQuantTimeZone() });
     resizeObserver = new ResizeObserver(resizeChart);
     resizeObserver.observe(chartRef.value);
   }
 
-  void refresh();
   void listCredential({ pageNum: 1, pageSize: 100 })
     .then(response => {
       credentials.value = response.data?.rows || [];
+      (chart.value as any)?.setTimezone?.(getQuantTimeZone());
       if (!credentialId.value && credentials.value.length) {
         credentialId.value = credentials.value[0].id;
-        void refresh();
       }
+      void refresh();
     })
-    .catch(() => undefined);
+    .catch(() => {
+      void refresh();
+    });
   void listStrategies({ pageNum: 1, pageSize: 100 })
     .then(response => {
       strategies.value = response.data?.rows || [];
@@ -2041,8 +2492,11 @@ onBeforeUnmount(() => {
   updateChartBar = undefined;
   if (retryTimer) clearTimeout(retryTimer);
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  clearDeferredPositionRetry();
   resizeObserver?.disconnect();
   if (clock) clearInterval(clock);
+  if (positionReconcileTimer) clearInterval(positionReconcileTimer);
+  positionReconcileRequest++;
   if (dailyBaselineRefreshTimer) clearTimeout(dailyBaselineRefreshTimer);
   if (chart.value) {
     chart.value.removeOverlay();
@@ -2053,7 +2507,6 @@ onBeforeUnmount(() => {
 <style lang="scss" scoped>
 @use '@/assets/styles/components/page-shell' as pageShell;
 @include pageShell.table-crud-page;
-.terminal-card,
 .table-card {
   margin-top: 12px;
 }
@@ -2189,6 +2642,29 @@ onBeforeUnmount(() => {
 .chart-symbol-select {
   width: 160px;
 }
+.indicator-control :deep(.indicator-button) {
+  width: 48px;
+  padding-right: 4px;
+  padding-left: 4px;
+}
+
+.indicator-dropdown-caret {
+  margin-left: 3px;
+  font-size: 11px;
+}
+
+.indicator-dropdown-option {
+  display: flex;
+  align-items: center;
+  min-width: 72px;
+}
+
+.indicator-dropdown-check {
+  display: inline-block;
+  width: 18px;
+  color: var(--el-color-primary);
+  font-weight: 700;
+}
 .toolbar-divider {
   width: 1px;
   height: 18px;
@@ -2218,6 +2694,50 @@ onBeforeUnmount(() => {
 .protection-legend .stop-loss {
   color: #e6a23c;
 }
+.terminal-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  align-items: start;
+  transition: grid-template-columns 0.24s ease, gap 0.24s ease;
+}
+.terminal-main {
+  min-width: 0;
+  overflow: hidden;
+}
+.terminal-workspace.is-slope-open {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  gap: 12px;
+}
+.slope-panel {
+  display: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  max-height: calc(100vh - 32px);
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(12px);
+  transition: opacity 0.2s ease, transform 0.24s ease, visibility 0.24s;
+}
+.terminal-workspace.is-slope-open .slope-panel {
+  display: block;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+}
+.slope-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
 .slope-floating-button {
   position: fixed;
   right: 24px;
@@ -2238,6 +2758,28 @@ onBeforeUnmount(() => {
   margin-bottom: 12px;
   color: var(--el-color-warning);
   font-size: 12px;
+}
+.slope-ma-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1.4;
+}
+.slope-ma-values {
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.slope-ma-direction {
+  font-weight: 700;
+}
+.slope-ma-up {
+  color: var(--el-color-success);
+}
+.slope-ma-down {
+  color: var(--el-color-danger);
 }
 .slope-table {
   width: 100%;
@@ -2271,7 +2813,7 @@ onBeforeUnmount(() => {
   font-size: 16px;
 }
 .kline-chart {
-  height: 560px;
+  height: 590px;
 }
 .source-bar {
   padding: 10px 0;
@@ -2305,12 +2847,17 @@ onBeforeUnmount(() => {
 .account-card {
   overflow: hidden;
   height: 260px;
+
+  :deep(.el-card__body){
+    height: 200px;
+    overflow-y: hidden;
+  }
 }
 .strategy-side-card {
   //flex: 1;
   min-height: 0;
   overflow: hidden;
-  height: 400px;
+  height: 420px;
 }
 .strategy-side-card :deep(.el-card__body) {
   min-height: 0;
@@ -2330,18 +2877,33 @@ onBeforeUnmount(() => {
   color: var(--el-color-warning);
   font-size: 12px;
 }
+.fund-baseline {
+  margin-top: 6px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
 .fund dl {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+  row-gap: 10px;
   margin: 18px 0 0;
 }
 .fund dt {
+  min-width: 0;
   color: var(--el-text-color-secondary);
 }
 .fund dd {
-  text-align: right;
   margin: 0;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.fund-positive {
+  color: var(--el-color-success);
+}
+.fund-negative {
+  color: var(--el-color-danger);
 }
 .strategy-actions {
   display: flex;
@@ -2381,6 +2943,30 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .chart-layout {
     grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+@media (max-width: 1280px) {
+  .terminal-workspace,
+  .terminal-workspace.is-slope-open {
+    display: block;
+  }
+  .slope-panel {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    z-index: 1100;
+    width: min(620px, calc(100vw - 24px));
+    max-width: none;
+    max-height: none;
+    box-shadow: var(--el-box-shadow-dark);
+    opacity: 1;
+    transform: translateX(calc(100% + 24px));
+  }
+  .terminal-workspace.is-slope-open .slope-panel {
+    display: block;
+    visibility: visible;
+    transform: translateX(0);
   }
 }
 @media (max-width: 768px) {

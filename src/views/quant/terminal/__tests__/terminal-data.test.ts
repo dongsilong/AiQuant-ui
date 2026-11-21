@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
-  calculateRealtimeSlope,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -12,12 +11,11 @@ import {
   parseBinanceAccountEvent,
   positionMetrics,
   aggregateLivePositionPnl,
+  aggregateSnapshotPositionPnl,
   positionMaximumReturnRate,
   positionLadderMetrics,
   protectionPrices,
   protectionPriceLines,
-  slopeStreamQuery,
-  chunkSlopeSubscriptions,
   terminalMarketSubscriptions,
   updateOrders,
   updateProtectionOrders
@@ -46,16 +44,6 @@ const fill = {
   n: '0.01',
   T: 1000
 };
-describe('realtime slope display calculation', () => {
-  it('calculates the same percent, angle and threshold decision without account state', () => {
-    expect(calculateRealtimeSlope('110', '100', 60)).toEqual({ slopePercent: 10, degrees: 84.29, entryApproved: true });
-  });
-  it('does not emit a slope until both market prices are valid', () => {
-    expect(calculateRealtimeSlope(undefined, '100', 60)).toBeUndefined();
-    expect(calculateRealtimeSlope('110', '0', 60)).toBeUndefined();
-  });
-});
-
 describe('position maximum return calculation', () => {
   const history = {
     credentialId: 'account-1',
@@ -121,18 +109,30 @@ describe('kline slope ladder metrics', () => {
     updatedAt: '2026-11-11 12:00:00'
   };
 
-  it('calculates the contract-price peak ROI with frozen leverage and returns both step states', () => {
-    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+  it('uses the backend-computed contract-price peak ROI and returns both step states', () => {
+    expect(positionLadderMetrics(position, 'account-1', [{ ...ladderHistory, ladderMaximumReturnRate: '100' }])).toEqual({
       maximumReturnRate: 100,
       highestStep: 2,
       confirmedProtectionStep: 1
     });
   });
 
-  it('uses the favorable low for a short position', () => {
-    const short = { ...position, side: 'SHORT', quantity: '-50' };
-    expect(positionLadderMetrics(short, 'account-1', [{ ...ladderHistory, direction: 'SHORT' }])).toEqual({
-      maximumReturnRate: 50,
+  it('does not reconstruct ladder ROI on the client when the backend value is absent', () => {
+    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+      highestStep: 2,
+      confirmedProtectionStep: 1
+    });
+  });
+
+  it('prefers the backend-pushed contract-price return rate and accepts event-only initial quantity', () => {
+    const event = {
+      ...ladderHistory,
+      positionQty: undefined,
+      initialPositionQty: '50',
+      ladderMaximumReturnRate: '123.456789'
+    };
+    expect(positionLadderMetrics(position, 'account-1', [event])).toEqual({
+      maximumReturnRate: 123.456789,
       highestStep: 2,
       confirmedProtectionStep: 1
     });
@@ -147,26 +147,6 @@ describe('kline slope ladder metrics', () => {
       { ...ladderHistory, status: 'CLOSED', highestStep: 9 }
     ];
     expect(positionLadderMetrics(position, 'account-1', unrelated)).toEqual({});
-  });
-});
-
-describe('batched realtime slope stream', () => {
-  it('keeps each symbol paired with its own interval in repeated query parameters', () => {
-    const query = slopeStreamQuery([
-      { symbol: 'BTCUSDT', interval: '15m' },
-      { symbol: 'ETHUSDT', interval: '1h' }
-    ]);
-    expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
-    expect(query.getAll('interval')).toEqual(['15m', '1h']);
-    expect(query.get('runMode')).toBe('LIVE');
-    expect(slopeStreamQuery([{ symbol: 'BTCUSDT', interval: '15m' }], 'TESTNET').get('runMode')).toBe('TESTNET');
-  });
-
-  it('splits subscriptions at the server batch limit', () => {
-    const rows = Array.from({ length: 51 }, (_, index) => ({ symbol: `S${index}`, interval: '15m' }));
-    const batches = chunkSlopeSubscriptions(rows);
-    expect(batches.map(batch => batch.length)).toEqual([50, 1]);
-    expect(batches.flat()).toEqual(rows);
   });
 });
 
@@ -234,6 +214,15 @@ describe('terminal account data', () => {
   it('keeps server PnL until an actual mark arrives', () => {
     expect(positionMetrics({ ...position, unrealizedPnl: '0.9' }).unrealizedPnl).toBe(0.9);
     expect(positionMetrics(position, 2.02).unrealizedPnl).toBeCloseTo(2);
+  });
+  it('uses complete exchange snapshot PnL when live marks are unavailable', () => {
+    const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', unrealizedPnl: '3' };
+    expect(aggregateSnapshotPositionPnl([position, second])).toBe(4);
+    expect(aggregateSnapshotPositionPnl([])).toBe(0);
+  });
+  it('does not calculate snapshot PnL when any open position lacks a valid exchange PnL', () => {
+    expect(aggregateSnapshotPositionPnl([{ ...position, unrealizedPnl: '' }])).toBeUndefined();
+    expect(aggregateSnapshotPositionPnl([{ ...position, quantity: '' }])).toBeUndefined();
   });
   it('sums PnL from fresh marks across all open positions', () => {
     const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', entryPrice: '100', markPrice: '99' };

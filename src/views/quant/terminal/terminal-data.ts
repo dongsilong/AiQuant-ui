@@ -8,25 +8,6 @@ import type {
 
 type RawFields = Record<string, unknown>;
 
-export function slopeStreamQuery(
-  rows: ReadonlyArray<{ symbol: string; interval: string }>,
-  runMode = 'LIVE'
-): URLSearchParams {
-  const query = new URLSearchParams({ runMode });
-  rows.forEach(row => {
-    query.append('symbol', row.symbol);
-    query.append('interval', row.interval);
-  });
-  return query;
-}
-
-export function chunkSlopeSubscriptions<T>(rows: ReadonlyArray<T>, size = 50): T[][] {
-  if (!Number.isInteger(size) || size < 1) throw new RangeError('订阅批次大小必须为正整数');
-  const chunks: T[][] = [];
-  for (let index = 0; index < rows.length; index += size) chunks.push(rows.slice(index, index + size));
-  return chunks;
-}
-
 /** Build a de-duplicated market subscription list for the chart and open positions. */
 export function terminalMarketSubscriptions(
   chart: { symbol: string; interval: string },
@@ -53,27 +34,6 @@ function numeric(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-export function calculateRealtimeSlope(
-  currentPrice: unknown,
-  referenceOpenPrice: unknown,
-  entryAngleDegrees = 60
-): { slopePercent: number; degrees: number; entryApproved: boolean } | undefined {
-  const current = numeric(currentPrice);
-  const reference = numeric(referenceOpenPrice);
-  if (current === undefined || current <= 0 || reference === undefined || reference <= 0) return undefined;
-  const slopePercent = Number((((current - reference) * 100) / reference).toFixed(5));
-  const rawDegrees = (Math.atan(slopePercent) * 180) / Math.PI;
-  return {
-    slopePercent,
-    degrees: Number(rawDegrees.toFixed(2)),
-    entryApproved: Math.abs(rawDegrees) >= entryAngleDegrees
-  };
-}
-
-/**
- * Exchange IDs are integers, NOT floating-point amounts.
- * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
- */
 export function exactIntegerId(value: unknown): string | undefined {
   if (typeof value === 'string') return /^\d+$/.test(value) ? value : undefined;
   if (typeof value === 'bigint') return value >= 0n ? value.toString() : undefined;
@@ -129,6 +89,20 @@ export function positionMetrics(item: PositionSnapshot, liveMark?: number | stri
     notional,
     returnRate: margin !== undefined && margin > 0 && pnl !== undefined ? (pnl / margin) * 100 : undefined
   };
+}
+
+/** Sum exchange-snapshot PnL as a display fallback when fresh mark samples are unavailable. */
+export function aggregateSnapshotPositionPnl(positions: ReadonlyArray<PositionSnapshot>): number | undefined {
+  let total = 0;
+  for (const position of positions) {
+    const quantity = numeric(position.quantity);
+    if (quantity === undefined) return undefined;
+    if (quantity === 0) continue;
+    const pnl = numeric(position.unrealizedPnl);
+    if (pnl === undefined) return undefined;
+    total += pnl;
+  }
+  return total;
 }
 
 /** Sum unrealized PnL only when every open position has a fresh mark-price sample. */
@@ -213,25 +187,16 @@ export function positionLadderMetrics(
       item.direction?.toUpperCase() === direction &&
       item.pluginCode?.toLowerCase() === 'kline_slope_rate' &&
       item.status?.toUpperCase() !== 'CLOSED' &&
-      numeric(item.positionQty) !== undefined &&
-      numeric(item.positionQty)! > 0 &&
+      numeric(item.positionQty ?? item.initialPositionQty) !== undefined &&
+      numeric(item.positionQty ?? item.initialPositionQty)! > 0 &&
       entryTolerance !== undefined &&
       numeric(item.entryPrice) !== undefined &&
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
   );
-  const state = matching.sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
+  const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
   if (!state) return {};
 
-  const entry = numeric(state.entryPrice);
-  const leverage = numeric(state.frozenLeverage);
-  const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
-  const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
-    ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
-    : undefined;
-  const maximumReturnRate =
-    priceReturn !== undefined && leverage !== undefined && leverage > 0
-      ? Math.max(0, priceReturn * leverage * 100)
-      : undefined;
+  const maximumReturnRate = numeric(state.ladderMaximumReturnRate);
   const highestStep = numeric(state.highestStep);
   const confirmedProtectionStep = numeric(state.confirmedProtectionStep);
   return {
