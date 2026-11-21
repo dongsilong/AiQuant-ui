@@ -31,8 +31,11 @@ describe('terminal MA controls', () => {
     const template = compiledTemplate();
     expect(source).toContain('const maPeriodOptions = [5, 7, 15, 30, 60];');
     expect(source).toContain('calcParams: [...maPeriods.value]');
-    expect(source).toContain('function handleMaPeriodsChange(values: number[])');
+    expect(source).toContain('function toggleMaPeriod(value: number)');
+    expect(template).toContain('el-dropdown');
+    expect(template).toContain(':hide-on-click="false"');
+    expect(template).toContain('toggleMaPeriod');
+    expect(template).toContain('ma-dropdown-caret');
     expect(template).toContain('maPeriods');
-    expect(template).toContain('handleMaPeriodsChange');
   });
 });
