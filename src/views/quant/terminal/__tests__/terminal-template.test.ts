@@ -64,3 +64,18 @@ describe('terminal indicator button sizing', () => {
     expect(source).toContain('padding-left: 4px;');
   });
 });
+
+describe('terminal indicator incremental updates', () => {
+  it('rebuilds only the indicator whose settings changed', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    expect(source).toContain("chart.value.removeIndicator({ name });");
+    expect(source).toContain("renderIndicator('MA');");
+    expect(source).toContain("renderIndicator('EMA');");
+    expect(source).toContain('renderIndicator(value);');
+    expect(source).toContain("renderIndicator('MA');\n}\n\nfunction toggleEmaPeriod");
+    expect(source).toContain("renderIndicator('EMA');\n}\n\nfunction toggleIndicator");
+    expect(source).not.toMatch(/function toggleMaPeriod[\\s\\S]*?renderIndicators\\(\\);/);
+    expect(source).not.toMatch(/function toggleEmaPeriod[\\s\\S]*?renderIndicators\\(\\);/);
+    expect(source).not.toMatch(/function toggleIndicator[\\s\\S]*?renderIndicators\\(\\);/);
+  });
+});
