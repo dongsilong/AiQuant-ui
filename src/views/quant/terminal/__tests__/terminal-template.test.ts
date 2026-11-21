@@ -83,3 +83,14 @@ describe('terminal indicator incremental updates', () => {
     expect(maToggle + emaToggle + otherToggle).not.toContain('renderIndicators()');
   });
 });
+
+describe('terminal price-line overlay updates', () => {
+  it('updates overlays by stable identity instead of recreating every line', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    expect(source).toContain('const overlayIds = new Map<string, string>();');
+    expect(source).toContain('chart.value.overrideOverlay({ id, ...overlay });');
+    expect(source).toContain('chart.value.removeOverlay({ id });');
+    expect(source).toContain('`position:${item.symbol}:${item.side}:entry`');
+    expect(source).toContain('`order:${item.symbol}:${item.orderId}`');
+  });
+});
