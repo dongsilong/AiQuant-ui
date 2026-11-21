@@ -1801,7 +1801,7 @@ function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
 }
 
 function slopeMaDirection(row: SlopeRow): 'UP' | 'DOWN' | undefined {
-  if (!isSlopeMaFresh(row) || !Number.isFinite(row.ma5) || !Number.isFinite(row.ma7)) return undefined;
+  if (!isSlopeFresh(row) || !isSlopeMaFresh(row) || !Number.isFinite(row.ma5) || !Number.isFinite(row.ma7)) return undefined;
   if (row.ma5! > row.ma7!) return 'UP';
   if (row.ma5! < row.ma7!) return 'DOWN';
   return undefined;
