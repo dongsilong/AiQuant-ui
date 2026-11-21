@@ -873,29 +873,45 @@ function renderChart() {
   setTimeout(() => { if (chart.value) restoreChartViewport(); }, 50);
 }
 
+function renderIndicator(name: string) {
+  if (!chart.value) return;
+  chart.value.removeIndicator({ name });
+  if (name === 'MA') {
+    if (maPeriods.value.length) {
+      chart.value.createIndicator({
+        name: 'MA',
+        calcParams: [...maPeriods.value],
+        paneId: 'candle_pane',
+        shortName: 'MA'
+      }, true);
+    }
+    return;
+  }
+  if (name === 'EMA') {
+    if (emaPeriods.value.length) {
+      chart.value.createIndicator({
+        name: 'EMA',
+        calcParams: [...emaPeriods.value],
+        paneId: 'candle_pane',
+        shortName: 'EMA'
+      }, true);
+    }
+    return;
+  }
+  if (!indicators.value.includes(name)) return;
+  const mainIndicator = name === 'BOLL';
+  chart.value.createIndicator(
+    { name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name },
+    mainIndicator
+  );
+}
+
 function renderIndicators() {
   if (!chart.value) return;
   chart.value.removeIndicator();
-  if (maPeriods.value.length) {
-    chart.value.createIndicator({
-      name: 'MA',
-      calcParams: [...maPeriods.value],
-      paneId: 'candle_pane',
-      shortName: 'MA'
-    }, true);
-  }
-  if (emaPeriods.value.length) {
-    chart.value.createIndicator({
-      name: 'EMA',
-      calcParams: [...emaPeriods.value],
-      paneId: 'candle_pane',
-      shortName: 'EMA'
-    }, true);
-  }
-  for (const name of indicators.value) {
-    const mainIndicator = ['EMA', 'BOLL'].includes(name);
-    chart.value.createIndicator({ name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name }, mainIndicator);
-  }
+  renderIndicator('MA');
+  renderIndicator('EMA');
+  for (const name of indicators.value) renderIndicator(name);
 }
 
 function renderOverlays() {
@@ -922,21 +938,21 @@ function toggleMaPeriod(value: number) {
   maPeriods.value = maPeriods.value.includes(value)
     ? maPeriods.value.filter(period => period !== value)
     : [...maPeriods.value, value].toSorted((a, b) => a - b);
-  renderIndicators();
+  renderIndicator('MA');
 }
 
 function toggleEmaPeriod(value: number) {
   emaPeriods.value = emaPeriods.value.includes(value)
     ? emaPeriods.value.filter(period => period !== value)
     : [...emaPeriods.value, value].toSorted((a, b) => a - b);
-  renderIndicators();
+  renderIndicator('EMA');
 }
 
 function toggleIndicator(value: string) {
   indicators.value = indicators.value.includes(value)
     ? indicators.value.filter(item => item !== value)
     : [...indicators.value, value];
-  renderIndicators();
+  renderIndicator(value);
 }
 
 // ==================== 数据加载与处理逻辑 ====================
