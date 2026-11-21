@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
-  calculateRealtimeSlope,
-  calculateOneMinuteMa,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -18,8 +16,6 @@ import {
   positionLadderMetrics,
   protectionPrices,
   protectionPriceLines,
-  slopeStreamQuery,
-  chunkSlopeSubscriptions,
   terminalMarketSubscriptions,
   updateOrders,
   updateProtectionOrders
@@ -151,26 +147,6 @@ describe('kline slope ladder metrics', () => {
       { ...ladderHistory, status: 'CLOSED', highestStep: 9 }
     ];
     expect(positionLadderMetrics(position, 'account-1', unrelated)).toEqual({});
-  });
-});
-
-describe('batched realtime slope stream', () => {
-  it('keeps each symbol paired with its own interval in repeated query parameters', () => {
-    const query = slopeStreamQuery([
-      { symbol: 'BTCUSDT', interval: '15m' },
-      { symbol: 'ETHUSDT', interval: '1h' }
-    ]);
-    expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
-    expect(query.getAll('interval')).toEqual(['15m', '1h']);
-    expect(query.get('runMode')).toBe('LIVE');
-    expect(slopeStreamQuery([{ symbol: 'BTCUSDT', interval: '15m' }], 'TESTNET').get('runMode')).toBe('TESTNET');
-  });
-
-  it('splits subscriptions at the server batch limit', () => {
-    const rows = Array.from({ length: 51 }, (_, index) => ({ symbol: `S${index}`, interval: '15m' }));
-    const batches = chunkSlopeSubscriptions(rows);
-    expect(batches.map(batch => batch.length)).toEqual([50, 1]);
-    expect(batches.flat()).toEqual(rows);
   });
 });
 

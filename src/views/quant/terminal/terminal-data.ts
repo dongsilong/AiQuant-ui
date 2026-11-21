@@ -1,5 +1,5 @@
 import type {
-  KlineSnapshot,
+
   OrderSnapshot,
   PositionSnapshot,
   ProtectionOrderSnapshot,
