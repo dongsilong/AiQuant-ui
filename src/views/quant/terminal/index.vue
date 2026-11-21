@@ -883,7 +883,7 @@ function renderOverlays() {
 function toggleMaPeriod(value: number) {
   maPeriods.value = maPeriods.value.includes(value)
     ? maPeriods.value.filter(period => period !== value)
-    : [...maPeriods.value, value].sort((a, b) => a - b);
+    : [...maPeriods.value, value].toSorted((a, b) => a - b);
   renderIndicators();
 }
 
