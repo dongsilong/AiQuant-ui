@@ -355,17 +355,17 @@
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
           <el-table-column label="当前价" min-width="80">
-            <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.currentPrice) }}</template>
+            <template #default="scope">{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="85" align="center">
             <template #default="scope">
-              <span>{{ scope.row.degrees === undefined ? '-' : `${scope.row.degrees.toFixed(2)}°` }}</span>
+              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
               <el-tooltip :content="slopeMaTooltip(scope.row as SlopeRow)" placement="top">
                 <span
                   class="slope-ma-direction"
-                  :class="scope.row.maTrend === 'UP' ? 'slope-ma-up' : scope.row.maTrend === 'DOWN' ? 'slope-ma-down' : 'slope-ma-flat'"
-                >{{ scope.row.maTrend === 'UP' ? '↑' : scope.row.maTrend === 'DOWN' ? '↓' : '—' }}</span>
+                  :class="isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP' ? 'slope-ma-up' : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN' ? 'slope-ma-down' : 'slope-ma-flat'"
+                >{{ isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'UP' ? '↑' : isSlopeMaFresh(scope.row as SlopeRow) && scope.row.maTrend === 'DOWN' ? '↓' : '—' }}</span>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -424,8 +424,7 @@ import {
   accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
   positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl, aggregateSnapshotPositionPnl,
-  terminalMarketSubscriptions, chunkSlopeSubscriptions, updateOrders, exactCloseQuantity,
-  calculateOneMinuteMa, calculateRealtimeSlope, slopeStreamQuery
+  terminalMarketSubscriptions, updateOrders, exactCloseQuantity
 } from './terminal-data';
 
 const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(
@@ -480,8 +479,28 @@ const ordersError = ref('');
 const tradesError = ref('');
 
 // ==================== 实时斜率面板状态 ====================
-type SlopeRow = { symbol: string; interval: string; status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR'; currentPrice?: number; latestTradePrice?: number; referencePrice?: number; slopePercent?: number; degrees?: number; ma5?: number; ma7?: number; maTrend?: 'UP' | 'DOWN' | 'FLAT'; entryAngleDegrees?: number };
-type SlopeStreamState = { klines: KlineSnapshot[]; latestTradePrice?: number; handshakeComplete: boolean };
+type SlopeRow = {
+  symbol: string;
+  interval: string;
+  status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  sequence?: number;
+  currentPrice?: number;
+  referencePrice?: number;
+  slopePercent?: number;
+  degrees?: number;
+  entryAngleDegrees?: number;
+  slopeReady?: boolean;
+  slopeFreshForMillis?: number;
+  slopeReceivedAtLocal?: number;
+  ma5?: number;
+  ma7?: number;
+  maTrend?: 'UP' | 'DOWN' | 'FLAT';
+  maReady?: boolean;
+  maBlockReason?: string;
+  maLastClosedKlineOpenTime?: string;
+  maFreshForMillis?: number;
+  maReceivedAtLocal?: number;
+};
 const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
 const statusText = (status: string) => statusMap[status] ?? '未知';
 const slopePanelVisible = ref(false);
@@ -503,10 +522,6 @@ let dataRequestController: AbortController | undefined;
 let symbolSearchController: AbortController | undefined;
 let symbolSwitchController: AbortController | undefined;
 let slopeStreams: SseConnection[] = [];
-const slopeStreamStates = new Map<string, SlopeStreamState>();
-const slopeOneMinuteKlines = new Map<string, KlineSnapshot[]>();
-const pendingSlopeRows = new Map<SlopeRow, SlopeStreamState>();
-let slopeRenderFrame: number | undefined;
 let slopeStreamGeneration = 0;
 const slopeStreamRetries = new Map<number, ReturnType<typeof setTimeout>>();
 let slopeLoadController: AbortController | undefined;
@@ -1409,7 +1424,7 @@ watch(
 );
 
 watch(
-  () => selectedMarketRunMode(),
+  () => credentialId.value,
   () => {
     if (slopePanelVisible.value) connectSlopeStream();
   }
@@ -1632,6 +1647,26 @@ function connectAccountStream() {
   );
 }
 // ==================== 实时斜率面板逻辑 ====================
+function clearSlopeSnapshot(row: SlopeRow, status: SlopeRow['status'], resetSequence = false) {
+  row.status = status;
+  if (resetSequence) row.sequence = undefined;
+  row.currentPrice = undefined;
+  row.referencePrice = undefined;
+  row.slopePercent = undefined;
+  row.degrees = undefined;
+  row.slopeReady = false;
+  row.slopeFreshForMillis = 0;
+  row.slopeReceivedAtLocal = undefined;
+  row.ma5 = undefined;
+  row.ma7 = undefined;
+  row.maTrend = undefined;
+  row.maReady = false;
+  row.maBlockReason = undefined;
+  row.maLastClosedKlineOpenTime = undefined;
+  row.maFreshForMillis = 0;
+  row.maReceivedAtLocal = undefined;
+}
+
 function closeSlopeStream(resetState = true) {
   slopeStreamGeneration++;
   slopeStreams.forEach(connection => connection.close());
@@ -1639,150 +1674,107 @@ function closeSlopeStream(resetState = true) {
   slopeStreamRetries.forEach(timer => clearTimeout(timer));
   slopeStreamRetries.clear();
   if (resetState) {
-    slopeStreamStates.clear();
-    slopeOneMinuteKlines.clear();
+    slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'CONNECTING', true));
   }
-  pendingSlopeRows.clear();
-  if (slopeRenderFrame !== undefined) cancelAnimationFrame(slopeRenderFrame);
-  slopeRenderFrame = undefined;
 }
 
-function flushSlopeRows() {
-  slopeRenderFrame = undefined;
-  pendingSlopeRows.forEach((state, row) => {
-    const latestKline = state.klines[state.klines.length - 1];
-    const referenceKline = state.klines[state.klines.length - 2];
-    row.latestTradePrice = state.latestTradePrice;
-    row.currentPrice = state.latestTradePrice ?? (latestKline ? Number(latestKline.close) : undefined);
-    row.referencePrice = referenceKline ? Number(referenceKline.open) : undefined;
-    const slope = calculateRealtimeSlope(row.currentPrice, row.referencePrice, row.entryAngleDegrees);
-    row.slopePercent = slope?.slopePercent;
-    row.degrees = slope?.degrees;
-    if (state.handshakeComplete && row.degrees !== undefined) row.status = 'CONNECTED';
+function isSlopeFresh(row: SlopeRow): boolean {
+  return row.slopeReady === true && row.slopeReceivedAtLocal !== undefined
+    && now.value - row.slopeReceivedAtLocal < (row.slopeFreshForMillis ?? 0);
+}
+
+function isSlopeMaFresh(row: SlopeRow): boolean {
+  return row.maReady === true && row.maReceivedAtLocal !== undefined
+    && now.value - row.maReceivedAtLocal < (row.maFreshForMillis ?? 0);
+}
+
+watch(now, current => {
+  slopeRows.value.forEach(row => {
+    if (row.slopeReady && row.slopeReceivedAtLocal !== undefined
+      && current - row.slopeReceivedAtLocal >= (row.slopeFreshForMillis ?? 0)) {
+      row.currentPrice = undefined;
+      row.referencePrice = undefined;
+      row.slopePercent = undefined;
+      row.degrees = undefined;
+      row.slopeReady = false;
+    }
+    if (row.maReady && row.maReceivedAtLocal !== undefined
+      && current - row.maReceivedAtLocal >= (row.maFreshForMillis ?? 0)) {
+      row.ma5 = undefined;
+      row.ma7 = undefined;
+      row.maTrend = undefined;
+      row.maReady = false;
+      row.maBlockReason = 'STALE_EVENT';
+    }
   });
-  pendingSlopeRows.clear();
-}
-
-function scheduleSlopeRowUpdate(row: SlopeRow, state: SlopeStreamState) {
-  pendingSlopeRows.set(row, state);
-  if (slopeRenderFrame === undefined) slopeRenderFrame = requestAnimationFrame(flushSlopeRows);
-}
+});
 
 function connectSlopeStream() {
   closeSlopeStream(false);
-  if (!slopePanelVisible.value || !slopeStrategyId.value || !slopeRows.value.length) return;
+  if (!slopePanelVisible.value || !slopeStrategyId.value || !credentialId.value || !slopeRows.value.length) return;
   const generation = slopeStreamGeneration;
-  for (const row of slopeRows.value) {
-    row.status = 'CONNECTING';
-    const key = `${row.symbol}:${row.interval}`;
-    const state = slopeStreamStates.get(key) || { klines: [], latestTradePrice: row.latestTradePrice, handshakeComplete: false };
-    state.handshakeComplete = false;
-    slopeStreamStates.set(key, state);
-  }
-  const symbols = [...new Set(slopeRows.value.map(row => row.symbol))];
-  const subscriptionMap = new Map<string, { symbol: string; interval: string }>();
-  slopeRows.value.forEach(({ symbol, interval }) => subscriptionMap.set(`${symbol}:${interval}`, { symbol, interval }));
-  symbols.forEach(symbol => subscriptionMap.set(`${symbol}:1m`, { symbol, interval: '1m' }));
-  const subscriptions = [...subscriptionMap.values()];
+  slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'CONNECTING', true));
 
-  const onMessage = (data: string) => {
-    if (generation !== slopeStreamGeneration) return;
-    try {
-      const incoming = JSON.parse(data);
-      const events = incoming.type === 'KLINE_SNAPSHOT' && Array.isArray(incoming.klines)
-        ? incoming.klines.map((kline: KlineSnapshot) => ({ ...incoming, type: 'KLINE', kline }))
-        : [incoming];
-      events.forEach(event => {
-        if (event.type === 'CONNECTING' && !event.symbol) return;
-        const key = `${event.symbol}:${event.interval}`;
-        if (event.interval === '1m' && event.symbol) {
-          const symbolRows = slopeRows.value.filter(item => item.symbol === event.symbol);
-          if (event.type === 'KLINE' && event.kline) {
-            const klines = slopeOneMinuteKlines.get(event.symbol) || [];
-            const kline = event.kline as KlineSnapshot;
-            const index = klines.findIndex(item => item.openTime === kline.openTime);
-            if (index < 0) klines.push(kline);
-            else klines[index] = kline;
-            klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-            const retained = klines.slice(-16);
-            slopeOneMinuteKlines.set(event.symbol, retained);
-            const ma = calculateOneMinuteMa(retained);
-            if (ma) {
-              symbolRows.forEach(item => {
-                item.ma5 = ma.ma5;
-                item.ma7 = ma.ma7;
-                item.maTrend = ma.direction;
-              });
-            }
-          }
-          symbolRows.forEach(item => {
-            const itemState = slopeStreamStates.get(`${item.symbol}:${item.interval}`);
-            if (itemState) scheduleSlopeRowUpdate(item, itemState);
-          });
+  const query = new URLSearchParams({
+    strategyId: String(slopeStrategyId.value),
+    credentialId: String(credentialId.value)
+  });
+  let connection: SseConnection;
+  connection = openSse(
+    `${import.meta.env.VITE_APP_BASE_API}/quant/strategy/slope/stream?${query}`,
+    'quant.strategy.slope',
+    data => {
+      if (generation !== slopeStreamGeneration) return;
+      try {
+        const event = JSON.parse(data);
+        if (event.type === 'CONNECTED' || !event.symbol) return;
+        const row = slopeRows.value.find(item => item.symbol === event.symbol && item.interval === event.interval);
+        if (!row) return;
+        const sequence = Number(event.sequence);
+        if (!Number.isSafeInteger(sequence) || (row.sequence !== undefined && sequence <= row.sequence)) return;
+        row.sequence = sequence;
+        row.status = 'CONNECTED';
+
+        const receivedAt = Date.now();
+        row.slopeReady = event.slopeReady === true && Number(event.slopeFreshForMillis) > 0;
+        row.slopeFreshForMillis = Math.max(0, Number(event.slopeFreshForMillis) || 0);
+        row.slopeReceivedAtLocal = receivedAt;
+        row.currentPrice = row.slopeReady && event.currentPrice != null ? Number(event.currentPrice) : undefined;
+        row.referencePrice = row.slopeReady && event.referenceOpenPrice != null ? Number(event.referenceOpenPrice) : undefined;
+        row.slopePercent = row.slopeReady && event.slopePercent != null ? Number(event.slopePercent) : undefined;
+        row.degrees = row.slopeReady && event.degrees != null ? Number(event.degrees) : undefined;
+        if (event.entryThreshold != null && Number.isFinite(Number(event.entryThreshold))) {
+          row.entryAngleDegrees = Number(event.entryThreshold);
         }
-        const row = slopeRows.value.find(item => `${item.symbol}:${item.interval}` === key);
-        const state = slopeStreamStates.get(key);
-        if (!row || !state) return;
-        if (event.type === 'CONNECTING') {
-          row.status = 'CONNECTING';
-          return;
-        }
-        if (event.type === 'CONNECTED') {
-          state.handshakeComplete = true;
-          scheduleSlopeRowUpdate(row, state);
-          return;
-        }
-        if (event.type === 'DISCONNECTED' || event.type === 'ERROR') {
-          row.status = event.type;
-          return;
-        }
-        if (event.type === 'TRADE' && Number(event.price) > 0) {
-          state.latestTradePrice = Number(event.price);
-        } else if (event.type === 'KLINE' && event.kline) {
-          const kline = event.kline as KlineSnapshot;
-          const index = state.klines.findIndex(item => item.openTime === kline.openTime);
-          if (index < 0) state.klines.push(kline);
-          else state.klines[index] = kline;
-          state.klines.sort((left, right) => Date.parse(left.openTime) - Date.parse(right.openTime));
-          state.klines = state.klines.slice(-4);
-        }
-        scheduleSlopeRowUpdate(row, state);
-      });
-    } catch {
-      // 忽略单条无法解析的消息，避免影响同一连接中的其他交易对。
-    }
-  };
-  const startBatch = (batch: Array<{ symbol: string; interval: string }>, batchIndex: number) => {
-    if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
-    const query = slopeStreamQuery(batch, selectedMarketRunMode());
-    let connection: SseConnection;
-    connection = openSse(
-      `${import.meta.env.VITE_APP_BASE_API}/quant/market/streams?${query}`,
-      'quant.market',
-      onMessage,
-      () => {
-        if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
-        connection.close();
-        slopeStreams = slopeStreams.filter(item => item !== connection);
-        batch.forEach(subscription => {
-          slopeRows.value
-            .filter(row => row.symbol === subscription.symbol && (subscription.interval === '1m' || row.interval === subscription.interval))
-            .forEach(row => { row.status = 'DISCONNECTED'; });
-        });
-        if (slopeStreamRetries.has(batchIndex)) return;
-        const timer = setTimeout(() => {
-          slopeStreamRetries.delete(batchIndex);
-          startBatch(batch, batchIndex);
-        }, 3000);
-        slopeStreamRetries.set(batchIndex, timer);
-      },
-      handleSseUnauthorized
-    );
-    slopeStreams.push(connection);
-  };
-  chunkSlopeSubscriptions(subscriptions).forEach((batch, index) => startBatch(batch, index));
+
+        row.maReady = event.maReady === true && Number(event.maFreshForMillis) > 0;
+        row.maFreshForMillis = Math.max(0, Number(event.maFreshForMillis) || 0);
+        row.maReceivedAtLocal = receivedAt;
+        row.ma5 = row.maReady && event.ma5 != null ? Number(event.ma5) : undefined;
+        row.ma7 = row.maReady && event.ma7 != null ? Number(event.ma7) : undefined;
+        row.maTrend = row.maReady ? event.maTrend as SlopeRow['maTrend'] : undefined;
+        row.maBlockReason = row.maReady ? undefined : String(event.maBlockReason || 'MA_NOT_READY');
+        row.maLastClosedKlineOpenTime = event.maLastClosedKlineOpenTime || undefined;
+      } catch {
+        // 忽略不完整的遥测消息，不保留或推断 MA 状态。
+      }
+    },
+    () => {
+      if (generation !== slopeStreamGeneration || !slopePanelVisible.value) return;
+      connection.close();
+      slopeStreams = slopeStreams.filter(item => item !== connection);
+      slopeRows.value.forEach(row => clearSlopeSnapshot(row, 'DISCONNECTED'));
+      if (slopeStreamRetries.has(0)) return;
+      const timer = setTimeout(() => {
+        slopeStreamRetries.delete(0);
+        connectSlopeStream();
+      }, 3000);
+      slopeStreamRetries.set(0, timer);
+    },
+    handleSseUnauthorized
+  );
+  slopeStreams.push(connection);
 }
-
 
 function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
   try {
@@ -1797,12 +1789,15 @@ function slopeEntryAngle(binding: StrategySymbolBinding): number | undefined {
 }
 
 function slopeMaTooltip(row: SlopeRow): string {
-  if (row.ma5 === undefined || row.ma7 === undefined) return '1m MA5/MA7 数据未就绪';
-  return `1m MA5：${formatQuantPrice(row.symbol, row.ma5)}；MA7：${formatQuantPrice(row.symbol, row.ma7)}`;
+  if (!isSlopeMaFresh(row)) {
+    const reason = row.maBlockReason || (row.maReady ? '数据有效期已到' : '数据未就绪');
+    return `1m MA5/MA7 不可用：${reason}；最后收盘K线：${row.maLastClosedKlineOpenTime || '-'}`;
+  }
+  return `1m MA5：${formatQuantPrice(row.symbol, row.ma5)}；MA7：${formatQuantPrice(row.symbol, row.ma7)}；最后收盘K线：${row.maLastClosedKlineOpenTime || '-'}`;
 }
 
 function slopeRowClassName({ row }: { row: Partial<SlopeRow> }): string {
-  if (row.status !== 'CONNECTED' || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
+  if (row.status !== 'CONNECTED' || !isSlopeFresh(row as SlopeRow) || !Number.isFinite(row.degrees) || row.entryAngleDegrees === undefined) return '';
   const degrees = Math.abs(row.degrees!);
   if (degrees > row.entryAngleDegrees) return 'slope-row-danger';
   return degrees >= Math.max(0, row.entryAngleDegrees - 10) ? 'slope-row-warning' : '';

@@ -9,25 +9,6 @@ import type {
 
 type RawFields = Record<string, unknown>;
 
-export function slopeStreamQuery(
-  rows: ReadonlyArray<{ symbol: string; interval: string }>,
-  runMode = 'LIVE'
-): URLSearchParams {
-  const query = new URLSearchParams({ runMode });
-  rows.forEach(row => {
-    query.append('symbol', row.symbol);
-    query.append('interval', row.interval);
-  });
-  return query;
-}
-
-export function chunkSlopeSubscriptions<T>(rows: ReadonlyArray<T>, size = 50): T[][] {
-  if (!Number.isInteger(size) || size < 1) throw new RangeError('订阅批次大小必须为正整数');
-  const chunks: T[][] = [];
-  for (let index = 0; index < rows.length; index += size) chunks.push(rows.slice(index, index + size));
-  return chunks;
-}
-
 /** Build a de-duplicated market subscription list for the chart and open positions. */
 export function terminalMarketSubscriptions(
   chart: { symbol: string; interval: string },
@@ -54,38 +35,6 @@ function numeric(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
-export function calculateOneMinuteMa(klines: ReadonlyArray<KlineSnapshot>): { ma5: number; ma7: number; direction: 'UP' | 'DOWN' | 'FLAT' } | undefined {
-  const closedKlines = klines.filter(kline => kline.closed).slice(-7);
-  if (closedKlines.length !== 7) return undefined;
-  const closes = closedKlines.map(kline => numeric(kline.close));
-  if (closes.some(close => close === undefined || close <= 0)) return undefined;
-  const values = closes as number[];
-  const ma5 = values.slice(-5).reduce((sum, close) => sum + close, 0) / 5;
-  const ma7 = values.reduce((sum, close) => sum + close, 0) / 7;
-  return { ma5, ma7, direction: ma5 > ma7 ? 'UP' : ma5 < ma7 ? 'DOWN' : 'FLAT' };
-}
-
-export function calculateRealtimeSlope(
-  currentPrice: unknown,
-  referenceOpenPrice: unknown,
-  entryAngleDegrees = 60
-): { slopePercent: number; degrees: number; entryApproved: boolean } | undefined {
-  const current = numeric(currentPrice);
-  const reference = numeric(referenceOpenPrice);
-  if (current === undefined || current <= 0 || reference === undefined || reference <= 0) return undefined;
-  const slopePercent = Number((((current - reference) * 100) / reference).toFixed(5));
-  const rawDegrees = (Math.atan(slopePercent) * 180) / Math.PI;
-  return {
-    slopePercent,
-    degrees: Number(rawDegrees.toFixed(2)),
-    entryApproved: Math.abs(rawDegrees) >= entryAngleDegrees
-  };
-}
-
-/**
- * Exchange IDs are integers, NOT floating-point amounts.
- * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
- */
 export function exactIntegerId(value: unknown): string | undefined {
   if (typeof value === 'string') return /^\d+$/.test(value) ? value : undefined;
   if (typeof value === 'bigint') return value >= 0n ? value.toString() : undefined;
