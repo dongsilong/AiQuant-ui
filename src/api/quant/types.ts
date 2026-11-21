@@ -261,6 +261,7 @@ export interface StrategySymbolBinding {
   paramsJson?: string;
   status?: string;
   runtimeEnabled?: boolean;
+  runtimeActive?: boolean;
 }
 export interface StrategyPreflightResult {
   valid: boolean;
