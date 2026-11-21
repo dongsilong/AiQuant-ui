@@ -151,8 +151,8 @@
                   <small>
                     <div>实际运行：{{ item.runtimeActive === true ? '运行中' : item.runtimeActive === false ? '未运行' : '状态未知' }}（{{ item.lastSignalAt || '暂无信号' }}）</div>
                     <div>开仓开关：{{ item.runtimeEnabled === false ? '已暂停' : '已启用' }}</div>
-                    <div v-if="item.runtimeActive === false && item.runtimeEnabled !== false">
-                      {{ item.lastError || '开仓已启用，但实例尚未取得有效运行租约，请检查运行日志' }}
+                    <div v-if="item.runtimeActive === false">
+                      {{ item.runtimeStatusReason || item.lastError || '实例尚未取得有效运行租约，请检查运行日志' }}
                     </div>
                   </small>
                 </div>
