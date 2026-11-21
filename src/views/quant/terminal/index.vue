@@ -56,7 +56,7 @@
                 @command="toggleMaPeriod"
               >
                 <el-button size="small" :type="maPeriods.length ? 'primary' : ''">
-                  MA <span class="ma-dropdown-caret">▾</span>
+                  MA <span class="indicator-dropdown-caret">▾</span>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -66,11 +66,38 @@
                       :command="maPeriod"
                       :class="{ 'is-selected': maPeriods.includes(maPeriod) }"
                     >
-                      <span class="ma-dropdown-option">
-                        <span class="ma-dropdown-check" aria-hidden="true">
+                      <span class="indicator-dropdown-option">
+                        <span class="indicator-dropdown-check" aria-hidden="true">
                           {{ maPeriods.includes(maPeriod) ? '✓' : '' }}
                         </span>
                         MA{{ maPeriod }}
+                      </span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-dropdown
+                trigger="click"
+                :hide-on-click="false"
+                popper-class="ema-indicator-dropdown"
+                @command="toggleEmaPeriod"
+              >
+                <el-button size="small" :type="emaPeriods.length ? 'primary' : ''">
+                  EMA <span class="indicator-dropdown-caret">▾</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="emaPeriod in emaPeriodOptions"
+                      :key="emaPeriod"
+                      :command="emaPeriod"
+                      :class="{ 'is-selected': emaPeriods.includes(emaPeriod) }"
+                    >
+                      <span class="indicator-dropdown-option">
+                        <span class="indicator-dropdown-check" aria-hidden="true">
+                          {{ emaPeriods.includes(emaPeriod) ? '✓' : '' }}
+                        </span>
+                        EMA{{ emaPeriod }}
                       </span>
                     </el-dropdown-item>
                   </el-dropdown-menu>
@@ -468,6 +495,8 @@ const strategyId = ref<string | number>();
 const credentialId = ref<string | number>();
 const maPeriodOptions = [5, 7, 15, 30, 60];
 const maPeriods = ref<number[]>([...maPeriodOptions]);
+const emaPeriodOptions = [6, 12, 20];
+const emaPeriods = ref<number[]>([...emaPeriodOptions]);
 const indicators = ref<string[]>([]);
 const activeTab = ref('positions');
 const loading = ref(false);
@@ -653,7 +682,7 @@ const strategySymbolToggleKey = (item: StrategyInstanceVO) => `${String(item.str
 
 // ==================== 计算属性 ====================
 const indicatorOptions = computed(() => quant_indicator.value || []);
-const otherIndicatorOptions = computed(() => indicatorOptions.value.filter((item: any) => item.value !== 'MA'));
+const otherIndicatorOptions = computed(() => indicatorOptions.value.filter((item: any) => !['MA', 'EMA'].includes(item.value)));
 const indicatorNames = computed<Record<string, string>>(() => Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label])));
 
 const freshUnrealizedPnl = computed(() =>
@@ -854,6 +883,14 @@ function renderIndicators() {
       shortName: 'MA'
     }, true);
   }
+  if (emaPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'EMA',
+      calcParams: [...emaPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'EMA'
+    }, true);
+  }
   for (const name of indicators.value) {
     const mainIndicator = ['EMA', 'BOLL'].includes(name);
     chart.value.createIndicator({ name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name }, mainIndicator);
@@ -884,6 +921,13 @@ function toggleMaPeriod(value: number) {
   maPeriods.value = maPeriods.value.includes(value)
     ? maPeriods.value.filter(period => period !== value)
     : [...maPeriods.value, value].toSorted((a, b) => a - b);
+  renderIndicators();
+}
+
+function toggleEmaPeriod(value: number) {
+  emaPeriods.value = emaPeriods.value.includes(value)
+    ? emaPeriods.value.filter(period => period !== value)
+    : [...emaPeriods.value, value].toSorted((a, b) => a - b);
   renderIndicators();
 }
 
@@ -2509,18 +2553,18 @@ onBeforeUnmount(() => {
 .chart-symbol-select {
   width: 160px;
 }
-.ma-dropdown-caret {
+.indicator-dropdown-caret {
   margin-left: 3px;
   font-size: 11px;
 }
 
-.ma-dropdown-option {
+.indicator-dropdown-option {
   display: flex;
   align-items: center;
   min-width: 72px;
 }
 
-.ma-dropdown-check {
+.indicator-dropdown-check {
   display: inline-block;
   width: 18px;
   color: var(--el-color-primary);
