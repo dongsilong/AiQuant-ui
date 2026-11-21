@@ -35,7 +35,21 @@ describe('terminal MA controls', () => {
     expect(template).toContain('el-dropdown');
     expect(source).toContain(':hide-on-click="false"');
     expect(template).toContain('toggleMaPeriod');
-    expect(template).toContain('ma-dropdown-caret');
+    expect(template).toContain('indicator-dropdown-caret');
     expect(template).toContain('maPeriods');
+  });
+});
+
+describe('terminal EMA controls', () => {
+  it('selects EMA6, EMA12 and EMA20 through an independent dropdown', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    const template = compiledTemplate();
+    expect(source).toContain('const emaPeriodOptions = [6, 12, 20];');
+    expect(source).toContain('calcParams: [...emaPeriods.value]');
+    expect(source).toContain("!['MA', 'EMA'].includes(item.value)");
+    expect(source).toContain('function toggleEmaPeriod(value: number)');
+    expect(template).toContain('emaPeriodOptions');
+    expect(template).toContain('toggleEmaPeriod');
+    expect(template).toContain('emaPeriods');
   });
 });
