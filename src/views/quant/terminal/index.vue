@@ -2555,7 +2555,9 @@ onBeforeUnmount(() => {
   width: 160px;
 }
 .indicator-control :deep(.indicator-button) {
-  width: 68px;
+  width: 48px;
+  padding-right: 4px;
+  padding-left: 4px;
 }
 
 .indicator-dropdown-caret {
