@@ -494,11 +494,25 @@ const interval = ref('15m');
 const currentInterval = interval;
 const strategyId = ref<string | number>();
 const credentialId = ref<string | number>();
-const maPeriodOptions = [5, 7, 15, 30, 60];
-const maPeriods = ref<number[]>([...maPeriodOptions]);
-const emaPeriodOptions = [6, 12, 20];
-const emaPeriods = ref<number[]>([...emaPeriodOptions]);
-const indicators = ref<string[]>([]);
+const indicatorConfig = {
+  ma: {
+    options: [5, 7, 15, 30, 60],
+    defaultPeriods: [5, 7, 15]
+  },
+  ema: {
+    options: [6, 12, 20],
+    defaultPeriods: [6, 12]
+  },
+  boll: {
+    enabled: true,
+    calcParams: [20, 2]
+  }
+};
+const maPeriodOptions = indicatorConfig.ma.options;
+const maPeriods = ref<number[]>([...indicatorConfig.ma.defaultPeriods]);
+const emaPeriodOptions = indicatorConfig.ema.options;
+const emaPeriods = ref<number[]>([...indicatorConfig.ema.defaultPeriods]);
+const indicators = ref<string[]>(indicatorConfig.boll.enabled ? ['BOLL'] : []);
 const activeTab = ref('positions');
 const loading = ref(false);
 const chartLoading = ref(false);
@@ -901,7 +915,12 @@ function renderIndicator(name: string) {
   if (!indicators.value.includes(name)) return;
   const mainIndicator = name === 'BOLL';
   chart.value.createIndicator(
-    { name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name },
+    {
+      name,
+      ...(mainIndicator ? { paneId: 'candle_pane' } : {}),
+      ...(name === 'BOLL' ? { calcParams: [...indicatorConfig.boll.calcParams] } : {}),
+      shortName: indicatorNames.value[name] || name
+    },
     mainIndicator
   );
 }
@@ -928,7 +947,12 @@ function renderIndicators() {
   for (const name of indicators.value) {
     const mainIndicator = ['EMA', 'BOLL'].includes(name);
     chart.value.createIndicator(
-      { name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name },
+      {
+        name,
+        ...(mainIndicator ? { paneId: 'candle_pane' } : {}),
+        ...(name === 'BOLL' ? { calcParams: [...indicatorConfig.boll.calcParams] } : {}),
+        shortName: indicatorNames.value[name] || name
+      },
       mainIndicator
     );
   }
