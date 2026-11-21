@@ -909,9 +909,29 @@ function renderIndicator(name: string) {
 function renderIndicators() {
   if (!chart.value) return;
   chart.value.removeIndicator();
-  renderIndicator('MA');
-  renderIndicator('EMA');
-  for (const name of indicators.value) renderIndicator(name);
+  if (maPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'MA',
+      calcParams: [...maPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'MA'
+    }, true);
+  }
+  if (emaPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'EMA',
+      calcParams: [...emaPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'EMA'
+    }, true);
+  }
+  for (const name of indicators.value) {
+    const mainIndicator = ['EMA', 'BOLL'].includes(name);
+    chart.value.createIndicator(
+      { name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name },
+      mainIndicator
+    );
+  }
 }
 
 function renderOverlays() {
