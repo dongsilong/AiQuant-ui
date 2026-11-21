@@ -49,24 +49,33 @@
               </el-radio-group>
             </div>
             <div class="toolbar-control indicator-control">
-              <span class="toolbar-label">MA</span>
-              <el-select
-                v-model="maPeriods"
-                class="ma-period-select"
-                size="small"
-                multiple
-                collapse-tags
-                collapse-tags-tooltip
-                placeholder="选择 MA 周期"
-                @change="handleMaPeriodsChange"
+              <el-dropdown
+                trigger="click"
+                :hide-on-click="false"
+                popper-class="ma-indicator-dropdown"
+                @command="toggleMaPeriod"
               >
-                <el-option
-                  v-for="maPeriod in maPeriodOptions"
-                  :key="maPeriod"
-                  :label="`MA${maPeriod}`"
-                  :value="maPeriod"
-                />
-              </el-select>
+                <el-button size="small" :type="maPeriods.length ? 'primary' : ''">
+                  MA <span class="ma-dropdown-caret">▾</span>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="maPeriod in maPeriodOptions"
+                      :key="maPeriod"
+                      :command="maPeriod"
+                      :class="{ 'is-selected': maPeriods.includes(maPeriod) }"
+                    >
+                      <span class="ma-dropdown-option">
+                        <span class="ma-dropdown-check" aria-hidden="true">
+                          {{ maPeriods.includes(maPeriod) ? '✓' : '' }}
+                        </span>
+                        MA{{ maPeriod }}
+                      </span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
               <el-button
                 v-for="tool in otherIndicatorOptions"
@@ -871,8 +880,10 @@ function renderOverlays() {
   }
 }
 
-function handleMaPeriodsChange(values: number[]) {
-  maPeriods.value = [...values].sort((a, b) => a - b);
+function toggleMaPeriod(value: number) {
+  maPeriods.value = maPeriods.value.includes(value)
+    ? maPeriods.value.filter(period => period !== value)
+    : [...maPeriods.value, value].sort((a, b) => a - b);
   renderIndicators();
 }
 
@@ -2498,8 +2509,22 @@ onBeforeUnmount(() => {
 .chart-symbol-select {
   width: 160px;
 }
-.ma-period-select {
-  width: 180px;
+.ma-dropdown-caret {
+  margin-left: 3px;
+  font-size: 11px;
+}
+
+.ma-dropdown-option {
+  display: flex;
+  align-items: center;
+  min-width: 72px;
+}
+
+.ma-dropdown-check {
+  display: inline-block;
+  width: 18px;
+  color: var(--el-color-primary);
+  font-weight: 700;
 }
 .toolbar-divider {
   width: 1px;
