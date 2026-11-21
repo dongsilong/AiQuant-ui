@@ -484,6 +484,7 @@ type SlopeRow = {
   interval: string;
   status: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
   sequence?: number;
+  instanceId?: string;
   currentPrice?: number;
   referencePrice?: number;
   slopePercent?: number;
@@ -1649,7 +1650,10 @@ function connectAccountStream() {
 // ==================== 实时斜率面板逻辑 ====================
 function clearSlopeSnapshot(row: SlopeRow, status: SlopeRow['status'], resetSequence = false) {
   row.status = status;
-  if (resetSequence) row.sequence = undefined;
+  if (resetSequence) {
+    row.sequence = undefined;
+    row.instanceId = undefined;
+  }
   row.currentPrice = undefined;
   row.referencePrice = undefined;
   row.slopePercent = undefined;
@@ -1730,6 +1734,12 @@ function connectSlopeStream() {
         if (event.type === 'CONNECTED' || !event.symbol) return;
         const row = slopeRows.value.find(item => item.symbol === event.symbol && item.interval === event.interval);
         if (!row) return;
+        const instanceId = String(event.instanceId ?? '');
+        if (!instanceId) return;
+        if (row.instanceId !== undefined && row.instanceId !== instanceId) {
+          row.sequence = undefined;
+        }
+        row.instanceId = instanceId;
         const sequence = Number(event.sequence);
         if (!Number.isSafeInteger(sequence) || (row.sequence !== undefined && sequence <= row.sequence)) return;
         row.sequence = sequence;
