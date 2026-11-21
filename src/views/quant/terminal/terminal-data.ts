@@ -1,5 +1,4 @@
 import type {
-
   OrderSnapshot,
   PositionSnapshot,
   ProtectionOrderSnapshot,
