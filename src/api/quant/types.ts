@@ -261,8 +261,6 @@ export interface StrategySymbolBinding {
   paramsJson?: string;
   status?: string;
   runtimeEnabled?: boolean;
-  runtimeActive?: boolean;
-  runtimeStatusReason?: string;
 }
 export interface StrategyPreflightResult {
   valid: boolean;
@@ -286,6 +284,8 @@ export interface StrategyInstanceVO {
   strategyName?: string;
   strategySymbolId?: number | string;
   runtimeEnabled?: boolean;
+  runtimeActive?: boolean;
+  runtimeStatusReason?: string;
   credentialId?: number | string;
   accountName?: string;
   symbol?: string;
