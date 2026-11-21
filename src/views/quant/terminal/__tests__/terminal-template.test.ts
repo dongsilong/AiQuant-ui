@@ -74,8 +74,12 @@ describe('terminal indicator incremental updates', () => {
     expect(source).toContain('renderIndicator(value);');
     expect(source).toContain("renderIndicator('MA');\n}\n\nfunction toggleEmaPeriod");
     expect(source).toContain("renderIndicator('EMA');\n}\n\nfunction toggleIndicator");
-    expect(source).not.toMatch(/function toggleMaPeriod[\\s\\S]*?renderIndicators\\(\\);/);
-    expect(source).not.toMatch(/function toggleEmaPeriod[\\s\\S]*?renderIndicators\\(\\);/);
-    expect(source).not.toMatch(/function toggleIndicator[\\s\\S]*?renderIndicators\\(\\);/);
+    const maToggle = source.slice(source.indexOf('function toggleMaPeriod'), source.indexOf('function toggleEmaPeriod'));
+    const emaToggle = source.slice(source.indexOf('function toggleEmaPeriod'), source.indexOf('function toggleIndicator'));
+    const otherToggle = source.slice(source.indexOf('function toggleIndicator'), source.indexOf('// ==================== 数据加载与处理逻辑'));
+    expect(maToggle).toContain("renderIndicator('MA')");
+    expect(emaToggle).toContain("renderIndicator('EMA')");
+    expect(otherToggle).toContain('renderIndicator(value)');
+    expect(maToggle + emaToggle + otherToggle).not.toContain('renderIndicators()');
   });
 });
