@@ -53,3 +53,12 @@ describe('terminal EMA controls', () => {
     expect(template).toContain('emaPeriods');
   });
 });
+
+describe('terminal indicator button sizing', () => {
+  it('uses one shared width for MA, EMA and other indicator buttons', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    expect(source.match(/class="indicator-button"/g)).toHaveLength(3);
+    expect(source).toContain('.indicator-control :deep(.indicator-button)');
+    expect(source).toContain('width: 68px;');
+  });
+});
