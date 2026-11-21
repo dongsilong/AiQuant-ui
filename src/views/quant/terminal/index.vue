@@ -619,7 +619,7 @@ const chartRef = ref<HTMLElement>();
 const chart = shallowRef<Chart>();
 let resizeObserver: ResizeObserver | undefined;
 let updateChartBar: ((data: KLineData) => void) | undefined;
-let overlayIds: string[] = [];
+const overlayIds = new Map<string, string>();
 // 控制右侧留白，只在初始化或切换品种/周期时应用一次
 let initialRightGapApplied = false;
 
@@ -916,21 +916,43 @@ function renderIndicators() {
 
 function renderOverlays() {
   if (!chart.value) return;
-  for (const id of overlayIds) chart.value.removeOverlay({ id });
-  overlayIds = [];
   const currentPositions = positionRows.value.filter(item => item.symbol === symbol.value);
   const currentOrders = orders.value.filter(item => item.symbol === symbol.value && Number(item.price) > 0);
   const lines = [
     ...currentPositions.flatMap(item => [
-      { value: Number(item.entryPrice), color: '#409eff' },
-      { value: Number(item.liquidationPrice), color: '#f56c6c' }
+      { key: `position:${item.symbol}:${item.side}:entry`, value: Number(item.entryPrice), color: '#409eff' },
+      { key: `position:${item.symbol}:${item.side}:liquidation`, value: Number(item.liquidationPrice), color: '#f56c6c' }
     ]),
-    ...chartProtectionLines.value.map(line => ({ value: line.value, color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c' })),
-    ...currentOrders.map(item => ({ value: Number(item.price), color: '#909399' }))
+    ...chartProtectionLines.value.map(line => ({
+      key: `protection:${line.kind}:${line.value}`,
+      value: line.value,
+      color: line.kind === 'takeProfit' ? '#67c23a' : '#e6a23c'
+    })),
+    ...currentOrders.map(item => ({
+      key: `order:${item.symbol}:${item.orderId}`,
+      value: Number(item.price),
+      color: '#909399'
+    }))
   ].filter(item => Number.isFinite(item.value) && item.value > 0);
+  const activeKeys = new Set(lines.map(line => line.key));
+  for (const [key, id] of overlayIds) {
+    if (!activeKeys.has(key)) {
+      chart.value.removeOverlay({ id });
+      overlayIds.delete(key);
+    }
+  }
   for (const line of lines) {
-    const id = chart.value.createOverlay({ name: 'priceLine', points: [{ value: line.value }], styles: { line: { color: line.color } } });
-    if (typeof id === 'string') overlayIds.push(id);
+    const overlay = {
+      points: [{ value: line.value }],
+      styles: { line: { color: line.color } }
+    };
+    const id = overlayIds.get(line.key);
+    if (id) {
+      chart.value.overrideOverlay({ id, ...overlay });
+    } else {
+      const createdId = chart.value.createOverlay({ name: 'priceLine', ...overlay });
+      if (typeof createdId === 'string') overlayIds.set(line.key, createdId);
+    }
   }
 }
 
