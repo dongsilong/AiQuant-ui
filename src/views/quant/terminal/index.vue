@@ -55,7 +55,7 @@
                 popper-class="ma-indicator-dropdown"
                 @command="toggleMaPeriod"
               >
-                <el-button class="indicator-button" size="small" :type="maPeriods.length ? 'primary' : ''">
+                <el-button class="indicator-button" size="small" :type="maEnabled && maPeriods.length ? 'primary' : ''">
                   MA <span class="indicator-dropdown-caret">▾</span>
                 </el-button>
                 <template #dropdown>
@@ -82,7 +82,7 @@
                 popper-class="ema-indicator-dropdown"
                 @command="toggleEmaPeriod"
               >
-                <el-button class="indicator-button" size="small" :type="emaPeriods.length ? 'primary' : ''">
+                <el-button class="indicator-button" size="small" :type="emaEnabled && emaPeriods.length ? 'primary' : ''">
                   EMA <span class="indicator-dropdown-caret">▾</span>
                 </el-button>
                 <template #dropdown>
@@ -496,10 +496,12 @@ const strategyId = ref<string | number>();
 const credentialId = ref<string | number>();
 const indicatorConfig = {
   ma: {
+    enabled: true,
     options: [5, 7, 15, 30, 60],
     defaultPeriods: [5, 7, 15]
   },
   ema: {
+    enabled: true,
     options: [6, 12, 20],
     defaultPeriods: [6, 12]
   },
@@ -509,8 +511,10 @@ const indicatorConfig = {
   }
 };
 const maPeriodOptions = indicatorConfig.ma.options;
+const maEnabled = ref(indicatorConfig.ma.enabled);
 const maPeriods = ref<number[]>([...indicatorConfig.ma.defaultPeriods]);
 const emaPeriodOptions = indicatorConfig.ema.options;
+const emaEnabled = ref(indicatorConfig.ema.enabled);
 const emaPeriods = ref<number[]>([...indicatorConfig.ema.defaultPeriods]);
 const indicators = ref<string[]>(indicatorConfig.boll.enabled ? ['BOLL'] : []);
 const activeTab = ref('positions');
@@ -891,7 +895,7 @@ function renderIndicator(name: string) {
   if (!chart.value) return;
   chart.value.removeIndicator({ name });
   if (name === 'MA') {
-    if (maPeriods.value.length) {
+    if (maEnabled.value && maPeriods.value.length) {
       chart.value.createIndicator({
         name: 'MA',
         calcParams: [...maPeriods.value],
@@ -902,7 +906,7 @@ function renderIndicator(name: string) {
     return;
   }
   if (name === 'EMA') {
-    if (emaPeriods.value.length) {
+    if (emaEnabled.value && emaPeriods.value.length) {
       chart.value.createIndicator({
         name: 'EMA',
         calcParams: [...emaPeriods.value],
@@ -928,7 +932,7 @@ function renderIndicator(name: string) {
 function renderIndicators() {
   if (!chart.value) return;
   chart.value.removeIndicator();
-  if (maPeriods.value.length) {
+  if (maEnabled.value && maPeriods.value.length) {
     chart.value.createIndicator({
       name: 'MA',
       calcParams: [...maPeriods.value],
@@ -936,7 +940,7 @@ function renderIndicators() {
       shortName: 'MA'
     }, true);
   }
-  if (emaPeriods.value.length) {
+  if (emaEnabled.value && emaPeriods.value.length) {
     chart.value.createIndicator({
       name: 'EMA',
       calcParams: [...emaPeriods.value],
@@ -1004,6 +1008,7 @@ function toggleMaPeriod(value: number) {
   maPeriods.value = maPeriods.value.includes(value)
     ? maPeriods.value.filter(period => period !== value)
     : [...maPeriods.value, value].toSorted((a, b) => a - b);
+  maEnabled.value = maPeriods.value.length > 0;
   renderIndicator('MA');
 }
 
@@ -1011,6 +1016,7 @@ function toggleEmaPeriod(value: number) {
   emaPeriods.value = emaPeriods.value.includes(value)
     ? emaPeriods.value.filter(period => period !== value)
     : [...emaPeriods.value, value].toSorted((a, b) => a - b);
+  emaEnabled.value = emaPeriods.value.length > 0;
   renderIndicator('EMA');
 }
 
