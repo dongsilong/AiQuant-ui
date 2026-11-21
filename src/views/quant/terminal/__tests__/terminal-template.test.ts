@@ -24,3 +24,12 @@ describe('strategy instance symbol link', () => {
     expect(compiledTemplate()).toContain('selectRowSymbol({ symbol: scope.row.symbol })');
   });
 });
+
+describe('terminal MA controls', () => {
+  it('configures MA5, MA7, MA15, MA30 and MA60 as independent indicators', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    expect(source).toContain('const maPeriodOptions = [5, 7, 15, 30, 60];');
+    expect(source).toContain('calcParams: [...maPeriods.value]');
+    expect(compiledTemplate()).toContain('toggleMaPeriod(maPeriod)');
+  });
+});

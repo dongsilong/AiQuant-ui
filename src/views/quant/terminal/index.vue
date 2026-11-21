@@ -51,7 +51,17 @@
             <div class="toolbar-control indicator-control">
               <span class="toolbar-label">指标</span>
               <el-button
-                v-for="tool in indicatorOptions"
+                v-for="maPeriod in maPeriodOptions"
+                :key="`MA${maPeriod}`"
+                size="small"
+                :type="maPeriods.includes(maPeriod) ? 'primary' : ''"
+                @click="toggleMaPeriod(maPeriod)"
+              >
+                MA{{ maPeriod }}
+              </el-button>
+              <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
+              <el-button
+                v-for="tool in otherIndicatorOptions"
                 :key="tool.value"
                 size="small"
                 :type="indicators.includes(tool.value) ? 'primary' : ''"
@@ -439,7 +449,9 @@ const interval = ref('15m');
 const currentInterval = interval;
 const strategyId = ref<string | number>();
 const credentialId = ref<string | number>();
-const indicators = ref<string[]>(['MA']);
+const maPeriodOptions = [5, 7, 15, 30, 60];
+const maPeriods = ref<number[]>([...maPeriodOptions]);
+const indicators = ref<string[]>([]);
 const activeTab = ref('positions');
 const loading = ref(false);
 const chartLoading = ref(false);
@@ -624,6 +636,7 @@ const strategySymbolToggleKey = (item: StrategyInstanceVO) => `${String(item.str
 
 // ==================== 计算属性 ====================
 const indicatorOptions = computed(() => quant_indicator.value || []);
+const otherIndicatorOptions = computed(() => indicatorOptions.value.filter((item: any) => item.value !== 'MA'));
 const indicatorNames = computed<Record<string, string>>(() => Object.fromEntries(indicatorOptions.value.map((item: any) => [item.value, item.label])));
 
 const freshUnrealizedPnl = computed(() =>
@@ -816,8 +829,16 @@ function renderChart() {
 function renderIndicators() {
   if (!chart.value) return;
   chart.value.removeIndicator();
+  if (maPeriods.value.length) {
+    chart.value.createIndicator({
+      name: 'MA',
+      calcParams: [...maPeriods.value],
+      paneId: 'candle_pane',
+      shortName: 'MA'
+    }, true);
+  }
   for (const name of indicators.value) {
-    const mainIndicator = ['MA', 'EMA', 'BOLL'].includes(name);
+    const mainIndicator = ['EMA', 'BOLL'].includes(name);
     chart.value.createIndicator({ name, ...(mainIndicator ? { paneId: 'candle_pane' } : {}), shortName: indicatorNames.value[name] || name }, mainIndicator);
   }
 }
@@ -840,6 +861,13 @@ function renderOverlays() {
     const id = chart.value.createOverlay({ name: 'priceLine', points: [{ value: line.value }], styles: { line: { color: line.color } } });
     if (typeof id === 'string') overlayIds.push(id);
   }
+}
+
+function toggleMaPeriod(value: number) {
+  maPeriods.value = maPeriods.value.includes(value)
+    ? maPeriods.value.filter(period => period !== value)
+    : [...maPeriods.value, value].sort((a, b) => a - b);
+  renderIndicators();
 }
 
 function toggleIndicator(value: string) {
