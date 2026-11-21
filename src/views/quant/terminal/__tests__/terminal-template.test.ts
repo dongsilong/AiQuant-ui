@@ -59,6 +59,8 @@ describe('terminal indicator button sizing', () => {
     const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
     expect(source.match(/class="indicator-button"/g)).toHaveLength(3);
     expect(source).toContain('.indicator-control :deep(.indicator-button)');
-    expect(source).toContain('width: 68px;');
+    expect(source).toContain('width: 48px;');
+    expect(source).toContain('padding-right: 4px;');
+    expect(source).toContain('padding-left: 4px;');
   });
 });
