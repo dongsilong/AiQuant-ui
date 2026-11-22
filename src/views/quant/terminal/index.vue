@@ -48,6 +48,7 @@
                 />
               </el-radio-group>
             </div>
+            <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
             <div class="toolbar-control indicator-control">
               <el-dropdown
                 trigger="click"
@@ -103,7 +104,6 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <span v-if="otherIndicatorOptions.length" class="toolbar-divider" />
               <el-button
                 v-for="tool in otherIndicatorOptions"
                 :key="tool.value"
@@ -498,10 +498,10 @@ const indicatorConfig = {
   ma: {
     enabled: true,
     options: [5, 7, 15, 30, 60],
-    defaultPeriods: [5, 7, 15]
+    defaultPeriods: [5, 7, 30]
   },
   ema: {
-    enabled: true,
+    enabled: false,
     options: [6, 12, 20],
     defaultPeriods: [6, 12]
   },
