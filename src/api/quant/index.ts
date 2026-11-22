@@ -135,6 +135,10 @@ export const startStrategy = (id: number | string) =>
   request({ url: '/quant/strategy/' + id + '/start', method: 'post' });
 export const stopStrategy = (id: number | string) =>
   request({ url: '/quant/strategy/' + id + '/stop', method: 'post' });
+export const startStrategyInstance = (strategyId: number | string, instanceId: number | string) =>
+  request({ url: `/quant/strategy/${strategyId}/instances/${instanceId}/start`, method: 'post' });
+export const stopStrategyInstance = (strategyId: number | string, instanceId: number | string) =>
+  request({ url: `/quant/strategy/${strategyId}/instances/${instanceId}/stop`, method: 'post' });
 export const preflightStrategy = (id: number | string): AxiosPromise<StrategyPreflightResult> =>
   request({ url: '/quant/strategy/' + id + '/preflight', method: 'get' });
 export const listStrategyAccounts = (id: number | string): AxiosPromise<StrategyAccountBinding[]> =>
