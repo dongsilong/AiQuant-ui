@@ -72,8 +72,14 @@ export const listAccessibleOrders = (
   query: PageQuery & { side?: string; status?: string }
 ): AxiosPromise<PageResult<OrderLedgerRow>> =>
   request({ url: '/quant/order/ledger/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncOrders = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
-  request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+export type ManualTradingHistoryRange = '3d' | '7d' | '1m' | '3m';
+
+export const syncOrders = (
+  credentialId: string | number,
+  symbol?: string,
+  historyRange: ManualTradingHistoryRange = '3d'
+): AxiosPromise<string> =>
+  request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: { symbol, historyRange } });
 export const listProtectionOrders = (
   credentialId: string | number,
   symbol?: string,
@@ -93,8 +99,12 @@ export const listAccessibleTrades = (
   query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncTrades = (credentialId: string | number, symbol?: string): AxiosPromise<string> =>
-  request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+export const syncTrades = (
+  credentialId: string | number,
+  symbol?: string,
+  historyRange: ManualTradingHistoryRange = '3d'
+): AxiosPromise<string> =>
+  request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: { symbol, historyRange } });
 
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
