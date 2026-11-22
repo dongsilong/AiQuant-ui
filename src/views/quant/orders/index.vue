@@ -7,9 +7,21 @@
             <div class="table-heading">
               <span class="panel-kicker">Order Ledger</span>
               <h3>订单管理</h3>
-              <p>同步时会一起拉取近 90 天订单与逐笔成交，并补齐订单来源事实；交易对留空时，按当前账户已知交易对同步。超过 3 天的无成交取消/过期订单可能已不再由交易所返回。</p>
+              <p>按所选时间范围同步历史订单与逐笔成交，并补齐订单来源事实；交易对留空时，按当前账户已知交易对同步。</p>
             </div>
             <div class="toolbar-actions">
+              <el-select
+                v-if="canSyncTradingData"
+                v-model="syncHistoryRange"
+                :disabled="syncing"
+                size="default"
+                style="width: 116px"
+              >
+                <el-option label="3 天" value="3d" />
+                <el-option label="7 天" value="7d" />
+                <el-option label="1 个月" value="1m" />
+                <el-option label="3 个月" value="3m" />
+              </el-select>
               <el-button
                 v-if="canSyncTradingData"
                 :disabled="credentialId === 'ALL'"
@@ -144,6 +156,7 @@
 <script lang="ts" setup>
 import { formatQuantTime } from '@/utils/quant-time';
 import type { CredentialVO, OrderLedgerRow, TradeRecord } from '@/api/quant/types';
+import type { ManualTradingHistoryRange } from '@/api/quant';
 import { cancelOrder, listAccessibleOrders, listAccessibleTrades, listCredential, syncOrders } from '@/api/quant';
 import { ensureQuantSymbolTickSizes, formatQuantTablePrice } from '../components/price-format';
 import modal from '@/plugins/modal';
@@ -154,6 +167,7 @@ const canSyncTradingData = computed(() => userStore.permissions.includes('*:*:*'
   || userStore.permissions.includes('quant:order:sync') && userStore.permissions.includes('quant:trade:sync'));
 const loading = ref(false);
 const syncing = ref(false);
+const syncHistoryRange = ref<ManualTradingHistoryRange>('3d');
 const credentials = ref<CredentialVO[]>([]);
 const rows = ref<OrderLedgerRow[]>([]);
 const total = ref(0);
@@ -204,7 +218,7 @@ const sync = async () => {
   if (syncing.value) return;
   syncing.value = true;
   try {
-    await syncOrders(credentialId.value, symbol.value.trim() || undefined);
+    await syncOrders(credentialId.value, symbol.value.trim() || undefined, syncHistoryRange.value);
     modal.msgSuccess('同步任务已提交，完成后将通过右上角系统消息通知；查看最新数据时请手动刷新表格');
   } finally {
     syncing.value = false;
