@@ -284,6 +284,8 @@ export interface StrategyInstanceVO {
   strategyName?: string;
   strategySymbolId?: number | string;
   runtimeEnabled?: boolean;
+  strategyEnabled?: boolean;
+  runtimeActive?: boolean;
   credentialId?: number | string;
   accountName?: string;
   symbol?: string;
