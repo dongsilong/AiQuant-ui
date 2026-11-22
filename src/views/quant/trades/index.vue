@@ -11,29 +11,14 @@
                 <p>按所选时间范围同步历史订单与逐笔成交，并补齐订单来源事实；交易对留空时按当前账户已知交易对同步。注意：超过 3 天的无成交取消/过期订单可能已不再由交易所返回。</p>
               </div>
               <div class="toolbar-actions">
-                <el-select
-                  v-if="canSyncTradingData"
-                  v-model="syncHistoryRange"
-                  :disabled="syncing"
-                  size="default"
-                  style="width: 116px"
-                >
-                  <el-option label="3 天" value="3d" />
-                  <el-option label="7 天" value="7d" />
-                  <el-option label="1 个月" value="1m" />
-                  <el-option label="3 个月" value="3m" />
-                </el-select>
                 <el-button
                   v-if="canSyncTradingData"
-                  :disabled="!credentialId || credentialId === 'ALL'"
                   :loading="syncing"
                   icon="Refresh"
                   plain
                   type="primary"
-                  @click="sync"
-                >
-                  同步订单与成交
-                </el-button>
+                  @click="openSyncDialog"
+                >同步订单与成交</el-button>
               </div>
             </div>
           </template>
@@ -53,6 +38,42 @@
           </el-form>
         </el-card>
       </div>
+      <el-dialog
+        v-model="syncDialogVisible"
+        title="同步订单与成交"
+        width="520px"
+        append-to-body
+        :close-on-click-modal="false"
+      >
+        <el-form label-width="92px">
+          <el-form-item label="交易账户" required>
+            <el-select v-model="syncCredentialId" filterable placeholder="请选择交易账户" style="width: 100%">
+              <el-option
+                v-for="item in credentials"
+                :key="item.id"
+                :label="`${item.accountName}（${item.userName || item.userId}）`"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="历史范围">
+            <el-select v-model="syncHistoryRange" style="width: 100%">
+              <el-option label="最近 3 天" value="3d" />
+              <el-option label="最近 7 天" value="7d" />
+              <el-option label="最近 1 个月" value="1m" />
+              <el-option label="最近 3 个月" value="3m" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="交易对范围">
+            <span>{{ symbol.trim() ? `仅同步 ${symbol.trim().toUpperCase()}` : '同步该账户所有已知交易对' }}</span>
+          </el-form-item>
+        </el-form>
+        <template #footer>
+          <el-button :disabled="syncing" @click="syncDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="syncing" @click="sync">开始同步</el-button>
+        </template>
+      </el-dialog>
+
       <el-card class="table-panel" shadow="hover">
         <el-table v-loading="loading" :data="rows" border>
           <el-table-column type="index" label="序号" width="80" align="center">
@@ -108,6 +129,8 @@ const canSyncTradingData = computed(() => userStore.permissions.includes('*:*:*'
 const loading = ref(false);
 const syncing = ref(false);
 const syncHistoryRange = ref<ManualTradingHistoryRange>('3d');
+const syncDialogVisible = ref(false);
+const syncCredentialId = ref<number | string>();
 const credentials = ref<CredentialVO[]>([]);
 const rows = ref<TradeRecord[]>([]);
 const total = ref(0);
@@ -116,7 +139,18 @@ const symbol = ref('');
 const query = reactive<PageQuery>({ pageNum: 1, pageSize: 10 });
 const formatTime = formatQuantTime;
 const loadCredentials = async () => {
-  credentials.value = (await listCredential({ pageNum: 1, pageSize: 100 })).data?.rows || [];
+  const loaded: CredentialVO[] = [];
+  let pageNum = 1;
+  let total = 0;
+  do {
+    const result = await listCredential({ pageNum, pageSize: 100 });
+    const pageRows = result.data?.rows || [];
+    loaded.push(...pageRows);
+    total = result.data?.total || 0;
+    pageNum += 1;
+    if (!pageRows.length) break;
+  } while (loaded.length < total);
+  credentials.value = loaded;
 };
 const load = async () => {
   loading.value = true;
@@ -139,12 +173,18 @@ const handleCredentialChange = () => {
   query.pageNum = 1;
   load();
 };
+const openSyncDialog = () => {
+  syncCredentialId.value = credentialId.value && credentialId.value !== 'ALL' ? credentialId.value : undefined;
+  syncDialogVisible.value = true;
+};
 const sync = async () => {
-  if (!credentialId.value || credentialId.value === 'ALL') return modal.msgWarning('请先选择具体交易账户');
+  const selectedCredentialId = syncCredentialId.value;
+  if (selectedCredentialId == null || selectedCredentialId === '') return modal.msgWarning('请选择需要同步的交易账户');
   if (syncing.value) return;
   syncing.value = true;
   try {
-    await syncTrades(credentialId.value, symbol.value.trim() || undefined, syncHistoryRange.value);
+    await syncTrades(selectedCredentialId, symbol.value.trim() || undefined, syncHistoryRange.value);
+    syncDialogVisible.value = false;
     modal.msgSuccess('同步任务已提交，完成后将通过右上角系统消息通知；查看最新数据时请手动刷新表格');
   } finally {
     syncing.value = false;
