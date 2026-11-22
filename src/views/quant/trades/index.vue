@@ -8,7 +8,7 @@
               <div class="table-heading">
                 <span class="panel-kicker">Trade Facts</span>
                 <h3>成交记录</h3>
-                <p>按所选时间范围同步历史订单与逐笔成交，并补齐订单来源事实；交易对留空时，按当前账户已知交易对同步。</p>
+                <p>按所选时间范围同步历史订单与逐笔成交，并补齐订单来源事实；交易对留空时按当前账户已知交易对同步。注意：超过 3 天的无成交取消/过期订单可能已不再由交易所返回。</p>
               </div>
               <div class="toolbar-actions">
                 <el-select
