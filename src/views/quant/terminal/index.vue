@@ -206,13 +206,13 @@
                     <div>实例：{{ item.runtimeActive ? '运行中' : item.status === 'RUNNING' && item.strategyEnabled ? '启动中（等待运行租约）' : item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantLocalTime(item.lastSignalAt) : '暂无信号' }}）</div>
                     <div>策略：{{ item.strategyEnabled ? '已开启' : '未开启' }}</div>
                     <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
-                    <el-button
+                    <!--<el-button
                       v-if="item.status === 'RUNNING' && !item.runtimeActive && item.strategyEnabled"
                       link
                       type="warning"
                       size="small"
                       @click="toggleStrategyInstance(item, false)"
-                    >取消启动</el-button>
+                    >取消启动</el-button>-->
                   </small>
                 </div>
               </div>
