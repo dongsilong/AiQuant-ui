@@ -193,18 +193,26 @@
                     <span v-else>{{ symbol }}</span>
                     <el-switch
                       class="strategy-symbol-toggle"
-                      :model-value="item.runtimeEnabled !== false"
-                      :loading="strategySymbolToggling.has(strategySymbolToggleKey(item))"
-                      :disabled="!item.strategySymbolId || strategySymbolToggling.has(strategySymbolToggleKey(item))"
+                      :model-value="item.runtimeActive === true"
+                      :loading="strategyInstanceToggling.has(String(item.id))"
+                      :disabled="(!item.strategyEnabled && !item.runtimeActive) || strategyInstanceToggling.has(String(item.id))"
                       active-text="开"
                       inactive-text="停"
                       inline-prompt
-                      @change="enabled => toggleStrategySymbol(item, Boolean(enabled))"
+                      @change="enabled => toggleStrategyInstance(item, Boolean(enabled))"
                     />
                   </p>
                   <small>
-                    <div>实例：{{ item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantLocalTime(item.lastSignalAt) : '暂无信号' }}）</div>
+                    <div>实例：{{ item.runtimeActive ? '运行中' : item.status === 'RUNNING' && item.strategyEnabled ? '启动中（等待运行租约）' : item.status || 'UNKNOWN' }}（{{ item.lastSignalAt ? formatQuantLocalTime(item.lastSignalAt) : '暂无信号' }}）</div>
+                    <div>策略：{{ item.strategyEnabled ? '已开启' : '未开启' }}</div>
                     <div>交易对：{{ item.runtimeEnabled === false ? '已暂停开仓' : '允许评估开仓' }}</div>
+                    <el-button
+                      v-if="item.status === 'RUNNING' && !item.runtimeActive && item.strategyEnabled"
+                      link
+                      type="warning"
+                      size="small"
+                      @click="toggleStrategyInstance(item, false)"
+                    >取消启动</el-button>
                   </small>
                 </div>
               </div>
@@ -472,7 +480,7 @@ import {
   listCredential, listStrategies, getAccountSnapshot, getDailyAccountBaseline,
   listPositions, listOrders, listProtectionOrders, listTrades, listRealtimeKlines,
   listSymbol, getSymbol, listStrategyInstances, listStrategyPositionStates,
-  listStrategySymbols, startStrategy, stopStrategy, setStrategySymbolRuntimeEnabled,
+  listStrategySymbols, startStrategyInstance, stopStrategyInstance,
   cancelOrder, closePosition
 } from '@/api/quant';
 
@@ -589,7 +597,7 @@ const slopeStrategyId = ref<string | number>();
 const slopeRows = ref<SlopeRow[]>([]);
 const slopeLoadError = ref('');
 const slopeSymbolErrors = ref<string[]>([]);
-const strategySymbolToggling = ref(new Set<string>());
+const strategyInstanceToggling = ref(new Set<string>());
 
 // ==================== SSE 与并发控制 ====================
 type SseConnection = { close: () => void };
@@ -697,7 +705,7 @@ const period = () => {
   return { type: map[m?.[2]] || 'minute', span: +(m?.[1] || 15) };
 };
 const queryError = (error: any, fallback: string) => typeof error === 'string' ? error : error?.msg || error?.message || fallback;
-const strategySymbolToggleKey = (item: StrategyInstanceVO) => `${String(item.strategyId ?? '')}:${String(item.strategySymbolId ?? '')}`;
+
 
 // ==================== 计算属性 ====================
 const indicatorOptions = computed(() => quant_indicator.value || []);
@@ -2287,48 +2295,55 @@ async function confirmAction(title: string, message: string, action: () => Promi
   await refreshAccountData();
 }
 
-async function toggleStrategySymbol(item: StrategyInstanceVO, enabled: boolean) {
-  if (item.strategyId === undefined || item.strategySymbolId === undefined) {
-    ElMessage.error('缺少策略或策略交易对标识，无法切换运行状态');
-    return;
-  }
-  const key = strategySymbolToggleKey(item);
-  if (strategySymbolToggling.value.has(key)) return;
-  strategySymbolToggling.value.add(key);
-  const symbolName = item.symbol || '当前交易对';
-  const title = enabled ? '恢复交易对' : '暂停交易对';
-  const message = enabled
-    ? `确认恢复 ${symbolName} 的开仓信号评估？恢复后仍必须通过现有风控、持仓核验和开仓幂等检查。`
-    : `确认暂停 ${symbolName} 的新开仓？策略整体和其他交易对不受影响；该交易对已有持仓不会自动平仓，止盈、止损、保护单、对账和异常恢复仍继续运行。`;
-  try {
-    await ElMessageBox.confirm(message, title, {
-      type: 'warning',
-      confirmButtonText: '确认执行',
-      cancelButtonText: '取消'
-    });
-    await setStrategySymbolRuntimeEnabled(item.strategyId, item.strategySymbolId, enabled);
-    ElMessage.success(enabled ? '已恢复该交易对的开仓评估' : '已暂停该交易对的新开仓');
-    await refreshAccountData();
-  } catch (error: any) {
-    if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(queryError(error, '交易对运行状态切换失败'));
-      await refresh();
-    }
-  } finally {
-    strategySymbolToggling.value.delete(key);
-  }
+async function refreshStrategyInstances() {
+  const id = credentialId.value;
+  if (!id) return [];
+  const response = await listStrategyInstances({ pageNum: 1, pageSize: 100, credentialId: id });
+  if (String(credentialId.value) === String(id)) instances.value = response.data?.rows || [];
+  return instances.value;
 }
 
-function toggleStrategy(item: StrategyInstanceVO) {
-  if (item.id === undefined) return;
-  confirmAction(
-    item.status === 'RUNNING' || item.status === '1' ? '停止策略' : '启动策略',
-    `${item.accountName || '-'} · ${item.symbol || symbol.value} · ${item.strategyName || '策略实例'}`,
-    () =>
-      item.status === 'RUNNING' || item.status === '1'
-        ? stopStrategy(item.strategyId || item.id)
-        : startStrategy(item.strategyId || item.id)
-  );
+async function toggleStrategyInstance(item: StrategyInstanceVO, enabled: boolean) {
+  if (item.id === undefined || item.strategyId === undefined) {
+    ElMessage.error('缺少策略或实例标识，无法切换实例状态');
+    return;
+  }
+  if (enabled && !item.strategyEnabled) {
+    ElMessage.warning('请先开启策略，再启动策略实例');
+    return;
+  }
+  const key = String(item.id);
+  if (strategyInstanceToggling.value.has(key)) return;
+  strategyInstanceToggling.value.add(key);
+  try {
+    await ElMessageBox.confirm(
+      `${item.accountName || '-'} · ${item.symbol || symbol.value} · ${item.strategyName || '策略实例'}`,
+      enabled ? '启动策略实例' : '停止策略实例',
+      { type: 'warning', confirmButtonText: '确认执行', cancelButtonText: '取消' }
+    );
+    if (enabled) await startStrategyInstance(item.strategyId, item.id);
+    else await stopStrategyInstance(item.strategyId, item.id);
+    if (enabled) {
+      let latest: StrategyInstanceVO | undefined;
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const rows = await refreshStrategyInstances();
+        latest = rows.find(row => String(row.id) === key);
+        if (latest?.runtimeActive) break;
+      }
+      ElMessage.success(latest?.runtimeActive ? '策略实例已启动' : '启动请求已提交，实例正在等待运行租约');
+    } else {
+      await refreshStrategyInstances();
+      ElMessage.success('策略实例已停止');
+    }
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(queryError(error, enabled ? '策略实例启动失败' : '策略实例停止失败'));
+      await refreshStrategyInstances().catch(() => undefined);
+    }
+  } finally {
+    strategyInstanceToggling.value.delete(key);
+  }
 }
 
 async function selectRowSymbol(row: { symbol?: string }) {
