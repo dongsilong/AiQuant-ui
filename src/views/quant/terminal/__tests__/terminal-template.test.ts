@@ -21,7 +21,7 @@ describe('terminal slope telemetry sources', () => {
     const template = compiledTemplate();
     expect(source).toContain('isDisplaySlopeFresh(scope.row as SlopeRow)');
     expect(source).toContain('displaySource === \'MARK\'');
-    expect(source).toContain('决策 ${scope.row.degrees.toFixed(2)}°');
+    expect(source).toContain('决策 {{ scope.row.degrees.toFixed(2) }}°');
     expect(source).toContain('展示斜率等待');
     expect(source).toContain('决策斜率等待');
     expect(source).toContain('MA未就绪');
