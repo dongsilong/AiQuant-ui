@@ -413,15 +413,15 @@
               </el-link>
             </template>
           </el-table-column>
-          <el-table-column prop="interval" label="周期" width="60" align="center" />
+          <!--<el-table-column prop="interval" label="周期" width="60" align="center" />-->
           <!--<el-table-column label="参考开盘价" min-width="110">
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
-          <el-table-column label="当前价" min-width="80">
+          <el-table-column label="当前价" min-width="85">
             <template #default="scope">{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
-          <el-table-column label="角度" min-width="85" align="center">
+          <el-table-column label="角度" min-width="90" align="center">
             <template #default="scope">
               <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
               <span
@@ -434,7 +434,7 @@
               > ↓</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="145" align="center">
+          <el-table-column label="状态" width="100" align="center">
             <template #default="scope">
               {{ slopeStatusText(scope.row as SlopeRow) }}
             </template>
@@ -1882,9 +1882,13 @@ function isSlopeMaFresh(row: SlopeRow): boolean {
 
 function slopeStatusText(row: SlopeRow): string {
   if (row.status !== 'CONNECTED') return statusText(row.status);
-  if (!isSlopeFresh(row)) return '已连接 / 等待斜率';
-  if (!isSlopeMaFresh(row)) return '斜率实时 / MA未就绪';
-  return '斜率与MA实时';
+  if (!isSlopeFresh(row)) return '等待斜率';
+  if (!isSlopeMaFresh(row)) return 'MA未就绪';
+  return '正常';
+  // if (row.status !== 'CONNECTED') return statusText(row.status);
+  // if (!isSlopeFresh(row)) return '已连接 / 等待斜率';
+  // if (!isSlopeMaFresh(row)) return '斜率实时 / MA未就绪';
+  // return '斜率与MA实时';
 }
 
 watch(now, current => {
