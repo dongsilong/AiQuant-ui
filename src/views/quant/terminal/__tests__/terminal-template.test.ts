@@ -15,6 +15,20 @@ function compiledTemplate() {
   return result.code;
 }
 
+describe('terminal slope telemetry sources', () => {
+  it('renders display slope separately from the trading-decision slope and MA readiness', () => {
+    const source = readFileSync(fileURLToPath(new URL('../index.vue', import.meta.url)), 'utf8');
+    const template = compiledTemplate();
+    expect(source).toContain('isDisplaySlopeFresh(scope.row as SlopeRow)');
+    expect(source).toContain('displaySource === \'MARK\'');
+    expect(source).toContain('决策 ${scope.row.degrees.toFixed(2)}°');
+    expect(source).toContain('展示斜率等待');
+    expect(source).toContain('决策斜率等待');
+    expect(source).toContain('MA未就绪');
+    expect(template).toContain('displayDegrees');
+  });
+});
+
 describe('strategy instance symbol link', () => {
   it('routes a symbol click through the existing K-line switch handler', () => {
     expect(compiledTemplate()).toContain('selectRowSymbol(item)');
