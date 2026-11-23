@@ -418,12 +418,14 @@
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
           <el-table-column label="当前价" min-width="85">
-            <template #default="scope">{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</template>
+            <template #default="scope">{{ isDisplaySlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="90" align="center">
             <template #default="scope">
-              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
+              <span>{{ isDisplaySlopeFresh(scope.row as SlopeRow) && scope.row.displayDegrees !== undefined ? `${scope.row.displayDegrees.toFixed(2)}°` : '-' }}</span>
+              <small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? 'MARK展示' : '成交/K线' }}</small>
+              <small v-if="isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined" class="slope-decision-value">决策 {{ scope.row.degrees.toFixed(2) }}°</small>
               <span
                 v-if="slopeMaDirection(scope.row as SlopeRow) === 'UP'"
                 class="slope-ma-direction slope-ma-up"
@@ -588,6 +590,11 @@ type SlopeRow = {
   maLastClosedKlineOpenTime?: string;
   maFreshForMillis?: number;
   maReceivedAtLocal?: number;
+  displayCurrentPrice?: number;
+  displayDegrees?: number;
+  displayFreshForMillis?: number;
+  displayReceivedAtLocal?: number;
+  displaySource?: 'MARK' | 'TRADE_KLINE';
 };
 const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
 const statusText = (status: string) => statusMap[status] ?? '未知';
@@ -1857,6 +1864,11 @@ function clearSlopeSnapshot(row: SlopeRow, status: SlopeRow['status'], resetSequ
   row.maLastClosedKlineOpenTime = undefined;
   row.maFreshForMillis = 0;
   row.maReceivedAtLocal = undefined;
+  row.displayCurrentPrice = undefined;
+  row.displayDegrees = undefined;
+  row.displayFreshForMillis = 0;
+  row.displayReceivedAtLocal = undefined;
+  row.displaySource = undefined;
 }
 
 function closeSlopeStream(resetState = true) {
@@ -1875,6 +1887,11 @@ function isSlopeFresh(row: SlopeRow): boolean {
     && now.value - row.slopeReceivedAtLocal < (row.slopeFreshForMillis ?? 0);
 }
 
+function isDisplaySlopeFresh(row: SlopeRow): boolean {
+  return (row.displayFreshForMillis ?? 0) > 0 && row.displayReceivedAtLocal !== undefined
+    && now.value - row.displayReceivedAtLocal < (row.displayFreshForMillis ?? 0);
+}
+
 function isSlopeMaFresh(row: SlopeRow): boolean {
   return row.maReady === true && row.maReceivedAtLocal !== undefined
     && now.value - row.maReceivedAtLocal < (row.maFreshForMillis ?? 0);
@@ -1882,9 +1899,10 @@ function isSlopeMaFresh(row: SlopeRow): boolean {
 
 function slopeStatusText(row: SlopeRow): string {
   if (row.status !== 'CONNECTED') return statusText(row.status);
-  if (!isSlopeFresh(row)) return '等待斜率';
-  if (!isSlopeMaFresh(row)) return 'MA未就绪';
-  return '正常';
+  const display = isDisplaySlopeFresh(row) ? '展示斜率正常' : '展示斜率等待';
+  const decision = isSlopeFresh(row) ? '决策斜率正常' : '决策斜率等待';
+  const ma = isSlopeMaFresh(row) ? 'MA正常' : 'MA未就绪';
+  return `${display} / ${decision} / ${ma}`;
   // if (row.status !== 'CONNECTED') return statusText(row.status);
   // if (!isSlopeFresh(row)) return '已连接 / 等待斜率';
   // if (!isSlopeMaFresh(row)) return '斜率实时 / MA未就绪';
@@ -1900,6 +1918,12 @@ watch(now, current => {
       row.slopePercent = undefined;
       row.degrees = undefined;
       row.slopeReady = false;
+    }
+    if (row.displayFreshForMillis && row.displayReceivedAtLocal !== undefined
+      && current - row.displayReceivedAtLocal >= row.displayFreshForMillis) {
+      row.displayCurrentPrice = undefined;
+      row.displayDegrees = undefined;
+      row.displayFreshForMillis = 0;
     }
     if (row.maReady && row.maReceivedAtLocal !== undefined
       && current - row.maReceivedAtLocal >= (row.maFreshForMillis ?? 0)) {
@@ -1968,6 +1992,14 @@ function connectSlopeStream() {
         row.maTrend = row.maReady ? event.maTrend as SlopeRow['maTrend'] : undefined;
         row.maBlockReason = row.maReady ? undefined : String(event.maBlockReason || 'MA_NOT_READY');
         row.maLastClosedKlineOpenTime = event.maLastClosedKlineOpenTime || undefined;
+
+        row.displayFreshForMillis = Math.max(0, Number(event.displayFreshForMillis) || 0);
+        row.displayReceivedAtLocal = receivedAt;
+        row.displayCurrentPrice = row.displayFreshForMillis > 0 && event.displayCurrentPrice != null
+          ? Number(event.displayCurrentPrice) : undefined;
+        row.displayDegrees = row.displayFreshForMillis > 0 && event.displayDegrees != null
+          ? Number(event.displayDegrees) : undefined;
+        row.displaySource = event.displaySource === 'MARK' ? 'MARK' : 'TRADE_KLINE';
       } catch {
         // 忽略不完整的遥测消息，不保留或推断 MA 状态。
       }
