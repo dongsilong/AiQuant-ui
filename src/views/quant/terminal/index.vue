@@ -436,7 +436,7 @@
               > ↓</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100" align="center">
+          <el-table-column label="状态" min-width="230" align="center">
             <template #default="scope">
               {{ slopeStatusText(scope.row as SlopeRow) }}
             </template>
