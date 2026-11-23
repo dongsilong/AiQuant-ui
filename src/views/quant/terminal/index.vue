@@ -434,9 +434,9 @@
               > ↓</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="70" align="center">
+          <el-table-column label="状态" width="145" align="center">
             <template #default="scope">
-              {{ statusText(scope.row.status) }}
+              {{ slopeStatusText(scope.row as SlopeRow) }}
             </template>
           </el-table-column>
         </el-table>
@@ -1880,6 +1880,13 @@ function isSlopeMaFresh(row: SlopeRow): boolean {
     && now.value - row.maReceivedAtLocal < (row.maFreshForMillis ?? 0);
 }
 
+function slopeStatusText(row: SlopeRow): string {
+  if (row.status !== 'CONNECTED') return statusText(row.status);
+  if (!isSlopeFresh(row)) return '已连接 / 等待斜率';
+  if (!isSlopeMaFresh(row)) return '斜率实时 / MA未就绪';
+  return '斜率与MA实时';
+}
+
 watch(now, current => {
   slopeRows.value.forEach(row => {
     if (row.slopeReady && row.slopeReceivedAtLocal !== undefined
@@ -1909,7 +1916,8 @@ function connectSlopeStream() {
 
   const query = new URLSearchParams({
     strategyId: String(slopeStrategyId.value),
-    credentialId: String(credentialId.value)
+    credentialId: String(credentialId.value),
+    interval: interval.value
   });
   let connection: SseConnection;
   connection = openSse(
@@ -1919,12 +1927,15 @@ function connectSlopeStream() {
       if (generation !== slopeStreamGeneration) return;
       try {
         const event = JSON.parse(data);
-        if (event.type === 'CONNECTED' || !event.symbol) return;
+        if (event.type === 'CONNECTED') {
+          slopeRows.value.forEach(row => { row.status = 'CONNECTED'; });
+          return;
+        }
+        if (!event.symbol) return;
         const row = slopeRows.value.find(item => item.symbol === event.symbol && item.interval === event.interval);
         if (!row) return;
-        const instanceId = String(event.instanceId ?? '');
-        if (!instanceId) return;
-        if (row.instanceId !== undefined && row.instanceId !== instanceId) {
+        const instanceId = event.instanceId == null ? undefined : String(event.instanceId);
+        if (row.instanceId !== instanceId) {
           row.sequence = undefined;
         }
         row.instanceId = instanceId;
