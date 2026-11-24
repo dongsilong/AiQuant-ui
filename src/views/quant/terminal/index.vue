@@ -418,7 +418,10 @@
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
           <el-table-column label="当前价" min-width="90">
-            <template #default="scope">{{ isDisplaySlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</template>
+            <template #default="scope">
+              <span>{{ isDisplaySlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</span>
+              <small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? '标记价' : '成交/K线价' }}</small>
+            </template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="90" align="center">
@@ -2792,6 +2795,12 @@ onBeforeUnmount(() => {
   opacity: 1;
   visibility: visible;
   transform: translateX(0);
+}
+.slope-data-source {
+  display: block;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  line-height: 1.3;
 }
 .slope-panel-header {
   display: flex;
