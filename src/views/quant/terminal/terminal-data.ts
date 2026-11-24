@@ -8,6 +8,13 @@ import type {
 
 type RawFields = Record<string, unknown>;
 
+/** Calculate bounded retry delay for account SSE reconnects. */
+export function accountStreamRetryDelay(retryCount: number, leaseNotOwned = false): number {
+  const baseDelay = leaseNotOwned ? 5000 : 3000;
+  const exponent = Math.min(4, Math.max(0, Math.floor(retryCount)));
+  return Math.min(baseDelay * 2 ** exponent, 30000);
+}
+
 /** Build a de-duplicated market subscription list for the chart and open positions. */
 export function terminalMarketSubscriptions(
   chart: { symbol: string; interval: string },
