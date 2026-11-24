@@ -419,14 +419,14 @@
           </el-table-column>-->
           <el-table-column label="当前价" min-width="90">
             <template #default="scope">
-              <span>{{ isDisplaySlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</span>
-              <small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? '标记价' : '成交/K线价' }}</small>
+              <span>{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</span>
+              <small v-if="isSlopeFresh(scope.row as SlopeRow)" class="slope-data-source">策略决策价</small>
             </template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="90" align="center">
             <template #default="scope">
-              <span>{{ isDisplaySlopeFresh(scope.row as SlopeRow) && scope.row.displayDegrees !== undefined ? `${scope.row.displayDegrees.toFixed(2)}°` : '-' }}</span>
+              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
               <!--<small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? 'MARK展示' : '成交/K线' }}</small>
               <small v-if="isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined" class="slope-decision-value">决策 {{ scope.row.degrees.toFixed(2) }}°</small>-->
               <span
