@@ -257,7 +257,7 @@
                 <template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.markPrice) }}</template>
               </el-table-column>
               <el-table-column label="未实现盈亏" min-width="100">
-                <template #default="scope">{{ formatFixed(scope.row.unrealizedPnl, 3) }}</template>
+                <template #default="scope"><strong>{{ formatFixed(scope.row.unrealizedPnl, 3) }}</strong></template>
               </el-table-column>
               <el-table-column label="回报率" min-width="80" align="center">
                 <template #default="scope">
