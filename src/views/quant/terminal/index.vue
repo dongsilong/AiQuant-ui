@@ -491,7 +491,7 @@ import {
 
 // Utils
 import {
-  accountTrade, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
+  accountTrade, accountStreamRetryDelay, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
   positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl, aggregateSnapshotPositionPnl,
   terminalMarketSubscriptions, updateOrders, exactCloseQuantity
@@ -616,6 +616,7 @@ let accountStream: SseConnection | undefined;
 let marketStreamKey = '';
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let accountRetryTimer: ReturnType<typeof setTimeout> | undefined;
+let accountRetryCount = 0;
 let dataRequestController: AbortController | undefined;
 let symbolSearchController: AbortController | undefined;
 let symbolSwitchController: AbortController | undefined;
@@ -1519,7 +1520,11 @@ function openSse(
         onUnauthorized();
         return;
       }
-      if (!response.ok || !response.body) throw new Error(`SSE 请求失败: ${response.status}`);
+      if (!response.ok || !response.body) {
+        const error = new Error(`SSE 请求失败: ${response.status}`) as Error & { status: number };
+        error.status = response.status;
+        throw error;
+      }
       setQuantTimeZone(response.headers.get('X-Quant-Time-Zone') || undefined);
       setQuantServerTimeZone(response.headers.get('X-Quant-Server-Time-Zone') || undefined);
       (chart.value as any)?.setTimezone?.(getQuantTimeZone());
@@ -1768,6 +1773,7 @@ function connectAccountStream() {
         }
 
         if (event.type === 'SNAPSHOT') {
+          accountRetryCount = 0;
           const reconnectedSnapshot = hasReceivedSnapshot;
           hasReceivedSnapshot = true;
           if (!protectionLoading.value) void loadProtectionOrders();
@@ -1840,7 +1846,12 @@ function connectAccountStream() {
       ordersRequest++;
       renderOverlays();
       accountStream?.close();
-      accountRetryTimer = setTimeout(connectAccountStream, 3000);
+      const leaseNotOwned = (error as { status?: number } | undefined)?.status === 409;
+      const retryDelay = accountStreamRetryDelay(accountRetryCount++, leaseNotOwned);
+      accountRetryTimer = setTimeout(() => {
+        accountRetryTimer = undefined;
+        connectAccountStream();
+      }, retryDelay);
     },
     handleSseUnauthorized
   );
@@ -2266,6 +2277,8 @@ async function loadData() {
   closeMarketStream();
   marketStreamKey = '';
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  accountRetryTimer = undefined;
+  accountRetryCount = 0;
   if (retryTimer) clearTimeout(retryTimer);
   clearDeferredPositionRetry();
   if (hydrationTimer) clearTimeout(hydrationTimer);
