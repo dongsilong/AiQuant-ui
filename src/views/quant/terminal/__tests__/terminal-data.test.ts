@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
+  accountStreamRetryDelay,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -147,6 +148,20 @@ describe('kline slope ladder metrics', () => {
       { ...ladderHistory, status: 'CLOSED', highestStep: 9 }
     ];
     expect(positionLadderMetrics(position, 'account-1', unrelated)).toEqual({});
+  });
+});
+
+describe('account SSE reconnect backoff', () => {
+  it('backs off lease conflicts and caps the retry interval', () => {
+    expect([0, 1, 2, 3, 4, 5].map(count => accountStreamRetryDelay(count, true))).toEqual([
+      5000, 10000, 20000, 30000, 30000, 30000
+    ]);
+  });
+
+  it('uses a shorter bounded backoff for transient transport failures', () => {
+    expect([0, 1, 2, 3, 4].map(count => accountStreamRetryDelay(count))).toEqual([
+      3000, 6000, 12000, 24000, 30000
+    ]);
   });
 });
 
