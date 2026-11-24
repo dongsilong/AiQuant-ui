@@ -417,15 +417,15 @@
           <!--<el-table-column label="参考开盘价" min-width="110">
             <template #default="scope">{{ format(scope.row.referencePrice) }}</template>
           </el-table-column>-->
-          <el-table-column label="当前价" min-width="85">
+          <el-table-column label="当前价" min-width="90">
             <template #default="scope">{{ isDisplaySlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="90" align="center">
             <template #default="scope">
               <span>{{ isDisplaySlopeFresh(scope.row as SlopeRow) && scope.row.displayDegrees !== undefined ? `${scope.row.displayDegrees.toFixed(2)}°` : '-' }}</span>
-              <small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? 'MARK展示' : '成交/K线' }}</small>
-              <small v-if="isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined" class="slope-decision-value">决策 {{ scope.row.degrees.toFixed(2) }}°</small>
+              <!--<small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? 'MARK展示' : '成交/K线' }}</small>
+              <small v-if="isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined" class="slope-decision-value">决策 {{ scope.row.degrees.toFixed(2) }}°</small>-->
               <span
                 v-if="slopeMaDirection(scope.row as SlopeRow) === 'UP'"
                 class="slope-ma-direction slope-ma-up"
@@ -436,11 +436,11 @@
               > ↓</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="230" align="center">
+          <!--<el-table-column label="状态" min-width="130" align="center">
             <template #default="scope">
               {{ slopeStatusText(scope.row as SlopeRow) }}
             </template>
-          </el-table-column>
+          </el-table-column>-->
         </el-table>
         <el-empty v-else :description="slopeLoadError ? '加载失败，请重试' : '当前策略暂无交易对'" />
       </aside>
@@ -1897,17 +1897,16 @@ function isSlopeMaFresh(row: SlopeRow): boolean {
     && now.value - row.maReceivedAtLocal < (row.maFreshForMillis ?? 0);
 }
 
-function slopeStatusText(row: SlopeRow): string {
+/*function slopeStatusText(row: SlopeRow): string {
   if (row.status !== 'CONNECTED') return statusText(row.status);
-  const display = isDisplaySlopeFresh(row) ? '展示斜率正常' : '展示斜率等待';
-  const decision = isSlopeFresh(row) ? '决策斜率正常' : '决策斜率等待';
-  const ma = isSlopeMaFresh(row) ? 'MA正常' : 'MA未就绪';
-  return `${display} / ${decision} / ${ma}`;
-  // if (row.status !== 'CONNECTED') return statusText(row.status);
-  // if (!isSlopeFresh(row)) return '已连接 / 等待斜率';
-  // if (!isSlopeMaFresh(row)) return '斜率实时 / MA未就绪';
-  // return '斜率与MA实时';
-}
+  const decision = isSlopeFresh(row) ? '斜' : '斜待';
+  const ma = isSlopeMaFresh(row) ? 'MA' : 'MA待';
+  return `${decision} / ${ma}`;
+  // const display = isDisplaySlopeFresh(row) ? '展示斜率正常' : '展示斜率等待';
+  // const decision = isSlopeFresh(row) ? '决策斜率正常' : '决策斜率等待';
+  // const ma = isSlopeMaFresh(row) ? 'MA正常' : 'MA未就绪';
+  // return `${display} / ${decision} / ${ma}`;
+}*/
 
 watch(now, current => {
   slopeRows.value.forEach(row => {
@@ -2768,7 +2767,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .terminal-workspace.is-slope-open {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 520px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 390px);
   gap: 12px;
 }
 .slope-panel {
@@ -3018,7 +3017,7 @@ onBeforeUnmount(() => {
     right: 12px;
     bottom: 12px;
     z-index: 1100;
-    width: min(620px, calc(100vw - 24px));
+    width: min(380px, calc(100vw - 24px));
     max-width: none;
     max-height: none;
     box-shadow: var(--el-box-shadow-dark);
