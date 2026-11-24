@@ -420,7 +420,7 @@
           <el-table-column label="当前价" min-width="90">
             <template #default="scope">
               <span>{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</span>
-              <small v-if="isSlopeFresh(scope.row as SlopeRow)" class="slope-data-source">策略决策价</small>
+              <!--<small v-if="isSlopeFresh(scope.row as SlopeRow)" class="slope-data-source">策略决策价</small>-->
             </template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
@@ -2784,7 +2784,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .terminal-workspace.is-slope-open {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 390px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
   gap: 12px;
 }
 .slope-panel {
