@@ -1745,6 +1745,7 @@ async function refreshPositionsAfterAccountReconnect() {
 function connectAccountStream() {
   accountStream?.close();
   if (accountRetryTimer) clearTimeout(accountRetryTimer);
+  accountRetryTimer = undefined;
   if (!credentialId.value) return;
   lastAccountEvents.clear();
   positionSnapshotRequest++;
@@ -1829,7 +1830,7 @@ function connectAccountStream() {
         // 忽略无效的账户事件，连接仍保持。
       }
     },
-    () => {
+    (error: unknown) => {
       if (generation !== dataGeneration) return;
       positionReconcileRequest++;
       positionSnapshotRequest++;
