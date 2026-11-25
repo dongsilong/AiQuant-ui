@@ -230,7 +230,12 @@
     <el-drawer v-model="paramsVisible" title="策略参数配置" size="480px">
       <el-form label-width="180px">
         <el-form-item v-for="item in parameterFields" :key="item.key" :label="item.label">
-          <el-input-number v-model="parameterValues[item.key]" :min="0" :step="item.rate ? 0.01 : 1" />
+          <el-input-number
+            v-model="parameterValues[item.key]"
+            :min="item.min ?? 0"
+            :max="item.max"
+            :step="item.step ?? (item.rate ? 0.01 : 1)"
+          />
         </el-form-item>
       </el-form>
       <el-input v-model="parameterJsonPreview" :rows="8" type="textarea" readonly />
@@ -342,13 +347,16 @@ const symbolRows = ref<StrategySymbolBinding[]>([]);
 const paramsVisible = ref(false);
 const paramsRow = ref<StrategySymbolBinding>();
 const parameterValues = reactive<Record<string, number>>({});
-const parameterFields = [
+const fallbackParameterFields = [
   { key: 'entryAngleDegrees', label: '开仓角度', rate: false },
   { key: 'firstProfitTakingRate', label: '首次止盈率', rate: true },
   { key: 'firstClosePositionRate', label: '首次平仓比例', rate: true },
   { key: 'stepRatio', label: '阶梯比例', rate: true },
   { key: 'localStopLossRate', label: '本地止损率', rate: true }
 ];
+const parameterFields = computed(() => selectedPlugin.value?.parameters?.length
+  ? selectedPlugin.value.parameters
+  : fallbackParameterFields);
 const parameterJsonPreview = computed(() => JSON.stringify(parameterValues, null, 2));
 const preflightVisible = ref(false);
 const preflightResult = ref<StrategyPreflightResult>();
