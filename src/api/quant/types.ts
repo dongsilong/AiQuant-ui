@@ -176,11 +176,22 @@ export interface TradeRecord {
   exchangeOrderId: string;
 }
 
+export interface StrategyParameterVO {
+  key: string;
+  label: string;
+  defaultValue?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  rate?: boolean;
+}
+
 export interface StrategyPluginVO {
   code: string;
   version: string;
   name: string;
   paramsExample?: Record<string, number | string | boolean>;
+  parameters?: StrategyParameterVO[];
 }
 
 export interface ClosePositionForm {
