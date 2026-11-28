@@ -419,14 +419,20 @@
           </el-table-column>-->
           <el-table-column label="当前价" min-width="90">
             <template #default="scope">
-              <span>{{ isSlopeFresh(scope.row as SlopeRow) ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice) : '-' }}</span>
+              <span>{{ isSlopeFresh(scope.row as SlopeRow)
+                ? formatQuantPrice(scope.row.symbol, scope.row.currentPrice)
+                : isSlopeDisplayFallbackFresh(scope.row as SlopeRow)
+                  ? formatQuantPrice(scope.row.symbol, scope.row.displayCurrentPrice) : '-' }}</span>
               <!--<small v-if="isSlopeFresh(scope.row as SlopeRow)" class="slope-data-source">策略决策价</small>-->
             </template>
           </el-table-column>
           <!--<el-table-column label="斜率" min-width="95"><template #default="scope">{{ scope.row.slopePercent === undefined ? '-' : `${scope.row.slopePercent.toFixed(5)}%` }}</template></el-table-column>-->
           <el-table-column label="角度" min-width="90" align="center">
             <template #default="scope">
-              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined ? `${scope.row.degrees.toFixed(2)}°` : '-' }}</span>
+              <span>{{ isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined
+                ? `${scope.row.degrees.toFixed(2)}°`
+                : isSlopeDisplayFallbackFresh(scope.row as SlopeRow) && scope.row.displayDegrees !== undefined
+                  ? `${scope.row.displayDegrees.toFixed(2)}°` : '-' }}</span>
               <!--<small v-if="isDisplaySlopeFresh(scope.row as SlopeRow)" class="slope-data-source">{{ scope.row.displaySource === 'MARK' ? 'MARK展示' : '成交/K线' }}</small>
               <small v-if="isSlopeFresh(scope.row as SlopeRow) && scope.row.degrees !== undefined" class="slope-decision-value">决策 {{ scope.row.degrees.toFixed(2) }}°</small>-->
               <span
@@ -438,9 +444,15 @@
                 class="slope-ma-direction slope-ma-down"
               > ↓</span>
               <small class="slope-data-source">
-                {{ scope.row.dataSource === 'RUNTIME' ? '策略决策' : scope.row.dataSource === 'MONITOR' ? '只读监控' : '等待数据' }}
+                {{ isSlopeFresh(scope.row as SlopeRow)
+                  ? (scope.row.dataSource === 'RUNTIME' ? '策略决策' : scope.row.dataSource === 'MONITOR' ? '只读监控' : '等待数据')
+                  : isSlopeDisplayFallbackFresh(scope.row as SlopeRow)
+                    ? (scope.row.displaySource === 'MARK' ? 'MARK行情展示' : '行情展示')
+                    : (scope.row.dataSource === 'RUNTIME' ? '策略决策' : scope.row.dataSource === 'MONITOR' ? '只读监控' : '等待数据') }}
                 <template v-if="!isSlopeFresh(scope.row as SlopeRow)">
-                  · {{ slopeBlockReasonLabel(scope.row.slopeBlockReason || 'WAITING_FOR_MARKET') }}
+                  · {{ isSlopeDisplayFallbackFresh(scope.row as SlopeRow)
+                    ? '决策行情已过期'
+                    : slopeBlockReasonLabel(scope.row.slopeBlockReason || 'WAITING_FOR_MARKET') }}
                 </template>
               </small>
             </template>
@@ -1915,6 +1927,11 @@ function isSlopeFresh(row: SlopeRow): boolean {
 function isDisplaySlopeFresh(row: SlopeRow): boolean {
   return (row.displayFreshForMillis ?? 0) > 0 && row.displayReceivedAtLocal !== undefined
     && now.value - row.displayReceivedAtLocal < (row.displayFreshForMillis ?? 0);
+}
+
+function isSlopeDisplayFallbackFresh(row: SlopeRow): boolean {
+  return !isSlopeFresh(row) && isDisplaySlopeFresh(row)
+    && Number.isFinite(row.displayCurrentPrice) && Number.isFinite(row.displayDegrees);
 }
 
 function isSlopeMaFresh(row: SlopeRow): boolean {
