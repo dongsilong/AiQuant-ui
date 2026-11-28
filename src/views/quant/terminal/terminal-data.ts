@@ -45,6 +45,9 @@ export function slopeTelemetrySource(event: { dataSource?: unknown; instanceId?:
 export function slopeBlockReasonLabel(reason: unknown): string {
   const labels: Record<string, string> = {
     WAITING_FOR_RUNTIME_EVENT: '等待策略行情',
+    WAITING_FOR_LIVE_MARKET_EVENT: '等待实时行情',
+    RUNTIME_LEASE_NOT_READY: '策略运行租约未就绪',
+    REPLAY_EVENT: '行情恢复回放中',
     MONITOR_WAITING_FOR_EVENT: '等待监控行情',
     WAITING_FOR_MARKET: '等待行情',
     CURRENT_PRICE_MISSING: '当前价缺失',
