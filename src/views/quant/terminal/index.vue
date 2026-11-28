@@ -1992,10 +1992,10 @@ function connectSlopeStream() {
           row.sequence = undefined;
         }
         row.instanceId = instanceId;
-        row.dataSource = slopeTelemetrySource(event);
         const sequence = Number(event.sequence);
         if (!Number.isSafeInteger(sequence) || (row.sequence !== undefined && sequence <= row.sequence)) return;
         row.sequence = sequence;
+        row.dataSource = slopeTelemetrySource(event);
         row.status = 'CONNECTED';
 
         const receivedAt = Date.now();

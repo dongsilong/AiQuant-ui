@@ -57,6 +57,8 @@ describe('realtime slope telemetry source and readiness', () => {
   it('provides actionable labels for unavailable slope inputs', () => {
     expect(slopeBlockReasonLabel('REFERENCE_KLINE_MISSING')).toBe('参考K线不足');
     expect(slopeBlockReasonLabel('STALE_EVENT')).toBe('行情已过期');
+    expect(slopeBlockReasonLabel('EXCHANGE_EVENT_STALE')).toBe('交易所行情已过期');
+    expect(slopeBlockReasonLabel('STRATEGY_STATE_REFRESH_REQUIRED')).toBe('策略状态正在刷新');
     expect(slopeBlockReasonLabel('SUBSCRIPTION_FAILED')).toBe('行情订阅失败');
     expect(slopeBlockReasonLabel('UNKNOWN_REASON')).toBe('数据暂不可用');
   });
