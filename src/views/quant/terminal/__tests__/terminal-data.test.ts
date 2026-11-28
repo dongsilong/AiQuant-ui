@@ -18,6 +18,8 @@ import {
   protectionPrices,
   protectionPriceLines,
   terminalMarketSubscriptions,
+  slopeTelemetrySource,
+  slopeBlockReasonLabel,
   updateOrders,
   updateProtectionOrders
 } from '../terminal-data';
@@ -45,6 +47,21 @@ const fill = {
   n: '0.01',
   T: 1000
 };
+describe('realtime slope telemetry source and readiness', () => {
+  it('distinguishes Runtime decision telemetry from read-only monitor telemetry', () => {
+    expect(slopeTelemetrySource({ instanceId: '42' })).toBe('RUNTIME');
+    expect(slopeTelemetrySource({ instanceId: null })).toBe('MONITOR');
+    expect(slopeTelemetrySource({ dataSource: 'MONITOR', instanceId: '42' })).toBe('MONITOR');
+  });
+
+  it('provides actionable labels for unavailable slope inputs', () => {
+    expect(slopeBlockReasonLabel('REFERENCE_KLINE_MISSING')).toBe('参考K线不足');
+    expect(slopeBlockReasonLabel('STALE_EVENT')).toBe('行情已过期');
+    expect(slopeBlockReasonLabel('SUBSCRIPTION_FAILED')).toBe('行情订阅失败');
+    expect(slopeBlockReasonLabel('UNKNOWN_REASON')).toBe('数据暂不可用');
+  });
+});
+
 describe('position maximum return calculation', () => {
   const history = {
     credentialId: 'account-1',

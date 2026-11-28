@@ -437,6 +437,12 @@
                 v-else-if="slopeMaDirection(scope.row as SlopeRow) === 'DOWN'"
                 class="slope-ma-direction slope-ma-down"
               > ↓</span>
+              <small class="slope-data-source">
+                {{ scope.row.dataSource === 'RUNTIME' ? '策略决策' : scope.row.dataSource === 'MONITOR' ? '只读监控' : '等待数据' }}
+                <template v-if="!isSlopeFresh(scope.row as SlopeRow)">
+                  · {{ slopeBlockReasonLabel(scope.row.slopeBlockReason || 'WAITING_FOR_MARKET') }}
+                </template>
+              </small>
             </template>
           </el-table-column>
           <!--<el-table-column label="状态" min-width="130" align="center">
@@ -494,7 +500,7 @@ import {
   accountTrade, accountStreamRetryDelay, parseBinanceAccountEvent, liveTradePage, protectionPrices, protectionPriceLines,
   updateProtectionOrders, mergeAccountPosition, mergePositionSnapshots, mergePositionSymbolSnapshot,
   positionSnapshotKey, mergeTrades, positionMetrics, positionMaximumReturnRate, positionLadderMetrics, aggregateLivePositionPnl, aggregateSnapshotPositionPnl,
-  terminalMarketSubscriptions, updateOrders, exactCloseQuantity
+  terminalMarketSubscriptions, updateOrders, exactCloseQuantity, slopeTelemetrySource, slopeBlockReasonLabel
 } from './terminal-data';
 
 const { quant_kline_period, quant_indicator, quant_position_direction } = toRefs<any>(
@@ -598,6 +604,8 @@ type SlopeRow = {
   displayFreshForMillis?: number;
   displayReceivedAtLocal?: number;
   displaySource?: 'MARK' | 'TRADE_KLINE';
+  dataSource?: 'RUNTIME' | 'MONITOR';
+  slopeBlockReason?: string;
 };
 const statusMap: Record<string, string> = { CONNECTING: '连接中', CONNECTED: '已连接', DISCONNECTED: '已断开', ERROR: '异常' };
 const statusText = (status: string) => statusMap[status] ?? '未知';
@@ -1884,6 +1892,8 @@ function clearSlopeSnapshot(row: SlopeRow, status: SlopeRow['status'], resetSequ
   row.displayFreshForMillis = 0;
   row.displayReceivedAtLocal = undefined;
   row.displaySource = undefined;
+  row.dataSource = undefined;
+  row.slopeBlockReason = 'STREAM_CONNECTING';
 }
 
 function closeSlopeStream(resetState = true) {
@@ -1932,6 +1942,7 @@ watch(now, current => {
       row.slopePercent = undefined;
       row.degrees = undefined;
       row.slopeReady = false;
+      row.slopeBlockReason = 'STALE_EVENT';
     }
     if (row.displayFreshForMillis && row.displayReceivedAtLocal !== undefined
       && current - row.displayReceivedAtLocal >= row.displayFreshForMillis) {
@@ -1981,6 +1992,7 @@ function connectSlopeStream() {
           row.sequence = undefined;
         }
         row.instanceId = instanceId;
+        row.dataSource = slopeTelemetrySource(event);
         const sequence = Number(event.sequence);
         if (!Number.isSafeInteger(sequence) || (row.sequence !== undefined && sequence <= row.sequence)) return;
         row.sequence = sequence;
@@ -1988,6 +2000,8 @@ function connectSlopeStream() {
 
         const receivedAt = Date.now();
         row.slopeReady = event.slopeReady === true && Number(event.slopeFreshForMillis) > 0;
+        row.slopeBlockReason = row.slopeReady ? undefined
+          : typeof event.slopeBlockReason === 'string' ? event.slopeBlockReason : 'SLOPE_NOT_READY';
         row.slopeFreshForMillis = Math.max(0, Number(event.slopeFreshForMillis) || 0);
         row.slopeReceivedAtLocal = receivedAt;
         row.currentPrice = row.slopeReady && event.currentPrice != null ? Number(event.currentPrice) : undefined;

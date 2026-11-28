@@ -35,6 +35,34 @@ export function terminalMarketSubscriptions(
   return [...subscriptions.values()];
 }
 
+export type SlopeTelemetrySource = 'RUNTIME' | 'MONITOR';
+
+export function slopeTelemetrySource(event: { dataSource?: unknown; instanceId?: unknown }): SlopeTelemetrySource {
+  if (event.dataSource === 'RUNTIME' || event.dataSource === 'MONITOR') return event.dataSource;
+  return event.instanceId === undefined || event.instanceId === null ? 'MONITOR' : 'RUNTIME';
+}
+
+export function slopeBlockReasonLabel(reason: unknown): string {
+  const labels: Record<string, string> = {
+    WAITING_FOR_RUNTIME_EVENT: '等待策略行情',
+    MONITOR_WAITING_FOR_EVENT: '等待监控行情',
+    WAITING_FOR_MARKET: '等待行情',
+    CURRENT_PRICE_MISSING: '当前价缺失',
+    REFERENCE_KLINE_MISSING: '参考K线不足',
+    SLOPE_INPUT_INVALID: '斜率输入无效',
+    DECISION_CONTEXT_MISSING: '决策上下文缺失',
+    EVENT_TIME_MISSING: '行情时间缺失',
+    STALE_EVENT: '行情已过期',
+    STREAM_CONNECTING: '行情连接中',
+    STREAM_DISCONNECTED: '行情连接断开',
+    STREAM_ERROR: '行情流异常',
+    SUBSCRIPTION_FAILED: '行情订阅失败',
+    MONITOR_EVENT_ERROR: '监控事件处理异常',
+    SLOPE_NOT_READY: '斜率未就绪'
+  };
+  return typeof reason === 'string' && labels[reason] ? labels[reason] : '数据暂不可用';
+}
+
 function numeric(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
