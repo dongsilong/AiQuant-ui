@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   accountTrade,
-  calculateRealtimeSlope,
+  accountStreamRetryDelay,
   exactCloseQuantity,
   exactIntegerId,
   liveTradePage,
@@ -12,13 +12,14 @@ import {
   parseBinanceAccountEvent,
   positionMetrics,
   aggregateLivePositionPnl,
+  aggregateSnapshotPositionPnl,
   positionMaximumReturnRate,
   positionLadderMetrics,
   protectionPrices,
   protectionPriceLines,
-  slopeStreamQuery,
-  chunkSlopeSubscriptions,
   terminalMarketSubscriptions,
+  slopeTelemetrySource,
+  slopeBlockReasonLabel,
   updateOrders,
   updateProtectionOrders
 } from '../terminal-data';
@@ -46,13 +47,23 @@ const fill = {
   n: '0.01',
   T: 1000
 };
-describe('realtime slope display calculation', () => {
-  it('calculates the same percent, angle and threshold decision without account state', () => {
-    expect(calculateRealtimeSlope('110', '100', 60)).toEqual({ slopePercent: 10, degrees: 84.29, entryApproved: true });
+describe('realtime slope telemetry source and readiness', () => {
+  it('distinguishes Runtime decision telemetry from read-only monitor telemetry', () => {
+    expect(slopeTelemetrySource({ instanceId: '42' })).toBe('RUNTIME');
+    expect(slopeTelemetrySource({ instanceId: null })).toBe('MONITOR');
+    expect(slopeTelemetrySource({ dataSource: 'MONITOR', instanceId: '42' })).toBe('MONITOR');
   });
-  it('does not emit a slope until both market prices are valid', () => {
-    expect(calculateRealtimeSlope(undefined, '100', 60)).toBeUndefined();
-    expect(calculateRealtimeSlope('110', '0', 60)).toBeUndefined();
+
+  it('provides actionable labels for unavailable slope inputs', () => {
+    expect(slopeBlockReasonLabel('REFERENCE_KLINE_MISSING')).toBe('参考K线不足');
+    expect(slopeBlockReasonLabel('WAITING_FOR_LIVE_MARKET_EVENT')).toBe('等待实时行情');
+    expect(slopeBlockReasonLabel('RUNTIME_LEASE_NOT_READY')).toBe('策略运行租约未就绪');
+    expect(slopeBlockReasonLabel('REPLAY_EVENT')).toBe('行情恢复回放中');
+    expect(slopeBlockReasonLabel('STALE_EVENT')).toBe('行情已过期');
+    expect(slopeBlockReasonLabel('EXCHANGE_EVENT_STALE')).toBe('交易所行情已过期');
+    expect(slopeBlockReasonLabel('STRATEGY_STATE_REFRESH_REQUIRED')).toBe('策略状态正在刷新');
+    expect(slopeBlockReasonLabel('SUBSCRIPTION_FAILED')).toBe('行情订阅失败');
+    expect(slopeBlockReasonLabel('UNKNOWN_REASON')).toBe('数据暂不可用');
   });
 });
 
@@ -121,18 +132,30 @@ describe('kline slope ladder metrics', () => {
     updatedAt: '2026-11-11 12:00:00'
   };
 
-  it('calculates the contract-price peak ROI with frozen leverage and returns both step states', () => {
-    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+  it('uses the backend-computed contract-price peak ROI and returns both step states', () => {
+    expect(positionLadderMetrics(position, 'account-1', [{ ...ladderHistory, ladderMaximumReturnRate: '100' }])).toEqual({
       maximumReturnRate: 100,
       highestStep: 2,
       confirmedProtectionStep: 1
     });
   });
 
-  it('uses the favorable low for a short position', () => {
-    const short = { ...position, side: 'SHORT', quantity: '-50' };
-    expect(positionLadderMetrics(short, 'account-1', [{ ...ladderHistory, direction: 'SHORT' }])).toEqual({
-      maximumReturnRate: 50,
+  it('does not reconstruct ladder ROI on the client when the backend value is absent', () => {
+    expect(positionLadderMetrics(position, 'account-1', [ladderHistory])).toEqual({
+      highestStep: 2,
+      confirmedProtectionStep: 1
+    });
+  });
+
+  it('prefers the backend-pushed contract-price return rate and accepts event-only initial quantity', () => {
+    const event = {
+      ...ladderHistory,
+      positionQty: undefined,
+      initialPositionQty: '50',
+      ladderMaximumReturnRate: '123.456789'
+    };
+    expect(positionLadderMetrics(position, 'account-1', [event])).toEqual({
+      maximumReturnRate: 123.456789,
       highestStep: 2,
       confirmedProtectionStep: 1
     });
@@ -150,23 +173,17 @@ describe('kline slope ladder metrics', () => {
   });
 });
 
-describe('batched realtime slope stream', () => {
-  it('keeps each symbol paired with its own interval in repeated query parameters', () => {
-    const query = slopeStreamQuery([
-      { symbol: 'BTCUSDT', interval: '15m' },
-      { symbol: 'ETHUSDT', interval: '1h' }
+describe('account SSE reconnect backoff', () => {
+  it('backs off lease conflicts and caps the retry interval', () => {
+    expect([0, 1, 2, 3, 4, 5].map(count => accountStreamRetryDelay(count, true))).toEqual([
+      5000, 10000, 20000, 30000, 30000, 30000
     ]);
-    expect(query.getAll('symbol')).toEqual(['BTCUSDT', 'ETHUSDT']);
-    expect(query.getAll('interval')).toEqual(['15m', '1h']);
-    expect(query.get('runMode')).toBe('LIVE');
-    expect(slopeStreamQuery([{ symbol: 'BTCUSDT', interval: '15m' }], 'TESTNET').get('runMode')).toBe('TESTNET');
   });
 
-  it('splits subscriptions at the server batch limit', () => {
-    const rows = Array.from({ length: 51 }, (_, index) => ({ symbol: `S${index}`, interval: '15m' }));
-    const batches = chunkSlopeSubscriptions(rows);
-    expect(batches.map(batch => batch.length)).toEqual([50, 1]);
-    expect(batches.flat()).toEqual(rows);
+  it('uses a shorter bounded backoff for transient transport failures', () => {
+    expect([0, 1, 2, 3, 4].map(count => accountStreamRetryDelay(count))).toEqual([
+      3000, 6000, 12000, 24000, 30000
+    ]);
   });
 });
 
@@ -234,6 +251,15 @@ describe('terminal account data', () => {
   it('keeps server PnL until an actual mark arrives', () => {
     expect(positionMetrics({ ...position, unrealizedPnl: '0.9' }).unrealizedPnl).toBe(0.9);
     expect(positionMetrics(position, 2.02).unrealizedPnl).toBeCloseTo(2);
+  });
+  it('uses complete exchange snapshot PnL when live marks are unavailable', () => {
+    const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', unrealizedPnl: '3' };
+    expect(aggregateSnapshotPositionPnl([position, second])).toBe(4);
+    expect(aggregateSnapshotPositionPnl([])).toBe(0);
+  });
+  it('does not calculate snapshot PnL when any open position lacks a valid exchange PnL', () => {
+    expect(aggregateSnapshotPositionPnl([{ ...position, unrealizedPnl: '' }])).toBeUndefined();
+    expect(aggregateSnapshotPositionPnl([{ ...position, quantity: '' }])).toBeUndefined();
   });
   it('sums PnL from fresh marks across all open positions', () => {
     const second = { ...position, symbol: 'ETHUSDT', side: 'SHORT', quantity: '-2', entryPrice: '100', markPrice: '99' };

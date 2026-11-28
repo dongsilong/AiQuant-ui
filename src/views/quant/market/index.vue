@@ -82,7 +82,7 @@
         </el-table-column>
         <el-table-column prop="credentialId" label="账户 ID" min-width="175" />
         <el-table-column prop="symbol" label="交易对" min-width="115" />
-        <el-table-column prop="operation" label="操作" min-width="130" />
+        <el-table-column prop="operation" label="操作" min-width="150" />
         <el-table-column prop="status" label="票据状态" min-width="130">
           <template #default="scope">
             <el-tag type="warning">{{ scope.row.status || '票据缺失' }}</el-tag>
@@ -91,16 +91,18 @@
         <el-table-column prop="clientOrderId" label="客户端订单号" min-width="220" show-overflow-tooltip />
         <el-table-column prop="dispatchKey" label="调度幂等键" min-width="220" show-overflow-tooltip />
         <el-table-column prop="leaseEpoch" label="租约代次" min-width="90" />
-        <el-table-column prop="blockedAt" label="阻断时间" min-width="175" />
+        <el-table-column label="阻断时间" min-width="175">
+          <template #default="{ row }">{{ formatQuantTime(row.blockedAt) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="155" fixed="right" align="center">
           <template #default="scope">
             <el-button
               v-hasPermi="['quant:dispatch:recover']"
               type="primary"
               link
-              :loading="dispatchRecheckingKey === dispatchRowKey(scope.row)"
-              :disabled="!canRecheckDispatch(scope.row) || Boolean(dispatchRecheckingKey)"
-              @click="recheckDispatch(scope.row)"
+              :loading="dispatchRecheckingKey === dispatchRowKey(scope.row as UnresolvedLiveDispatch)"
+              :disabled="!canRecheckDispatch(scope.row as UnresolvedLiveDispatch) || Boolean(dispatchRecheckingKey)"
+              @click="recheckDispatch(scope.row as UnresolvedLiveDispatch)"
             >核查并尝试恢复</el-button>
           </template>
         </el-table-column>
@@ -149,7 +151,7 @@
             <dict-tag :options="quant_exchange_status" :value="scope.row.exchangeStatus" />
           </template>
         </el-table-column>
-        <el-table-column label="同步时间" prop="syncedAt" min-width="160" align="center" />
+        <el-table-column label="同步时间" min-width="160" align="center"><template #default="scope">{{ formatQuantLocalTime(scope.row.syncedAt) }}</template></el-table-column>
         <el-table-column align="center" label="收藏" width="80">
           <template #default="scope">
             <el-button v-hasPermi="['quant:symbol:edit']" :type="scope.row.favorite ? 'warning' : 'info'" link @click="favorite(scope.row as SymbolVO)">
@@ -168,25 +170,28 @@ import { listSymbol, syncSymbol, toggleSymbolFavorite, getWebSocketTransport, sw
 import { useUserStore } from '@/store/modules/user';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {useDict} from "@/utils/dict";
+import { formatQuantLocalTime, formatQuantTime } from '@/utils/quant-time';
 
 const { quant_exchange_status } = toRefs<any>(useDict('quant_exchange_status'));
 
 const userStore = useUserStore();
 const canViewTransport = computed(() => userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:transport:view'));
-const canViewDispatch = computed(() => userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:dispatch:view'));
+const canViewDispatch = computed(() => userStore.roles.includes('superadmin') && (userStore.permissions.includes('*:*:*') || userStore.permissions.includes('quant:dispatch:view')));
 const dispatchLoading = ref(false);
 const unresolvedDispatches = ref<UnresolvedLiveDispatch[]>([]);
 const dispatchRecheckingKey = ref('');
 const dispatchRowKey = (row: UnresolvedLiveDispatch) =>
   `${row.credentialId}:${row.symbol}:${row.dispatchKey}`;
 const canRecheckDispatch = (row: UnresolvedLiveDispatch) =>
-  ['PROTECT_CREATE', 'PROTECT_CANCEL'].includes(row.operation || '')
+  ['PROTECT_CREATE', 'PROTECT_CANCEL', 'CONFIG_SETTINGS'].includes(row.operation || '')
   && Boolean(row.credentialId && row.symbol && row.dispatchKey && row.clientOrderId);
 const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
   if (!canRecheckDispatch(row) || dispatchRecheckingKey.value) return;
   try {
     await ElMessageBox.confirm(
-      `将按票据身份核查 Binance 的保护单事实。只有订单身份、状态和成交数量均通过现有后端核验时，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`,
+      row.operation === 'CONFIG_SETTINGS'
+        ? `将根据持久化配置意图核查 Binance 的保证金模式和杠杆配置。只有后端完成配置事实核验并满足持仓安全条件后，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`
+        : `将按票据身份核查 Binance 的保护单事实。只有订单身份、状态和成交数量均通过现有后端核验时，才会释放该交易对的调度阻断。核查失败会继续保持阻断。\n\n${row.symbol} · ${row.operation} · ${row.clientOrderId}`,
       '确认核查 LIVE 外发订单',
       { confirmButtonText: '开始核查', cancelButtonText: '取消', type: 'warning' }
     );
@@ -203,7 +208,7 @@ const recheckDispatch = async (row: UnresolvedLiveDispatch) => {
       clientOrderId: row.clientOrderId!
     });
     if (result.data) {
-      ElMessage.success('Binance 订单事实核验通过，派发阻断已按原恢复流程处理');
+      ElMessage.success('派发核查已完成，相关交易对的调度阻断已解除');
     } else {
       ElMessage.warning('本次未能完成核验，派发阻断保持不变；请检查订单事实和后端日志');
     }

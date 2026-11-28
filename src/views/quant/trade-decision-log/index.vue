@@ -1,7 +1,9 @@
 <template>
   <div class="p-2 app-container">
-    <el-card shadow="hover" class="mb-3">
-      <template #header><h3>开平仓日志</h3></template>
+    <el-card class="search-panel" shadow="hover">
+      <template #header>
+        <div class="panel-heading"><h3>开平仓日志</h3></div>
+      </template>
       <el-form :inline="true" @submit.prevent="search">
         <el-form-item label="交易账户">
           <el-select
@@ -95,7 +97,7 @@
           </template>
         </el-table-column>
         <el-table-column label="时间" min-width="190" align="center">
-          <template #default="{ row }">{{ row.tradeTime || row.eventTime }}</template>
+          <template #default="{ row }">{{ formatQuantTime(row.tradeTime || row.eventTime) }}</template>
         </el-table-column>
         <el-table-column label="详情" fixed="right" width="80" align="center">
           <template #default="{ row }">
@@ -131,6 +133,7 @@ import { useCredentialOptions } from '../components/useCredentialOptions';
 import { getTradeDecisionLog, listTradeDecisionLogs } from '@/api/quant/trade-decision-log';
 import { useDict } from '@/utils/dict';
 import { ensureQuantSymbolTickSizes, formatQuantPrice } from '../components/price-format';
+import { formatQuantTime, getQuantTimeZone } from '@/utils/quant-time';
 
 const { quant_run_mode, quant_position_direction } = toRefs<any>(useDict('quant_run_mode', 'quant_position_direction'));
 
@@ -222,6 +225,7 @@ const showDetail = async (id: string) => {
 const detailValue = (key: keyof TradeDecisionLog) => {
   if (key === 'status' && detail.value) return statusLabel(detail.value);
   if (key === 'price' && detail.value) return formatQuantPrice(detail.value.symbol, detail.value.price);
+  if (['eventTime', 'lastTime', 'tradeTime', 'klineTime'].includes(key)) return formatQuantTime(detail.value?.[key]);
   if (['amount', 'price', 'quantity', 'margin', 'angle', 'threshold'].includes(key))
     return displayDecimal(detail.value?.[key]);
   return detail.value?.[key] ?? '-';

@@ -6,6 +6,7 @@ export interface CredentialVO extends BaseEntity {
   maskedApiKey: string;
   signatureType: string;
   runMode: string;
+  effectiveTime?: string | null;
   status: string;
   connectionStatus: string;
   tradePermission?: boolean;
@@ -25,6 +26,7 @@ export interface CredentialForm {
   secretKey?: string;
   signatureType: string;
   runMode: string;
+  effectiveTime?: string | null;
   remark?: string;
 }
 export interface SymbolVO extends BaseEntity {
@@ -282,6 +284,8 @@ export interface StrategyInstanceVO {
   strategyName?: string;
   strategySymbolId?: number | string;
   runtimeEnabled?: boolean;
+  strategyEnabled?: boolean;
+  runtimeActive?: boolean;
   credentialId?: number | string;
   accountName?: string;
   symbol?: string;
@@ -320,6 +324,7 @@ export interface StrategyPositionStateVO {
   initialMargin?: string | number;
   frozenLeverage?: number;
   maximumReturnRate?: string | number;
+  ladderMaximumReturnRate?: string | number;
   highestPriceSinceEntry?: string | number;
   lowestPriceSinceEntry?: string | number;
   highestStep?: number;
@@ -378,6 +383,7 @@ export interface UnresolvedLiveDispatch {
   exchangeOrderId: string | null;
   strategyInstanceId: string | null;
   leaseEpoch: string | null;
+  /** UTC ISO-8601 timestamp returned by the dispatch inspection API. */
   blockedAt: string | null;
 }
 
@@ -398,3 +404,4 @@ export interface StrategyFillAuditSummary {
   feeBreakdown: Array<{ asset: string; amount: string }>;
   realizedPnl: string;
 }
+

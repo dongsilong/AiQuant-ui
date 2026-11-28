@@ -30,7 +30,7 @@ import type {
   StrategyUserBinding,
   WebSocketTransportInfo,
   UnresolvedLiveDispatch,
-  StrategyFillAuditSummary
+  StrategyFillAuditSummary,
 } from './types';
 
 export const listCredential = (query: CredentialQuery): AxiosPromise<PageResult<CredentialVO>> =>
@@ -72,8 +72,14 @@ export const listAccessibleOrders = (
   query: PageQuery & { side?: string; status?: string }
 ): AxiosPromise<PageResult<OrderLedgerRow>> =>
   request({ url: '/quant/order/ledger/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncOrders = (credentialId: string | number, symbol?: string) =>
-  request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+export type ManualTradingHistoryRange = '3d' | '7d' | '1m' | '3m';
+
+export const syncOrders = (
+  credentialId: string | number,
+  symbol?: string,
+  historyRange: ManualTradingHistoryRange = '3d'
+): AxiosPromise<string> =>
+  request({ url: `/quant/order/${credentialId}/sync`, method: 'post', params: { symbol, historyRange } });
 export const listProtectionOrders = (
   credentialId: string | number,
   symbol?: string,
@@ -83,18 +89,23 @@ export const listProtectionOrders = (
 export const listTrades = (
   credentialId: string | number,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string },
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string },
   signal?: AbortSignal
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: `/quant/trade/${credentialId}/page`, method: 'get', params: { symbol, ...query }, signal });
 export const listAccessibleTrades = (
   credentialId: string | number | undefined,
   symbol: string | undefined,
-  query: PageQuery & { side?: string; from?: string; to?: string }
+  query: PageQuery & { side?: string; from?: string; to?: string; orderId?: string }
 ): AxiosPromise<PageResult<TradeRecord>> =>
   request({ url: '/quant/trade/page', method: 'get', params: { credentialId, symbol, ...query } });
-export const syncTrades = (credentialId: string | number, symbol?: string) =>
-  request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: symbol ? { symbol } : undefined });
+export const syncTrades = (
+  credentialId: string | number,
+  symbol?: string,
+  historyRange: ManualTradingHistoryRange = '3d'
+): AxiosPromise<string> =>
+  request({ url: `/quant/trade/${credentialId}/sync`, method: 'post', params: { symbol, historyRange } });
+
 export const listStrategyPlugins = (): AxiosPromise<StrategyPluginVO[]> =>
   request({ url: '/quant/strategy/plugins', method: 'get' });
 export const getRealtimePrice = (symbol: string): AxiosPromise<PriceSnapshot> =>
@@ -134,6 +145,10 @@ export const startStrategy = (id: number | string) =>
   request({ url: '/quant/strategy/' + id + '/start', method: 'post' });
 export const stopStrategy = (id: number | string) =>
   request({ url: '/quant/strategy/' + id + '/stop', method: 'post' });
+export const startStrategyInstance = (strategyId: number | string, instanceId: number | string) =>
+  request({ url: `/quant/strategy/${strategyId}/instances/${instanceId}/start`, method: 'post' });
+export const stopStrategyInstance = (strategyId: number | string, instanceId: number | string) =>
+  request({ url: `/quant/strategy/${strategyId}/instances/${instanceId}/stop`, method: 'post' });
 export const preflightStrategy = (id: number | string): AxiosPromise<StrategyPreflightResult> =>
   request({ url: '/quant/strategy/' + id + '/preflight', method: 'get' });
 export const listStrategyAccounts = (id: number | string): AxiosPromise<StrategyAccountBinding[]> =>
@@ -187,7 +202,7 @@ export const recheckUnresolvedLiveDispatch = (data: {
   dispatchKey: string;
   clientOrderId: string;
 }): AxiosPromise<boolean> =>
-  request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data });
+  request({ url: '/quant/infrastructure/dispatch/recheck', method: 'post', data, timeout: 180000 });
 
 
 export const getWebSocketTransport = (): AxiosPromise<WebSocketTransportInfo> =>

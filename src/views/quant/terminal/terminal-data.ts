@@ -8,23 +8,11 @@ import type {
 
 type RawFields = Record<string, unknown>;
 
-export function slopeStreamQuery(
-  rows: ReadonlyArray<{ symbol: string; interval: string }>,
-  runMode = 'LIVE'
-): URLSearchParams {
-  const query = new URLSearchParams({ runMode });
-  rows.forEach(row => {
-    query.append('symbol', row.symbol);
-    query.append('interval', row.interval);
-  });
-  return query;
-}
-
-export function chunkSlopeSubscriptions<T>(rows: ReadonlyArray<T>, size = 50): T[][] {
-  if (!Number.isInteger(size) || size < 1) throw new RangeError('订阅批次大小必须为正整数');
-  const chunks: T[][] = [];
-  for (let index = 0; index < rows.length; index += size) chunks.push(rows.slice(index, index + size));
-  return chunks;
+/** Calculate bounded retry delay for account SSE reconnects. */
+export function accountStreamRetryDelay(retryCount: number, leaseNotOwned = false): number {
+  const baseDelay = leaseNotOwned ? 5000 : 3000;
+  const exponent = Math.min(4, Math.max(0, Math.floor(retryCount)));
+  return Math.min(baseDelay * 2 ** exponent, 30000);
 }
 
 /** Build a de-duplicated market subscription list for the chart and open positions. */
@@ -47,33 +35,54 @@ export function terminalMarketSubscriptions(
   return [...subscriptions.values()];
 }
 
+export type SlopeTelemetrySource = 'RUNTIME' | 'MONITOR';
+
+export function slopeTelemetrySource(event: { dataSource?: unknown; instanceId?: unknown }): SlopeTelemetrySource {
+  if (event.dataSource === 'RUNTIME' || event.dataSource === 'MONITOR') return event.dataSource;
+  return event.instanceId === undefined || event.instanceId === null ? 'MONITOR' : 'RUNTIME';
+}
+
+export function slopeBlockReasonLabel(reason: unknown): string {
+  const labels: Record<string, string> = {
+    WAITING_FOR_RUNTIME_EVENT: '等待策略行情',
+    WAITING_FOR_LIVE_MARKET_EVENT: '等待实时行情',
+    RUNTIME_LEASE_NOT_READY: '策略运行租约未就绪',
+    REPLAY_EVENT: '行情恢复回放中',
+    MONITOR_WAITING_FOR_EVENT: '等待监控行情',
+    WAITING_FOR_MARKET: '等待行情',
+    CURRENT_PRICE_MISSING: '当前价缺失',
+    REFERENCE_KLINE_MISSING: '参考K线不足',
+    SLOPE_INPUT_INVALID: '斜率输入无效',
+    DECISION_CONTEXT_MISSING: '决策上下文缺失',
+    EVENT_TIME_MISSING: '行情时间缺失',
+    RECEIVED_AT_MISSING: '接收时间缺失',
+    CLOCK_TIME_MISSING: '时钟信息缺失',
+    EXCHANGE_EVENT_STALE: '交易所行情已过期',
+    EXCHANGE_TIME_FUTURE: '行情时间超前',
+    LOCAL_RECEIVE_STALE: '本地行情处理延迟',
+    STALE_EVENT: '行情已过期',
+    STREAM_CONNECTING: '行情连接中',
+    STREAM_CONNECTING_OR_RECOVERING: '行情连接或恢复中',
+    STREAM_READINESS_NOT_CONFIRMED: '行情就绪未确认',
+    STREAM_DISCONNECTED: '行情连接断开',
+    STREAM_ERROR: '行情流异常',
+    STREAM_TERMINAL_ERROR: '行情流终止异常',
+    RUNTIME_HEALTH_NOT_RESTORED: 'Runtime行情健康未恢复',
+    MARKET_UNREADY: '行情尚未就绪',
+    STRATEGY_STATE_REFRESH_REQUIRED: '策略状态正在刷新',
+    SUBSCRIPTION_FAILED: '行情订阅失败',
+    MONITOR_EVENT_ERROR: '监控事件处理异常',
+    SLOPE_NOT_READY: '斜率未就绪'
+  };
+  return typeof reason === 'string' && labels[reason] ? labels[reason] : '数据暂不可用';
+}
+
 function numeric(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
 }
 
-export function calculateRealtimeSlope(
-  currentPrice: unknown,
-  referenceOpenPrice: unknown,
-  entryAngleDegrees = 60
-): { slopePercent: number; degrees: number; entryApproved: boolean } | undefined {
-  const current = numeric(currentPrice);
-  const reference = numeric(referenceOpenPrice);
-  if (current === undefined || current <= 0 || reference === undefined || reference <= 0) return undefined;
-  const slopePercent = Number((((current - reference) * 100) / reference).toFixed(5));
-  const rawDegrees = (Math.atan(slopePercent) * 180) / Math.PI;
-  return {
-    slopePercent,
-    degrees: Number(rawDegrees.toFixed(2)),
-    entryApproved: Math.abs(rawDegrees) >= entryAngleDegrees
-  };
-}
-
-/**
- * Exchange IDs are integers, NOT floating-point amounts.
- * Reject unsafe numbers: once JSON.parse has rounded an ID, its original value cannot be recovered.
- */
 export function exactIntegerId(value: unknown): string | undefined {
   if (typeof value === 'string') return /^\d+$/.test(value) ? value : undefined;
   if (typeof value === 'bigint') return value >= 0n ? value.toString() : undefined;
@@ -129,6 +138,20 @@ export function positionMetrics(item: PositionSnapshot, liveMark?: number | stri
     notional,
     returnRate: margin !== undefined && margin > 0 && pnl !== undefined ? (pnl / margin) * 100 : undefined
   };
+}
+
+/** Sum exchange-snapshot PnL as a display fallback when fresh mark samples are unavailable. */
+export function aggregateSnapshotPositionPnl(positions: ReadonlyArray<PositionSnapshot>): number | undefined {
+  let total = 0;
+  for (const position of positions) {
+    const quantity = numeric(position.quantity);
+    if (quantity === undefined) return undefined;
+    if (quantity === 0) continue;
+    const pnl = numeric(position.unrealizedPnl);
+    if (pnl === undefined) return undefined;
+    total += pnl;
+  }
+  return total;
 }
 
 /** Sum unrealized PnL only when every open position has a fresh mark-price sample. */
@@ -213,25 +236,16 @@ export function positionLadderMetrics(
       item.direction?.toUpperCase() === direction &&
       item.pluginCode?.toLowerCase() === 'kline_slope_rate' &&
       item.status?.toUpperCase() !== 'CLOSED' &&
-      numeric(item.positionQty) !== undefined &&
-      numeric(item.positionQty)! > 0 &&
+      numeric(item.positionQty ?? item.initialPositionQty) !== undefined &&
+      numeric(item.positionQty ?? item.initialPositionQty)! > 0 &&
       entryTolerance !== undefined &&
       numeric(item.entryPrice) !== undefined &&
       Math.abs(numeric(item.entryPrice)! - positionEntry!) <= entryTolerance
   );
-  const state = matching.sort((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
+  const state = matching.toSorted((a, b) => String(a.updatedAt || '').localeCompare(String(b.updatedAt || ''))).at(-1);
   if (!state) return {};
 
-  const entry = numeric(state.entryPrice);
-  const leverage = numeric(state.frozenLeverage);
-  const favorable = numeric(direction === 'SHORT' ? state.lowestPriceSinceEntry : state.highestPriceSinceEntry);
-  const priceReturn = entry !== undefined && entry > 0 && favorable !== undefined
-    ? direction === 'SHORT' ? (entry - favorable) / entry : (favorable - entry) / entry
-    : undefined;
-  const maximumReturnRate =
-    priceReturn !== undefined && leverage !== undefined && leverage > 0
-      ? Math.max(0, priceReturn * leverage * 100)
-      : undefined;
+  const maximumReturnRate = numeric(state.ladderMaximumReturnRate);
   const highestStep = numeric(state.highestStep);
   const confirmedProtectionStep = numeric(state.confirmedProtectionStep);
   return {

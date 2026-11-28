@@ -11,6 +11,7 @@ import { errorCode } from '@/utils/errorCode';
 import { decrypt, encrypt } from '@/utils/jsencrypt';
 import { blobValidate, tansParams } from '@/utils/ruoyi';
 import { saveBlob } from '@/utils/save';
+import { setQuantServerTimeZone, setQuantTimeZone } from '@/utils/quant-time';
 
 /** axios 1.13 + TS6：默认导出在类型上会被解析为不可调用的 export= 形态 */
 const axios = axiosModule as any;
@@ -178,6 +179,8 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (res: any) => {
+    setQuantTimeZone(res.headers?.['x-quant-time-zone']);
+    setQuantServerTimeZone(res.headers?.['x-quant-server-time-zone']);
     if (import.meta.env.VITE_APP_ENCRYPT === 'true') {
       // 加密后的 AES 秘钥
       const keyStr = res.headers[encryptHeader];
@@ -254,8 +257,13 @@ service.interceptors.response.use(
     if (error?.code === 'ERR_CANCELED' || axios.isCancel?.(error)) {
       return Promise.reject(error);
     }
+    const deferredPositionQuery =
+      error?.response?.status === 503 &&
+      String(error?.config?.url || '').includes('/quant/position/');
     const message = (await extractErrorMessage(error)) || errorCode['default'];
-    ElMessage({ message: message, type: 'error', duration: 5 * 1000 });
+    if (!deferredPositionQuery) {
+      ElMessage({ message: message, type: 'error', duration: 5 * 1000 });
+    }
     error.isHandled = true;
     return Promise.reject(error);
   }

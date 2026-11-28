@@ -68,6 +68,9 @@
             <dict-tag :options="quant_run_mode" :value="scope.row.runMode" />
           </template>
         </el-table-column>
+        <el-table-column v-if="isSuperAdmin" align="center" :label="'记录有效时间（' + getQuantTimeZone() + '）'" min-width="170" prop="effectiveTime">
+          <template #default="scope">{{ scope.row.runMode === 'TESTNET' ? (scope.row.effectiveTime ? formatQuantTime(scope.row.effectiveTime) : '不限制') : '-' }}</template>
+        </el-table-column>
         <el-table-column align="center" label="连接状态" min-width="120">
           <template #default="scope">
             <dict-tag :options="quant_connection_status" :value="scope.row.connectionStatus" />
@@ -85,8 +88,8 @@
           </template>
         </el-table-column>
 
-        <el-table-column align="center" label="最后连接时间" prop="lastConnectTime" width="160" />
-        <el-table-column align="center" label="授权时间" prop="createTime" width="160" />
+        <el-table-column align="center" label="最后连接时间" width="160"><template #default="scope">{{ formatQuantLocalTime(scope.row.lastConnectTime) }}</template></el-table-column>
+        <el-table-column align="center" label="授权时间" width="160"><template #default="scope">{{ formatQuantLocalTime(scope.row.createTime) }}</template></el-table-column>
         <el-table-column align="center" fixed="right" label="操作" width="120">
           <template #default="scope">
             <el-tooltip content="验证凭证" placement="top">
@@ -172,6 +175,17 @@
             </el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item v-if="isSuperAdmin && form.runMode === 'TESTNET'" :label="'记录有效时间（' + getQuantTimeZone() + '）'" prop="effectiveTime">
+          <el-date-picker
+            v-model="form.effectiveTime"
+            type="datetime"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            placeholder="选择记录起始时间"
+            clearable
+          />
+          <span class="form-help-text">为空时不限制交易记录、成交记录和订单记录的查询时间。</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -182,6 +196,7 @@
 </template>
 
 <script lang="ts" setup>
+import { formatQuantLocalTime, formatQuantTime, getQuantTimeZone } from '@/utils/quant-time';
 import type { CredentialForm, CredentialQuery, CredentialVO } from '@/api/quant/types';
 import type { UserQuery, UserVO } from '@/api/system/user/types';
 import {
@@ -195,9 +210,11 @@ import {
 import userApi from '@/api/system/user';
 import modal from '@/plugins/modal';
 import { useDict } from '@/utils/dict';
+import { useUserStore } from '@/store/modules/user';
 
 const { quant_connection_status, quant_run_mode, quant_yes_no } = toRefs<any>(useDict('quant_connection_status', 'quant_run_mode', 'quant_yes_no'));
 
+const isSuperAdmin = computed(() => useUserStore().roles.includes('superadmin'));
 const loading = ref(false);
 const rows = ref<CredentialVO[]>([]);
 const total = ref(0);
@@ -211,7 +228,8 @@ const form = reactive<CredentialForm>({
   apiKey: '',
   secretKey: '',
   signatureType: 'HMAC',
-  runMode: 'PAPER'
+  runMode: 'PAPER',
+  effectiveTime: null
 });
 const rules = computed(() => ({
   accountName: [{ required: true, message: '请输入账户名称', trigger: 'blur' }],
@@ -245,7 +263,8 @@ const resetForm = () => {
     apiKey: '',
     secretKey: '',
     signatureType: 'HMAC',
-    runMode: 'PAPER'
+    runMode: 'PAPER',
+    effectiveTime: null
   });
   nextTick(() => formRef.value?.clearValidate());
 };
@@ -254,7 +273,7 @@ const openAdd = () => {
   dialogVisible.value = true;
 };
 const openEdit = (row: CredentialVO) => {
-  Object.assign(form, row, { apiKey: '', secretKey: '', userId: row.userId });
+  Object.assign(form, row, { effectiveTime: row.effectiveTime ? formatQuantTime(row.effectiveTime) : null, apiKey: '', secretKey: '', userId: row.userId });
   dialogVisible.value = true;
   nextTick(() => formRef.value?.clearValidate());
 };

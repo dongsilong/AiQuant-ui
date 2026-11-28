@@ -30,7 +30,7 @@
             <el-option label="卖出" value="SELL" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="activeTab === 'trades'" label="成交时间">
+        <el-form-item v-if="activeTab === 'trades'" :label="'成交日期（' + getQuantTimeZone() + '）'">
           <el-date-picker v-model="tradeTimeRange" range-separator="至" type="daterange" value-format="YYYY-MM-DD" />
         </el-form-item>
         <el-form-item>
@@ -97,7 +97,7 @@
             <el-table-column label="持仓数量" min-width="100" prop="originalQuantity" />
             <el-table-column label="开仓均价" min-width="100">-</el-table-column>
             <el-table-column label="委托价格" min-width="100" prop="price"><template #default="scope">{{ formatQuantPrice(scope.row.symbol, scope.row.price) }}</template></el-table-column>
-            <el-table-column align="center" label="委托时间" prop="updateTime" width="220" />
+            <el-table-column align="center" label="委托时间" width="220"><template #default="scope">{{ formatQuantTime(scope.row.updateTime) }}</template></el-table-column>
             <el-table-column fixed="right" label="操作" width="100">
               <template #default="scope">
                 <el-button link type="danger" @click="submitCancel(scope.row as OrderSnapshot)">取消委托</el-button>
@@ -136,7 +136,7 @@
             </el-table-column>
             <el-table-column label="手续费" min-width="100" prop="commission" />
             <el-table-column label="已实现盈亏" min-width="100" prop="realizedPnl" />
-            <el-table-column label="成交时间" min-width="180" prop="tradeTime" />
+            <el-table-column label="成交时间" min-width="180"><template #default="scope">{{ formatQuantTime(scope.row.tradeTime) }}</template></el-table-column>
           </el-table>
           <pagination
             v-show="tradesTotal > 0"
@@ -175,6 +175,7 @@
 </template>
 
 <script lang="ts" setup>
+import { formatQuantTime, getQuantTimeZone } from '@/utils/quant-time';
 import type { AccountSnapshot, CredentialVO, OrderSnapshot, PositionSnapshot, TradeRecord } from '@/api/quant/types';
 import {
   cancelOrder,

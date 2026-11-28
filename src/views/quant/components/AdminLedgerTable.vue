@@ -54,7 +54,7 @@
           <el-button :loading="loading" icon="Refresh" plain type="primary" @click="load">刷新</el-button>
         </div>
       </template>
-      <el-table v-loading="loading" class="data-table" :data="rows" border>
+      <el-table v-loading="loading" class="data-table" :data="rows" border @sort-change="handleSortChange">
         <el-table-column type="index" label="序号" width="80" align="center">
           <template #default="scope">{{ (query.pageNum - 1) * query.pageSize + scope.$index + 1 }}</template>
         </el-table-column>
@@ -66,6 +66,8 @@
           :header-align="column.headerAlign"
           :min-width="column.width || 140"
           :prop="column.prop"
+          :sortable="column.sortable"
+          :sort-orders="['ascending', 'descending']"
           show-overflow-tooltip
         >
           <template #default="scope">
@@ -95,9 +97,10 @@
 </template>
 <script lang="ts" setup>
 import type { PageResult } from '@/api/types';
+import { formatQuantApiTime, getQuantTimeZone, isQuantTimeField } from '@/utils/quant-time';
 
 type LedgerRow = Record<string, unknown> & { id?: string | number };
-type LedgerColumn = { prop: string; label: string; width?: number; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
+type LedgerColumn = { prop: string; label: string; width?: number; sortable?: boolean | 'custom'; align?: 'left' | 'center' | 'right'; headerAlign?: 'left' | 'center' | 'right'; formatter?: (row: LedgerRow) => string };
 type LedgerFilter = {
   key: string;
   label: string;
@@ -139,6 +142,17 @@ const load = async () => {
     loading.value = false;
   }
 };
+const handleSortChange = ({ prop, order }: { prop: string | null; order: 'ascending' | 'descending' | null }) => {
+  if (order) {
+    query.sortField = prop || undefined;
+    query.sortOrder = order === 'ascending' ? 'ASC' : 'DESC';
+  } else {
+    delete query.sortField;
+    delete query.sortOrder;
+  }
+  query.pageNum = 1;
+  load();
+};
 const handleQuery = () => {
   query.pageNum = 1;
   load();
@@ -151,9 +165,21 @@ const resetQuery = () => {
   handleQuery();
 };
 const formatCell = (row: LedgerRow, column: LedgerColumn) =>
-  column.formatter ? column.formatter(row) : String(row[column.prop] ?? '-');
+  column.formatter
+    ? column.formatter(row)
+    : isQuantTimeField(column.prop)
+      ? formatQuantApiTime(column.prop, row[column.prop])
+      : String(row[column.prop] ?? '-');
+const formatDetail = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(formatDetail);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    key,
+    isQuantTimeField(key) ? formatQuantApiTime(key, item) : formatDetail(item)
+  ]));
+};
 const showDetail = (row: LedgerRow) => {
-  detailText.value = JSON.stringify(row, null, 2);
+  detailText.value = JSON.stringify(formatDetail(row), null, 2);
   detailVisible.value = true;
 };
 onMounted(load);
